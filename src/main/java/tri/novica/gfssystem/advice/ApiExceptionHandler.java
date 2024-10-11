@@ -1,4 +1,4 @@
-package tri.novica.gfssystem.dto.advice;
+package tri.novica.gfssystem.advice;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

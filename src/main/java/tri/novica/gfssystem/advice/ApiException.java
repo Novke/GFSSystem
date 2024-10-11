@@ -1,4 +1,4 @@
-package tri.novica.gfssystem.dto.advice;
+package tri.novica.gfssystem.advice;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
