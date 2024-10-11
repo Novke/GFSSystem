@@ -38,9 +38,7 @@ public class StudentService {
     }
 
     public StudentInfo create(CreateStudentCmd studentCmd) {
-        Long grupaId = studentCmd.getGrupaId();
-        Grupa grupa = grupaRepository.findById(grupaId)
-                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + grupaId, HttpStatus.NOT_FOUND.value()));
+        Grupa grupa = findGrupaOrThrow(studentCmd.getGrupaId());
 
         Student newStudent = mapper.map(studentCmd, Student.class);
         newStudent.setGrupa(grupa);
@@ -49,5 +47,20 @@ public class StudentService {
                 StudentInfo.class
         );
 
+    }
+
+    private Grupa findGrupaOrThrow(Long grupaId) {
+        Grupa grupa = grupaRepository.findById(grupaId)
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + grupaId, HttpStatus.NOT_FOUND.value()));
+        return grupa;
+    }
+
+    public List<StudentInfo> findAllByGroup(Long id) {
+        Grupa grupa = findGrupaOrThrow(id);
+
+        return studentRepository.findByGrupa(grupa)
+                .stream().map(
+                        student -> mapper.map(student, StudentInfo.class)
+                ).toList();
     }
 }

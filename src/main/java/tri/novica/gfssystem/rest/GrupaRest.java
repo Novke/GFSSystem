@@ -6,7 +6,9 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.grupa.CreateGrupaCmd;
 import tri.novica.gfssystem.dto.grupa.GrupaDetails;
 import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.service.GrupaService;
+import tri.novica.gfssystem.service.StudentService;
 
 import java.util.List;
 
@@ -16,6 +18,7 @@ import java.util.List;
 public class GrupaRest {
 
     private final GrupaService grupaService;
+    private final StudentService studentService;
 
     @GetMapping
     @ResponseBody
@@ -38,4 +41,10 @@ public class GrupaRest {
         return grupaService.save(grupaCmd);
     }
 
+    @GetMapping("/{id}/studenti")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<StudentInfo> findAllStudents(@PathVariable Long id){
+        return studentService.findAllByGroup(id);
+    }
 }

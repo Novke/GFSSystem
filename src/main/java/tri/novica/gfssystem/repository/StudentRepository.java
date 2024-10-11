@@ -3,8 +3,10 @@ package tri.novica.gfssystem.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
+import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -17,4 +19,6 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
             left join fetch s.uradjeniDomaci
             where s.id = :id""")
     Optional<Student> findByIdFetchDetails(Long id);
+
+    List<Student> findByGrupa(Grupa grupa);
 }
