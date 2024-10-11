@@ -28,4 +28,7 @@ public class Domaci {
 
     @OneToMany(mappedBy = "domaci")
     private List<UradjenDomaci> uradjeniDomaci;
+
+    @ManyToOne
+    private Predavanje predavanje;
 }
