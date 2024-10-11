@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
+import java.util.Set;
 
 @Entity
 @Data
@@ -23,7 +23,7 @@ public class Student {
     @ManyToOne
     private Grupa grupa;
     @OneToMany(mappedBy = "student")
-    private List<UradjenDomaci> uradjeniDomaci;
+    private Set<UradjenDomaci> uradjeniDomaci;
     @OneToMany(mappedBy = "student")
-    private List<Aktivnost> aktivnosti;
+    private Set<Aktivnost> aktivnosti;
 }
