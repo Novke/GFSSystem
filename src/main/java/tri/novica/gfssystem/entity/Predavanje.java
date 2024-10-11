@@ -24,6 +24,7 @@ public class Predavanje {
     @ManyToOne
     private Grupa grupa;
 
+    @Column(unique = true)
     private int rb;
     private LocalDate datum;
     private String tema;
