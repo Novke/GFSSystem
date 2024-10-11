@@ -10,7 +10,7 @@ import tri.novica.gfssystem.service.PredmetService;
 import java.util.List;
 
 @RestController
-@RequestMapping("/predmet")
+@RequestMapping("/predmeti")
 @RequiredArgsConstructor
 public class PredmetRest {
 
