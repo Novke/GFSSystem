@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
 import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
+import tri.novica.gfssystem.dto.predavanje.UpdatePredavanjeCmd;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
@@ -51,6 +52,17 @@ public class PredavanjeService {
 
         return mapper.map(predavanjeRepository.save(predavanje), PredavanjeDetails.class);
     }
+
+    public PredavanjeDetails updatePredavanje(Long id, UpdatePredavanjeCmd cmd) {
+        Predavanje predavanje = predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+
+        mapper.map(cmd, predavanje);
+
+        Predavanje updatedPredavanje = predavanjeRepository.save(predavanje);
+        return mapper.map(updatedPredavanje, PredavanjeDetails.class);
+    }
+
 
     public PredavanjeDetails dodajPrisutnog(Long predavanjeId, Long studentId) {
         Predavanje predavanje = predavanjeRepository.findById(predavanjeId)

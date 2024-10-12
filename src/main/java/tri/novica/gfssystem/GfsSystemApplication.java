@@ -16,7 +16,10 @@ public class GfsSystemApplication {
     @Bean
     ModelMapper mapper(){
         ModelMapper mapper = new ModelMapper();
-        mapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
+        mapper.getConfiguration()
+                .setPropertyCondition(context -> context.getSource() != null)
+                .setSkipNullEnabled(true)
+                .setMatchingStrategy(MatchingStrategies.STRICT);
         return mapper;
     }
 

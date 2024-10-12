@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
 import tri.novica.gfssystem.dto.predavanje.PredavanjeStudentId;
 import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
+import tri.novica.gfssystem.dto.predavanje.UpdatePredavanjeCmd;
 import tri.novica.gfssystem.service.PredavanjeService;
 
 @RestController
@@ -27,6 +28,13 @@ public class PredavanjeRest {
     @ResponseStatus(HttpStatus.CREATED)
     public PredavanjeDetails start(@RequestBody StartPredavanjeCmd startPredavanjeCmd){
         return predavanjeService.startPredavanje(startPredavanjeCmd);
+    }
+
+    @PutMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails update(@PathVariable Long id, @RequestBody UpdatePredavanjeCmd updatePredavanjeCmd){
+        return predavanjeService.updatePredavanje(id, updatePredavanjeCmd);
     }
 
 
