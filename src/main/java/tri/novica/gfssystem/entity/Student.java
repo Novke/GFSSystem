@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Objects;
 import java.util.Set;
 
 @Entity
@@ -26,4 +27,18 @@ public class Student {
     private Set<UradjenDomaci> uradjeniDomaci;
     @OneToMany(mappedBy = "student")
     private Set<Aktivnost> aktivnosti;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Student student = (Student) o;
+        if (id != null && student.id != null) return id.equals(student.id);
+        return Objects.equals(indeks, student.indeks);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, indeks);
+    }
 }

@@ -3,7 +3,8 @@ package tri.novica.gfssystem.rest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import tri.novica.gfssystem.dto.predavanje.PredavanjeInfo;
+import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
+import tri.novica.gfssystem.dto.predavanje.PredavanjeStudentId;
 import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
 import tri.novica.gfssystem.service.PredavanjeService;
 
@@ -17,8 +18,16 @@ public class PredavanjeRest {
     @PostMapping("/start")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public PredavanjeInfo start(@RequestBody StartPredavanjeCmd startPredavanjeCmd){
+    public PredavanjeDetails start(@RequestBody StartPredavanjeCmd startPredavanjeCmd){
         return predavanjeService.startPredavanje(startPredavanjeCmd);
+    }
+
+
+    @PatchMapping("/{id}/prisustvo")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails dodajPrisutnog(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+        return predavanjeService.dodajPrisutnog(id, studentId.getId());
     }
 
 }

@@ -4,17 +4,17 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import tri.novica.gfssystem.dto.predavanje.PredavanjeInfo;
+import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
 import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
-import tri.novica.gfssystem.entity.Grupa;
-import tri.novica.gfssystem.entity.Predavanje;
-import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.StudentRepository;
 
 import java.time.LocalDate;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -23,9 +23,10 @@ public class PredavanjeService {
     private final PredavanjeRepository predavanjeRepository;
     private final PredmetRepository predmetRepository;
     private final GrupaRepository grupaRepository;
+    private final StudentRepository studentRepository;
     private final ModelMapper mapper;
 
-    public PredavanjeInfo startPredavanje(StartPredavanjeCmd startPredavanjeCmd) {
+    public PredavanjeDetails startPredavanje(StartPredavanjeCmd startPredavanjeCmd) {
 
         Long predmetId = startPredavanjeCmd.getPredmetId();
         Long grupaId = startPredavanjeCmd.getGrupaId();
@@ -45,6 +46,27 @@ public class PredavanjeService {
         else redniBroj++;
         predavanje.setRb(redniBroj);
 
-        return mapper.map(predavanjeRepository.save(predavanje), PredavanjeInfo.class);
+        return mapper.map(predavanjeRepository.save(predavanje), PredavanjeDetails.class);
+    }
+
+    public PredavanjeDetails dodajPrisutnog(Long predavanjeId, Long studentId) {
+        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, 404));
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, 404));
+
+
+
+        Aktivnost aktivnost = new Aktivnost(predavanje, student, TipAktivnosti.PRISUSTVO);
+        Set<Aktivnost> aktivnosti = predavanje.getAktivnosti();
+
+        aktivnosti.forEach(a -> {
+            if (a.equals(aktivnost)) throw new SystemException("Prisustvo studenta je vec zabelezeno!", HttpStatus.BAD_REQUEST.value());
+        });
+
+        aktivnosti.add(aktivnost);
+
+        Predavanje saved = predavanjeRepository.save(predavanje);
+        return mapper.map(saved, PredavanjeDetails.class);
     }
 }
