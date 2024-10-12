@@ -32,7 +32,7 @@ public class StudentService {
 
     public StudentDetails findById(Long id) {
         Student student = studentRepository.findByIdFetchDetails(id)
-                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + id, HttpStatus.NOT_FOUND.value()));
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
         return mapper.map(student, StudentDetails.class);
     }
@@ -51,7 +51,7 @@ public class StudentService {
 
     private Grupa findGrupaOrThrow(Long grupaId) {
         Grupa grupa = grupaRepository.findById(grupaId)
-                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + grupaId, HttpStatus.NOT_FOUND.value()));
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + grupaId, HttpStatus.NOT_FOUND));
         return grupa;
     }
 

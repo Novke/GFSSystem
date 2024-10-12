@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.exceptions;
 
 import lombok.Getter;
+import org.springframework.http.HttpStatus;
 
 @Getter
 public class SystemException extends RuntimeException{
@@ -14,6 +15,11 @@ public class SystemException extends RuntimeException{
     public SystemException(String message, Integer code) {
         super(message);
         this.code = code;
+    }
+
+    public SystemException(String message, HttpStatus status){
+        super(message);
+        this.code=status.value();
     }
 
     public SystemException(String message, Throwable cause, Integer code) {

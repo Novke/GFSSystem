@@ -32,9 +32,9 @@ public class PredavanjeService {
         Long grupaId = startPredavanjeCmd.getGrupaId();
 
         Predmet predmet = predmetRepository.findById(predmetId)
-                .orElseThrow(() -> new SystemException("Predmet nije nadjen! ID = " + predmetId, HttpStatus.NOT_FOUND.value()));
+                .orElseThrow(() -> new SystemException("Predmet nije nadjen! ID = " + predmetId, HttpStatus.NOT_FOUND));
         Grupa grupa = grupaRepository.findById(grupaId)
-                .orElseThrow(() -> new SystemException("Grupa nije pronadjena! ID = " + grupaId, HttpStatus.NOT_FOUND.value()));
+                .orElseThrow(() -> new SystemException("Grupa nije pronadjena! ID = " + grupaId, HttpStatus.NOT_FOUND));
 
         Predavanje predavanje = new Predavanje();
         predavanje.setPredmet(predmet);
@@ -51,9 +51,9 @@ public class PredavanjeService {
 
     public PredavanjeDetails dodajPrisutnog(Long predavanjeId, Long studentId) {
         Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
-                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, 404));
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, 404));
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
 
 
 
@@ -61,7 +61,7 @@ public class PredavanjeService {
         Set<Aktivnost> aktivnosti = predavanje.getAktivnosti();
 
         aktivnosti.forEach(a -> {
-            if (a.equals(aktivnost)) throw new SystemException("Prisustvo studenta je vec zabelezeno!", HttpStatus.BAD_REQUEST.value());
+            if (a.equals(aktivnost)) throw new SystemException("Prisustvo studenta je vec zabelezeno!", HttpStatus.BAD_REQUEST);
         });
 
         aktivnosti.add(aktivnost);
