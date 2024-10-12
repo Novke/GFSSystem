@@ -26,6 +26,11 @@ public class PredavanjeService {
     private final StudentRepository studentRepository;
     private final ModelMapper mapper;
 
+    public PredavanjeDetails findById(Long id) {
+        return mapper.map(predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND)),
+                PredavanjeDetails.class);
+    }
     public PredavanjeDetails startPredavanje(StartPredavanjeCmd startPredavanjeCmd) {
 
         Long predmetId = startPredavanjeCmd.getPredmetId();

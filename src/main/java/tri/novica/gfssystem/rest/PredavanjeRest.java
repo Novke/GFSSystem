@@ -15,6 +15,13 @@ public class PredavanjeRest {
 
     private final PredavanjeService predavanjeService;
 
+    @GetMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails view(@PathVariable Long id){
+        return predavanjeService.findById(id);
+    }
+
     @PostMapping("/start")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
