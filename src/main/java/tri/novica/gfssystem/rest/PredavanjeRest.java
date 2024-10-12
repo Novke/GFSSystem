@@ -30,4 +30,12 @@ public class PredavanjeRest {
         return predavanjeService.dodajPrisutnog(id, studentId.getId());
     }
 
+
+
+    @PatchMapping("/{id}/zadatak")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails dodajZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+        return predavanjeService.dodajZadatak(id, studentId.getId());
+    }
 }

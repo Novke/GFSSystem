@@ -45,7 +45,7 @@ public class Aktivnost {
         if (o == null || getClass() != o.getClass()) return false;
         Aktivnost aktivnost = (Aktivnost) o;
         if (id != null && aktivnost.id != null) return id.equals(aktivnost.id);
-        return Objects.equals(student, aktivnost.student) && Objects.equals(predavanje, aktivnost.predavanje) && tip == aktivnost.tip;
+        return Objects.equals(student, aktivnost.student) && Objects.equals(predavanje, aktivnost.predavanje)/* && tip == aktivnost.tip*/;
     }
 
     @Override
