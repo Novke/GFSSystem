@@ -8,10 +8,7 @@ import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
 import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
-import tri.novica.gfssystem.repository.GrupaRepository;
-import tri.novica.gfssystem.repository.PredavanjeRepository;
-import tri.novica.gfssystem.repository.PredmetRepository;
-import tri.novica.gfssystem.repository.StudentRepository;
+import tri.novica.gfssystem.repository.*;
 
 import java.time.LocalDate;
 import java.util.Set;
@@ -24,6 +21,7 @@ public class PredavanjeService {
     private final PredmetRepository predmetRepository;
     private final GrupaRepository grupaRepository;
     private final StudentRepository studentRepository;
+    private final AktivnostRepository aktivnostRepository;
     private final ModelMapper mapper;
 
     public PredavanjeDetails findById(Long id) {
@@ -76,6 +74,25 @@ public class PredavanjeService {
         return mapper.map(saved, PredavanjeDetails.class);
     }
 
+    public PredavanjeDetails skloniPrisutnog(Long predavanjeId, Long studentId) {
+        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        Aktivnost aktivnost = predavanje.getAktivnosti()
+                .stream()
+                .filter(a -> (a.getStudent().equals(student)))
+                .findFirst()
+                .orElseThrow(() -> new SystemException("Student nije dodat na predavanje!", HttpStatus.BAD_REQUEST));
+
+        predavanje.getAktivnosti().remove(aktivnost);
+        aktivnostRepository.delete(aktivnost);
+
+        Predavanje saved = predavanjeRepository.save(predavanje);
+        return mapper.map(saved, PredavanjeDetails.class);
+    }
+
     public PredavanjeDetails dodajZadatak(Long predavanjeId, Long studentId) {
         Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
@@ -95,4 +112,5 @@ public class PredavanjeService {
         Predavanje saved = predavanjeRepository.save(predavanje);
         return mapper.map(saved, PredavanjeDetails.class);
     }
+
 }

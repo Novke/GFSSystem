@@ -37,6 +37,12 @@ public class PredavanjeRest {
         return predavanjeService.dodajPrisutnog(id, studentId.getId());
     }
 
+    @DeleteMapping("/{id}/prisustvo")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails skloniPrisutnog(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+        return predavanjeService.skloniPrisutnog(id, studentId.getId());
+    }
 
 
     @PatchMapping("/{id}/zadatak")

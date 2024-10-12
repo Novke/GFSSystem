@@ -34,7 +34,7 @@ public class Predavanje {
 
     @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private Set<Domaci> domaci = new HashSet<>();
-    @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE, CascadeType.DETACH})
     private Set<Aktivnost> aktivnosti = new HashSet<>();
 
     @Override
