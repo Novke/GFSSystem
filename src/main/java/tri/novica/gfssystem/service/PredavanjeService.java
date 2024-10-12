@@ -113,4 +113,21 @@ public class PredavanjeService {
         return mapper.map(saved, PredavanjeDetails.class);
     }
 
+    public PredavanjeDetails skloniZadatak(Long predavanjeId, Long studentId) {
+        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        Aktivnost aktivnost = predavanje.getAktivnosti()
+                .stream()
+                .filter(a -> (a.getStudent().equals(student)))
+                .findFirst()
+                .orElseThrow(() -> new SystemException("Student nije dodat na predavanje!", HttpStatus.BAD_REQUEST));
+
+        aktivnost.setTip(TipAktivnosti.PRISUSTVO);
+
+        Predavanje saved = predavanjeRepository.save(predavanje);
+        return mapper.map(saved, PredavanjeDetails.class);
+    }
 }

@@ -51,4 +51,11 @@ public class PredavanjeRest {
     public PredavanjeDetails dodajZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
         return predavanjeService.dodajZadatak(id, studentId.getId());
     }
+
+    @DeleteMapping("/{id}/zadatak")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails skloniZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+        return predavanjeService.skloniZadatak(id, studentId.getId());
+    }
 }
