@@ -58,4 +58,11 @@ public class PredavanjeRest {
     public PredavanjeDetails skloniZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
         return predavanjeService.skloniZadatak(id, studentId.getId());
     }
+
+    @PatchMapping("/{id}/zvezdica")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails dodajZadatakSaZvezdicom(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+        return predavanjeService.dodajZadatakSaZvezdicom(id, studentId.getId());
+    }
 }
