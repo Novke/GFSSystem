@@ -82,6 +82,9 @@ public class PredavanjeService {
         aktivnosti.add(aktivnost);
         predavanje.setAktivnosti(aktivnosti);
 
+        //POSECENOST++
+        predavanje.uvecajPOsecenost();
+
         Predavanje saved = predavanjeRepository.save(predavanje);
         return mapper.map(saved, PredavanjeDetails.class);
     }
@@ -100,6 +103,8 @@ public class PredavanjeService {
 
         predavanje.getAktivnosti().remove(aktivnost);
         aktivnostRepository.delete(aktivnost);
+        //POSECENOST--
+        predavanje.umanjiPosecenost();
 
         Predavanje saved = predavanjeRepository.save(predavanje);
         return mapper.map(saved, PredavanjeDetails.class);

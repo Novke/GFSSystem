@@ -3,7 +3,9 @@ package tri.novica.gfssystem.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
+import tri.novica.gfssystem.exceptions.SystemException;
 
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -49,5 +51,18 @@ public class Predavanje {
     @Override
     public int hashCode() {
         return Objects.hash(id);
+    }
+
+    public void umanjiPosecenost() {
+        if (posecenost == 0) throw new SystemException("POSECENOST NE MOZE BITI NEGATIVNA! ID = " + id, HttpStatus.BAD_REQUEST);
+        posecenost--;
+    }
+
+    public void uvecajPOsecenost(){
+        posecenost++;
+    }
+
+    public void izracunajPOsecenost(){
+        posecenost = aktivnosti == null ? 0 : aktivnosti.size();
     }
 }
