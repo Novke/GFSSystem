@@ -45,11 +45,11 @@ public class PredavanjeRest {
         return predavanjeService.dodajPrisutnog(id, studentId.getId());
     }
 
-    @DeleteMapping("/{id}/prisustvo")
+    @DeleteMapping("/{pId}/prisustvo/{sId}")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public PredavanjeDetails skloniPrisutnog(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
-        return predavanjeService.skloniPrisutnog(id, studentId.getId());
+    public PredavanjeDetails skloniPrisutnog(@PathVariable Long pId, @PathVariable Long sId){
+        return predavanjeService.skloniPrisutnog(pId, sId);
     }
 
 
@@ -60,11 +60,11 @@ public class PredavanjeRest {
         return predavanjeService.dodajZadatak(id, studentId.getId());
     }
 
-    @DeleteMapping("/{id}/zadatak")
+    @DeleteMapping("/{pId}/zadatak/{sId}")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public PredavanjeDetails skloniZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
-        return predavanjeService.skloniZadatak(id, studentId.getId());
+    public PredavanjeDetails skloniZadatak(@PathVariable Long pId, @PathVariable Long sId){
+        return predavanjeService.skloniZadatak(pId, sId);
     }
 
     @PatchMapping("/{id}/zvezdica")
