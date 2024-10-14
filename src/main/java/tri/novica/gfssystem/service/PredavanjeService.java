@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class PredavanjeService {
 
     private final PredavanjeRepository predavanjeRepository;
