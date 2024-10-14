@@ -14,7 +14,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-@Configuration
+//NEMA POTREBE JER ANGULAR SALJE ISTI DEFAULT KAO STO SPRING OCEKUJE
+//@Configuration
 public class JacksonConfigs {
 
     @Bean
@@ -26,16 +27,16 @@ public class JacksonConfigs {
         JavaTimeModule javaTimeModule = new JavaTimeModule();
 
         //LOCALDATE
-        javaTimeModule.addSerializer(LocalDate.class,
-                new LocalDateSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
-        javaTimeModule.addDeserializer(LocalDate.class,
-                new LocalDateDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+//        javaTimeModule.addSerializer(LocalDate.class,
+//                new LocalDateSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+//        javaTimeModule.addDeserializer(LocalDate.class,
+//                new LocalDateDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
 
         //LOCALDATETIME
-        javaTimeModule.addSerializer(LocalDateTime.class,
-                new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
-        javaTimeModule.addDeserializer(LocalDateTime.class,
-                new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
+//        javaTimeModule.addSerializer(LocalDateTime.class,
+//                new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
+//        javaTimeModule.addDeserializer(LocalDateTime.class,
+//                new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
 
         builder.modulesToInstall(javaTimeModule);
 

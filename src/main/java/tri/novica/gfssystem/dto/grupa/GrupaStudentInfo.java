@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class GrupaStudentInfo {
 
+    private Long id;
     private String ime;
     private String prezime;
     private String indeks;

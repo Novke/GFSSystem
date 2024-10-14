@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 public class PredavanjeGrupaInfo {
+    private Long id;
     private String naziv;
     private Integer godinaUpisa;
 }

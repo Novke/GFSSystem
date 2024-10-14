@@ -32,7 +32,7 @@ public class Predavanje {
     private int rb;
     private LocalDate datum;
     private String tema;
-    private Integer posecenost;
+    private Integer posecenost = 0;
 
     @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private Set<Domaci> domaci = new HashSet<>();
@@ -54,7 +54,11 @@ public class Predavanje {
     }
 
     public void umanjiPosecenost() {
-        if (posecenost == 0) throw new SystemException("POSECENOST NE MOZE BITI NEGATIVNA! ID = " + id, HttpStatus.BAD_REQUEST);
+//        if (posecenost == 0) throw new SystemException("POSECENOST NE MOZE BITI NEGATIVNA! ID = " + id, HttpStatus.BAD_REQUEST);
+        if (posecenost <= 0) {
+            posecenost=0;
+            return;
+        }
         posecenost--;
     }
 
