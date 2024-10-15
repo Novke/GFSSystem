@@ -65,6 +65,16 @@ public class PredavanjeService {
         return mapper.map(updatedPredavanje, PredavanjeDetails.class);
     }
 
+    public PredavanjeDetails updatePosecenost(Long id){
+        Predavanje predavanje = predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+
+        predavanje.setPosecenost(predavanje.getAktivnosti().size());
+
+        Predavanje updatedPredavanje = predavanjeRepository.save(predavanje);
+        return mapper.map(updatedPredavanje, PredavanjeDetails.class);
+    }
+
 
     public PredavanjeDetails dodajPrisutnog(Long predavanjeId, Long studentId) {
         Predavanje predavanje = predavanjeRepository.findById(predavanjeId)

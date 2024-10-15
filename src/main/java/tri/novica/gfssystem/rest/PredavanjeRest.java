@@ -37,6 +37,13 @@ public class PredavanjeRest {
         return predavanjeService.updatePredavanje(id, updatePredavanjeCmd);
     }
 
+    @PutMapping("/{id}/posecenost")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails updatePosecenost(@PathVariable Long id){
+        return predavanjeService.updatePosecenost(id);
+    }
+
 
     @PatchMapping("/{id}/prisustvo")
     @ResponseBody
