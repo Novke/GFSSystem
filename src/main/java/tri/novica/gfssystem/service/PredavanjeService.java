@@ -5,9 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
-import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
-import tri.novica.gfssystem.dto.predavanje.UpdatePredavanjeCmd;
+import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
+import tri.novica.gfssystem.dto.predavanje.*;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
@@ -176,4 +175,11 @@ public class PredavanjeService {
         return mapper.map(saved, PredavanjeDetails.class);
     }
 
+    public PredavanjeAktivnostInfo updateAktivnostNapomenu(Long id, UpdateAktivnostNapomenaCmd cmd) {
+        Aktivnost aktivnost = aktivnostRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Aktivnost ne postoji!", HttpStatus.NOT_FOUND));
+
+        mapper.map(cmd, aktivnost);
+        return mapper.map(aktivnostRepository.save(aktivnost), PredavanjeAktivnostInfo.class);
+    }
 }

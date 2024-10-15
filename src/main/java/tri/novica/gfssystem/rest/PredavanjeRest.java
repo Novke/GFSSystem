@@ -3,10 +3,8 @@ package tri.novica.gfssystem.rest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import tri.novica.gfssystem.dto.predavanje.PredavanjeDetails;
-import tri.novica.gfssystem.dto.predavanje.PredavanjeStudentId;
-import tri.novica.gfssystem.dto.predavanje.StartPredavanjeCmd;
-import tri.novica.gfssystem.dto.predavanje.UpdatePredavanjeCmd;
+import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
+import tri.novica.gfssystem.dto.predavanje.*;
 import tri.novica.gfssystem.service.PredavanjeService;
 
 @RestController
@@ -79,5 +77,12 @@ public class PredavanjeRest {
     @ResponseStatus(HttpStatus.OK)
     public PredavanjeDetails dodajZadatakSaZvezdicom(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
         return predavanjeService.dodajZadatakSaZvezdicom(id, studentId.getId());
+    }
+
+    @PutMapping("/aktivnost/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeAktivnostInfo updateNapomenu(@PathVariable Long id, @RequestBody UpdateAktivnostNapomenaCmd cmd){
+        return predavanjeService.updateAktivnostNapomenu(id, cmd);
     }
 }
