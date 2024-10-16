@@ -10,7 +10,9 @@ import tri.novica.gfssystem.dto.grupa.GrupaInfo;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
+import tri.novica.gfssystem.utility.Utility;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -36,6 +38,11 @@ public class GrupaService {
     public GrupaDetails findById(Long id) {
         //moze i findById jer ce zbog mappera pozvati getStudenti ali je ovako bolje zbog efikasnijeg upita
         Grupa grupa = grupaRepository.findByIdFetchStudents(id).orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+
+        //sortiraj po indeksu
+        grupa.getStudenti().sort(
+                Comparator.comparingInt(student ->
+                        Utility.index2int(student.getIndeks())));
 
         return mapper.map(grupa, GrupaDetails.class);
     }
