@@ -22,5 +22,7 @@ public class Grupa {
     private List<Student> studenti;
     @OneToMany(mappedBy = "grupa")
     private List<Predavanje> predavanja;
+    @OneToMany(mappedBy = "grupa")
+    private List<Domaci> domaci;
 
 }

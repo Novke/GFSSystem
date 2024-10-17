@@ -31,4 +31,7 @@ public class Domaci {
 
     @ManyToOne
     private Predavanje predavanje;
+
+    @ManyToOne
+    private Grupa grupa;
 }
