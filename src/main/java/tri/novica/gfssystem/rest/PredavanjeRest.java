@@ -7,6 +7,8 @@ import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
 import tri.novica.gfssystem.dto.predavanje.*;
 import tri.novica.gfssystem.service.PredavanjeService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/predavanja")
 @RequiredArgsConstructor
@@ -84,5 +86,12 @@ public class PredavanjeRest {
     @ResponseStatus(HttpStatus.OK)
     public PredavanjeAktivnostInfo updateNapomenu(@PathVariable Long id, @RequestBody UpdateAktivnostNapomenaCmd cmd){
         return predavanjeService.updateAktivnostNapomenu(id, cmd);
+    }
+
+    @GetMapping("/search")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<PredavanjeInfo> search(@RequestParam Long predmet, @RequestParam Long grupa){
+        return predavanjeService.pretraziPredavanja(predmet, grupa);
     }
 }

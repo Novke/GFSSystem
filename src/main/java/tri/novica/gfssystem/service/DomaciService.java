@@ -15,6 +15,8 @@ import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
 
+import java.time.LocalDate;
+
 @Service
 @RequiredArgsConstructor
 public class DomaciService {
@@ -43,6 +45,7 @@ public class DomaciService {
         domaci.setPredavanje(predavanje);
         domaci.setPredmet(predmet);
         domaci.setGrupa(grupa);
+        domaci.setDatum(LocalDate.now());
 
         return mapper.map(domaciRepository.save(domaci), DomaciInfo.class);
     }

@@ -12,6 +12,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -181,5 +182,12 @@ public class PredavanjeService {
 
         mapper.map(cmd, aktivnost);
         return mapper.map(aktivnostRepository.save(aktivnost), PredavanjeAktivnostInfo.class);
+    }
+
+    public List<PredavanjeInfo> pretraziPredavanja(Long predmetId, Long grupaId) {
+        return predavanjeRepository.findAllByGrupaIdAndPredmetId(grupaId, predmetId)
+                .stream().map(
+                        predavanje -> mapper.map(predavanje, PredavanjeInfo.class)
+                ).toList();
     }
 }
