@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.domaci.DodajDomaciCmd;
+import tri.novica.gfssystem.dto.domaci.DomaciDetails;
 import tri.novica.gfssystem.dto.domaci.DomaciInfo;
 import tri.novica.gfssystem.service.DomaciService;
 
@@ -19,5 +20,12 @@ public class DomaciRest {
     @ResponseStatus(HttpStatus.CREATED)
     public DomaciInfo dodajDomaci(@RequestBody DodajDomaciCmd cmd){
         return domaciService.dodajDomaci(cmd);
+    }
+
+    @GetMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public DomaciDetails view(@PathVariable Long id){
+        return domaciService.getDomaci(id);
     }
 }

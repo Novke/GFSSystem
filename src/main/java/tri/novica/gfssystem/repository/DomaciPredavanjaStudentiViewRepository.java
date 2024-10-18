@@ -7,7 +7,7 @@ import tri.novica.gfssystem.entity.view.DomaciPredavanjaStudentiView;
 import java.util.List;
 
 @Repository
-public interface DomaciPredavanjaStudentViewRepository extends JpaRepository<DomaciPredavanjaStudentiView, Long> {
+public interface DomaciPredavanjaStudentiViewRepository extends JpaRepository<DomaciPredavanjaStudentiView, Long> {
 
     List<DomaciPredavanjaStudentiView> findAllByDomaciId(Long id);
 }

@@ -4,18 +4,19 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.domaci.DodajDomaciCmd;
+import tri.novica.gfssystem.dto.domaci.DomaciDetails;
 import tri.novica.gfssystem.dto.domaci.DomaciInfo;
+import tri.novica.gfssystem.dto.domaci.DomaciStudentiInfo;
 import tri.novica.gfssystem.entity.Domaci;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.view.DomaciPredavanjaStudentiView;
 import tri.novica.gfssystem.exceptions.SystemException;
-import tri.novica.gfssystem.repository.DomaciRepository;
-import tri.novica.gfssystem.repository.GrupaRepository;
-import tri.novica.gfssystem.repository.PredavanjeRepository;
-import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.*;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +26,7 @@ public class DomaciService {
     private final PredavanjeRepository predavanjeRepository;
     private final GrupaRepository grupaRepository;
     private final PredmetRepository predmetRepository;
+    private final DomaciPredavanjaStudentiViewRepository domaciPredavanjaStudentiViewRepository;
     private final ModelMapper mapper;
 
 
@@ -48,5 +50,19 @@ public class DomaciService {
         domaci.setDatum(LocalDate.now());
 
         return mapper.map(domaciRepository.save(domaci), DomaciInfo.class);
+    }
+
+    public DomaciDetails getDomaci(Long id) {
+        Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+
+        List<DomaciPredavanjaStudentiView> studentiViews = domaciPredavanjaStudentiViewRepository.findAllByDomaciId(id);
+        DomaciDetails domaciDetails = mapper.map(domaci, DomaciDetails.class);
+
+        studentiViews.forEach(st ->
+            domaciDetails.getStudenti().add(mapper.map(st, DomaciStudentiInfo.class))
+        );
+
+        return domaciDetails;
     }
 }
