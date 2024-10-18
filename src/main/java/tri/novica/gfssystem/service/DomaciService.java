@@ -11,7 +11,7 @@ import tri.novica.gfssystem.entity.Domaci;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
-import tri.novica.gfssystem.entity.view.DomaciPredavanjaStudentiView;
+import tri.novica.gfssystem.entity.view.DomaciEvidentiranjeView;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 
@@ -26,7 +26,7 @@ public class DomaciService {
     private final PredavanjeRepository predavanjeRepository;
     private final GrupaRepository grupaRepository;
     private final PredmetRepository predmetRepository;
-    private final DomaciPredavanjaStudentiViewRepository domaciPredavanjaStudentiViewRepository;
+    private final DomaciEvidentiranjeRepository domaciEvidentiranjeRepository;
     private final ModelMapper mapper;
 
 
@@ -56,7 +56,7 @@ public class DomaciService {
         Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(id)
                 .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
 
-        List<DomaciPredavanjaStudentiView> studentiViews = domaciPredavanjaStudentiViewRepository.findAllByDomaciId(id);
+        List<DomaciEvidentiranjeView> studentiViews = domaciEvidentiranjeRepository.findAllByDomaciId(id);
         DomaciDetails domaciDetails = mapper.map(domaci, DomaciDetails.class);
 
         studentiViews.forEach(st ->

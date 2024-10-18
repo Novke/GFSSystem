@@ -14,5 +14,9 @@ public class DomaciStudentiInfo {
     private String indeks;
     private Integer godina;
     private TipAktivnosti tip;
-    private String napomene;
+    private String predavanjaNapomene;
+    private Long uradjenDomaciId;
+    private Integer bodovi;
+    private String uradjenDomaciNapomene;
+    private Boolean prepisivanje;
 }

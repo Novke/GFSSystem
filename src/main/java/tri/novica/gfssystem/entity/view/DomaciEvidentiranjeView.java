@@ -9,9 +9,9 @@ import tri.novica.gfssystem.entity.TipAktivnosti;
 @Data
 @NoArgsConstructor
 @Entity
-@Table(name = "domacipredavanjastudentiview")
+@Table(name = "domacievidentiranjeview") //MORA MALIM SLOVIMA!!!
 @Immutable
-public class DomaciPredavanjaStudentiView {
+public class DomaciEvidentiranjeView {
     @Id
     @Column(name = "id")
     private Long studentId;
@@ -28,6 +28,14 @@ public class DomaciPredavanjaStudentiView {
     @Enumerated(EnumType.STRING)
     @Column(name = "tip")
     private TipAktivnosti tip;
-    @Column(name = "napomene")
-    private String napomene;
+    @Column(name = "predavanja_napomene")
+    private String predavanjaNapomene;
+    @Column(name = "uradjen_domaci_id")
+    private Long uradjenDomaciId;
+    @Column(name = "bodovi")
+    private Integer bodovi;
+    @Column(name = "uradjen_domaci_napomene")
+    private String uradjenDomaciNapomene;
+    @Column(name = "prepisivanje")
+    private Boolean prepisivanje;
 }
