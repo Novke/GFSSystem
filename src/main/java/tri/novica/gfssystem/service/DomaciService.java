@@ -11,6 +11,7 @@ import tri.novica.gfssystem.repository.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -67,11 +68,20 @@ public class DomaciService {
         Student student = studentRepository.findById(cmd.getStudentId())
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + cmd.getStudentId()));
 
-        UradjenDomaci entity = mapper.map(cmd, UradjenDomaci.class);
-        entity.setStudent(student);
-        entity.setDomaci(domaci);
 
-        domaci.getUradjeniDomaci().add(entity);
+        Optional<UradjenDomaci> existing = domaci.getUradjeniDomaci().stream()
+                .filter(ud -> ud.getStudent().getId().equals(student.getId()))
+                        .findFirst();
+
+        if (existing.isPresent()){
+            mapper.map(cmd, existing.get());
+        } else {
+            UradjenDomaci entity = mapper.map(cmd, UradjenDomaci.class);
+            entity.setStudent(student);
+            entity.setDomaci(domaci);
+            domaci.getUradjeniDomaci().add(entity);
+        }
+
         domaciRepository.save(domaci);
 
         return getDomaci(cmd.getDomaciId());
