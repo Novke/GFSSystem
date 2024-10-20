@@ -6,7 +6,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.lang.NonNull;
 
 import java.time.LocalDate;
-import java.util.List;
+import java.util.Set;
 
 @Entity
 @Data
@@ -27,7 +27,7 @@ public class Domaci {
     private LocalDate datum;
 
     @OneToMany(mappedBy = "domaci", cascade = CascadeType.ALL)
-    private List<UradjenDomaci> uradjeniDomaci;
+    private Set<UradjenDomaci> uradjeniDomaci;
 
     @ManyToOne
     private Predavanje predavanje;

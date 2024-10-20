@@ -38,4 +38,6 @@ public class DomaciEvidentiranjeView {
     private String uradjenDomaciNapomene;
     @Column(name = "prepisivanje")
     private Boolean prepisivanje;
+    @Column(name = "oslobodjen")
+    private Boolean oslobodjen;
 }

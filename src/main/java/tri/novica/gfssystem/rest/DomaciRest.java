@@ -37,4 +37,11 @@ public class DomaciRest {
     public DomaciDetails dodajEvidentaciju(@RequestBody @Valid CreateUradjenDomaciCmd cmd){
         return domaciService.dodajEvidentaciju(cmd);
     }
+
+    @PostMapping("/{id}/oslobodi")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public DomaciDetails oslobodi(@PathVariable Long id){
+        return domaciService.oslobodi(id);
+    }
 }

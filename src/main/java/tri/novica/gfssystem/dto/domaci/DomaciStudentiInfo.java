@@ -19,4 +19,5 @@ public class DomaciStudentiInfo {
     private Integer bodovi;
     private String uradjenDomaciNapomene;
     private Boolean prepisivanje;
+    private Boolean oslobodjen;
 }

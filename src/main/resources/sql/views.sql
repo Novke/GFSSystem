@@ -26,7 +26,8 @@ SELECT s.id            AS id,
        ud.id           AS uradjen_domaci_id,
        ud.bodovi       AS bodovi,
        ud.napomene     AS uradjen_domaci_napomene,
-       ud.prepisivanje AS prepisivanje
+       ud.prepisivanje AS prepisivanje,
+       ud.oslobodjen   AS oslobodjen
 FROM domaci d
          JOIN grupe g ON d.grupa_id = g.id
          JOIN studenti s ON s.grupa_id = g.id

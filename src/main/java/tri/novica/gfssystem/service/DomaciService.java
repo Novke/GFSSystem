@@ -10,8 +10,10 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +36,7 @@ public class DomaciService {
 
         Long predavanjeId = cmd.getPredavanjeId();
         Predavanje predavanje = null;
-        if (predavanjeId != null && predavanjeId != 0){
+        if (predavanjeId != null && predavanjeId != 0) {
             predavanje = predavanjeRepository.findById(predavanjeId)
                     .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, 404));
         }
@@ -56,7 +58,7 @@ public class DomaciService {
         DomaciDetails domaciDetails = mapper.map(domaci, DomaciDetails.class);
 
         studentiViews.forEach(st ->
-            domaciDetails.getStudenti().add(mapper.map(st, DomaciStudentiInfo.class))
+                domaciDetails.getStudenti().add(mapper.map(st, DomaciStudentiInfo.class))
         );
 
         return domaciDetails;
@@ -71,9 +73,9 @@ public class DomaciService {
 
         Optional<UradjenDomaci> existing = domaci.getUradjeniDomaci().stream()
                 .filter(ud -> ud.getStudent().getId().equals(student.getId()))
-                        .findFirst();
+                .findFirst();
 
-        if (existing.isPresent()){
+        if (existing.isPresent()) {
             mapper.map(cmd, existing.get());
         } else {
             UradjenDomaci entity = mapper.map(cmd, UradjenDomaci.class);
@@ -85,5 +87,36 @@ public class DomaciService {
         domaciRepository.save(domaci);
 
         return getDomaci(cmd.getDomaciId());
+    }
+
+    public DomaciDetails oslobodi(Long id) {
+        Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+
+        Set<UradjenDomaci> uradjeniDomaci = new HashSet<>();
+        Set<UradjenDomaci> existing = domaci.getUradjeniDomaci();
+
+        domaci.getPredavanje().getAktivnosti()
+                .stream()
+                .filter(a -> a != null && a.getTip() != null && a.getTip() != TipAktivnosti.PRISUSTVO)
+                .forEach(a -> {
+                    Optional<UradjenDomaci> optional = existing.stream().filter(ud ->
+                            a.getStudent().getId().equals(ud.getStudent().getId())
+                    ).findFirst();
+
+                    if (optional.isPresent()) {
+                        UradjenDomaci uradjenDomaci = optional.get();
+                        uradjenDomaci.setBodovi(10);
+                        uradjenDomaci.setOslobodjen(true);
+                        uradjeniDomaci.add(uradjenDomaci);
+                    } else {
+                        uradjeniDomaci.add(UradjenDomaci.oslobodjenDomaci(a.getStudent(), domaci));
+                    }
+                });
+
+        domaci.setUradjeniDomaci(uradjeniDomaci);
+        domaciRepository.save(domaci);
+
+        return getDomaci(id);
     }
 }
