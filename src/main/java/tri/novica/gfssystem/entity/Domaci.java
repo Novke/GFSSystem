@@ -26,7 +26,7 @@ public class Domaci {
     private String text;
     private LocalDate datum;
 
-    @OneToMany(mappedBy = "domaci")
+    @OneToMany(mappedBy = "domaci", cascade = CascadeType.ALL)
     private List<UradjenDomaci> uradjeniDomaci;
 
     @ManyToOne

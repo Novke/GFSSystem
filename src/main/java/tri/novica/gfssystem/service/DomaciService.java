@@ -3,14 +3,8 @@ package tri.novica.gfssystem.service;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
-import tri.novica.gfssystem.dto.domaci.DodajDomaciCmd;
-import tri.novica.gfssystem.dto.domaci.DomaciDetails;
-import tri.novica.gfssystem.dto.domaci.DomaciInfo;
-import tri.novica.gfssystem.dto.domaci.DomaciStudentiInfo;
-import tri.novica.gfssystem.entity.Domaci;
-import tri.novica.gfssystem.entity.Grupa;
-import tri.novica.gfssystem.entity.Predavanje;
-import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.dto.domaci.*;
+import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.entity.view.DomaciEvidentiranjeView;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
@@ -25,6 +19,7 @@ public class DomaciService {
     private final DomaciRepository domaciRepository;
     private final PredavanjeRepository predavanjeRepository;
     private final GrupaRepository grupaRepository;
+    private final StudentRepository studentRepository;
     private final PredmetRepository predmetRepository;
     private final DomaciEvidentiranjeRepository domaciEvidentiranjeRepository;
     private final ModelMapper mapper;
@@ -64,5 +59,21 @@ public class DomaciService {
         );
 
         return domaciDetails;
+    }
+
+    public DomaciDetails dodajEvidentaciju(CreateUradjenDomaciCmd cmd) {
+        Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(cmd.getDomaciId())
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + cmd.getDomaciId(), 404));
+        Student student = studentRepository.findById(cmd.getStudentId())
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + cmd.getStudentId()));
+
+        UradjenDomaci entity = mapper.map(cmd, UradjenDomaci.class);
+        entity.setStudent(student);
+        entity.setDomaci(domaci);
+
+        domaci.getUradjeniDomaci().add(entity);
+        domaciRepository.save(domaci);
+
+        return getDomaci(cmd.getDomaciId());
     }
 }

@@ -3,6 +3,7 @@ package tri.novica.gfssystem.rest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tri.novica.gfssystem.dto.domaci.CreateUradjenDomaciCmd;
 import tri.novica.gfssystem.dto.domaci.DodajDomaciCmd;
 import tri.novica.gfssystem.dto.domaci.DomaciDetails;
 import tri.novica.gfssystem.dto.domaci.DomaciInfo;
@@ -27,5 +28,12 @@ public class DomaciRest {
     @ResponseStatus(HttpStatus.OK)
     public DomaciDetails view(@PathVariable Long id){
         return domaciService.getDomaci(id);
+    }
+
+    @PostMapping("/evidentiraj")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public DomaciDetails dodajEvidentaciju(@RequestBody CreateUradjenDomaciCmd cmd){
+        return domaciService.dodajEvidentaciju(cmd);
     }
 }
