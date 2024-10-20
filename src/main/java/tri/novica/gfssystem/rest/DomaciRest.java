@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.rest;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -33,7 +34,7 @@ public class DomaciRest {
     @PostMapping("/evidentiraj")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public DomaciDetails dodajEvidentaciju(@RequestBody CreateUradjenDomaciCmd cmd){
+    public DomaciDetails dodajEvidentaciju(@RequestBody @Valid CreateUradjenDomaciCmd cmd){
         return domaciService.dodajEvidentaciju(cmd);
     }
 }
