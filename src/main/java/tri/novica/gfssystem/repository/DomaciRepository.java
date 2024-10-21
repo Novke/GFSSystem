@@ -13,7 +13,7 @@ public interface DomaciRepository extends JpaRepository<Domaci, Long> {
             SELECT d FROM Domaci d
                    JOIN FETCH d.predmet p
                    JOIN FETCH d.grupa g
-                   JOIN FETCH d.predavanje pr
+                   LEFT JOIN FETCH d.predavanje pr
                    LEFT JOIN FETCH d.uradjeniDomaci u
                    WHERE d.id = :id""")
     Optional<Domaci> findDomaciPlusGrupaPredmetPredavanje(Long id);
