@@ -119,4 +119,14 @@ public class DomaciService {
 
         return getDomaci(id);
     }
+
+    public DomaciDetails azuriraj(Long id, UpdateDomaciCmd cmd) {
+        Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+
+        mapper.map(cmd, domaci);
+        domaciRepository.save(domaci);
+
+        return getDomaci(id);
+    }
 }

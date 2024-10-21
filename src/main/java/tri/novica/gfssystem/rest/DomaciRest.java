@@ -4,10 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import tri.novica.gfssystem.dto.domaci.CreateUradjenDomaciCmd;
-import tri.novica.gfssystem.dto.domaci.DodajDomaciCmd;
-import tri.novica.gfssystem.dto.domaci.DomaciDetails;
-import tri.novica.gfssystem.dto.domaci.DomaciInfo;
+import tri.novica.gfssystem.dto.domaci.*;
 import tri.novica.gfssystem.service.DomaciService;
 
 @RestController
@@ -43,5 +40,12 @@ public class DomaciRest {
     @ResponseStatus(HttpStatus.OK)
     public DomaciDetails oslobodi(@PathVariable Long id){
         return domaciService.oslobodi(id);
+    }
+
+    @PutMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public DomaciDetails azuriraj(@PathVariable Long id, @RequestBody UpdateDomaciCmd cmd){
+        return domaciService.azuriraj(id, cmd);
     }
 }
