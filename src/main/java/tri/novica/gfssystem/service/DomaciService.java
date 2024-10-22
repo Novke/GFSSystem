@@ -8,12 +8,10 @@ import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.entity.view.DomaciEvidentiranjeView;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.utility.Utility;
 
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -60,6 +58,10 @@ public class DomaciService {
         studentiViews.forEach(st ->
                 domaciDetails.getStudenti().add(mapper.map(st, DomaciStudentiInfo.class))
         );
+
+        domaciDetails.getStudenti().sort((s1, s2) -> {
+            return Utility.index2int(s1.getIndeks()) - Utility.index2int(s2.getIndeks());
+        });
 
         return domaciDetails;
     }
