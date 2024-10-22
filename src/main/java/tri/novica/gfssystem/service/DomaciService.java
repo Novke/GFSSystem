@@ -129,4 +129,12 @@ public class DomaciService {
 
         return getDomaci(id);
     }
+
+    public void zavrsiPregledanje(Long id) {
+        Domaci domaci = domaciRepository.findDomaciPlusGrupaPredmetPredavanje(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+
+        domaci.setPregledan(true);
+        domaciRepository.save(domaci);
+    }
 }

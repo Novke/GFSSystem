@@ -15,6 +15,7 @@ public class DomaciDetails {
     private PredmetInfo predmet;
     private String text;
     private LocalDate datum;
+    private Boolean pregledan;
     private DomaciGrupaInfo grupa;
     private DomaciPredavanjeInfo predavanje;
     private List<DomaciStudentiInfo> studenti = new ArrayList<>();

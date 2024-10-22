@@ -48,4 +48,11 @@ public class DomaciRest {
     public DomaciDetails azuriraj(@PathVariable Long id, @RequestBody UpdateDomaciCmd cmd){
         return domaciService.azuriraj(id, cmd);
     }
+
+    @PatchMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public void zavrsiPregledanje(@PathVariable Long id){
+        domaciService.zavrsiPregledanje(id);
+    }
 }

@@ -25,6 +25,7 @@ public class Domaci {
     @Column(length = 3000)
     private String text;
     private LocalDate datum;
+    private Boolean pregledan = false;
 
     @OneToMany(mappedBy = "domaci", cascade = CascadeType.ALL)
     private Set<UradjenDomaci> uradjeniDomaci;
