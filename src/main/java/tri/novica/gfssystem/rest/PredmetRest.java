@@ -23,6 +23,13 @@ public class PredmetRest {
         return predmetService.findAll();
     }
 
+    @GetMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredmetInfo findById(@PathVariable Long id){
+        return predmetService.findById(id);
+    }
+
     @PostMapping
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)

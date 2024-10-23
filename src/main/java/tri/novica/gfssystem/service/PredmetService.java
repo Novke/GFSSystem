@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.predmet.CreatePredmetCmd;
 import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
 
 import java.util.List;
@@ -28,5 +29,13 @@ public class PredmetService {
         return mapper.map(predmetRepository.save(
                 mapper.map(predmetCmd, Predmet.class)
         ), PredmetInfo.class);
+    }
+
+    public PredmetInfo findById(Long id) {
+        return mapper.map(
+                predmetRepository.findById(id)
+                        .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + id, 404)),
+                PredmetInfo.class
+        );
     }
 }
