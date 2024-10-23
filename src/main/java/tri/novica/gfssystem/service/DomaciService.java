@@ -26,7 +26,7 @@ public class DomaciService {
     private final ModelMapper mapper;
 
 
-    public DomaciInfo dodajDomaci(DodajDomaciCmd cmd) {
+    public DomaciId dodajDomaci(DodajDomaciCmd cmd) {
         Predmet predmet = predmetRepository.findById(cmd.getPredmetId())
                 .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + cmd.getPredmetId(), 404));
         Grupa grupa = grupaRepository.findById(cmd.getGrupaId())
@@ -45,7 +45,7 @@ public class DomaciService {
         domaci.setGrupa(grupa);
         domaci.setDatum(LocalDate.now());
 
-        return mapper.map(domaciRepository.save(domaci), DomaciInfo.class);
+        return mapper.map(domaciRepository.save(domaci), DomaciId.class);
     }
 
     public DomaciDetails getDomaci(Long id) {
@@ -138,5 +138,17 @@ public class DomaciService {
 
         domaci.setPregledan(true);
         domaciRepository.save(domaci);
+    }
+
+    public List<DomaciInfo> vratiDomaceIzGrupaPredmet(Long gId, Long pId) {
+        Predmet predmet = predmetRepository.findById(pId)
+                .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + pId, 404));
+        Grupa grupa = grupaRepository.findById(gId)
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + gId, 404));
+
+        List<Domaci> domaci = domaciRepository.findAllByGrupaAndPredmetOrderByDatumAsc(grupa, predmet);
+        return domaci.stream().map(
+                        d -> mapper.map(d, DomaciInfo.class))
+                .toList();
     }
 }

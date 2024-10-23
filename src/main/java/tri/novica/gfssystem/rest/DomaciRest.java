@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.domaci.*;
 import tri.novica.gfssystem.service.DomaciService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/domaci")
 @RequiredArgsConstructor
@@ -17,7 +19,7 @@ public class DomaciRest {
     @PostMapping
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public DomaciInfo dodajDomaci(@RequestBody DodajDomaciCmd cmd){
+    public DomaciId dodajDomaci(@RequestBody DodajDomaciCmd cmd){
         return domaciService.dodajDomaci(cmd);
     }
 
@@ -54,5 +56,12 @@ public class DomaciRest {
     @ResponseStatus(HttpStatus.OK)
     public void zavrsiPregledanje(@PathVariable Long id){
         domaciService.zavrsiPregledanje(id);
+    }
+
+    @GetMapping("/grupa/{gId}/predmet/{pId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<DomaciInfo> vratiDomaceGrupaPredmet(@PathVariable Long gId, @PathVariable Long pId){
+        return domaciService.vratiDomaceIzGrupaPredmet(gId, pId);
     }
 }

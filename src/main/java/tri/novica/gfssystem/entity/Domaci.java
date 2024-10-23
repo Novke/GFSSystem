@@ -22,6 +22,7 @@ public class Domaci {
     @ManyToOne(optional = false)
     Predmet predmet;
 
+    private String naslov;
     @Column(length = 3000)
     private String text;
     private LocalDate datum;
