@@ -11,5 +11,6 @@ public class UpdateDomaciCmd {
 
     private String text;
     private LocalDate datum;
+    private String naslov;
 
 }

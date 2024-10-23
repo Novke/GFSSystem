@@ -13,6 +13,7 @@ import java.util.List;
 public class DomaciDetails {
     private Long id;
     private PredmetInfo predmet;
+    private String naslov;
     private String text;
     private LocalDate datum;
     private Boolean pregledan;
