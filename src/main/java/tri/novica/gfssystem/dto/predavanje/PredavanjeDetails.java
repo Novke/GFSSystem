@@ -17,4 +17,5 @@ public class PredavanjeDetails {
     private PredavanjeGrupaInfo grupa;
     private PredavanjePredmetInfo predmet;
     private List<PredavanjeAktivnostInfo> aktivnosti;
+    private Boolean zavrseno;
 }

@@ -94,4 +94,11 @@ public class PredavanjeRest {
     public List<PredavanjeInfo> search(@RequestParam Long predmet, @RequestParam Long grupa){
         return predavanjeService.pretraziPredavanja(predmet, grupa);
     }
+
+    @PatchMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public PredavanjeDetails zavrsiPredavanje(@PathVariable Long id){
+        return predavanjeService.zavrsiPredavanje(id);
+    }
 }

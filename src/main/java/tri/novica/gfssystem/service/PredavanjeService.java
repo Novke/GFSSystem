@@ -95,7 +95,7 @@ public class PredavanjeService {
         predavanje.setAktivnosti(aktivnosti);
 
         //POSECENOST++
-        predavanje.uvecajPOsecenost();
+        predavanje.uvecajPosecenost();
 
         Predavanje saved = predavanjeRepository.save(predavanje);
         return mapper.map(saved, PredavanjeDetails.class);
@@ -189,5 +189,13 @@ public class PredavanjeService {
                 .stream().map(
                         predavanje -> mapper.map(predavanje, PredavanjeInfo.class)
                 ).toList();
+    }
+
+    public PredavanjeDetails zavrsiPredavanje(Long id) {
+        Predavanje predavanje = predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, 404));
+
+        predavanje.setZavrseno(true);
+        return mapper.map(predavanje, PredavanjeDetails.class);
     }
 }

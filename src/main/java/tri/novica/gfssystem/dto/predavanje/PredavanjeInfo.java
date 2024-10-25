@@ -12,4 +12,5 @@ public class PredavanjeInfo {
     Long rb;
     String tema;
     LocalDate datum;
+    Boolean zavrseno;
 }

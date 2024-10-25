@@ -3,9 +3,7 @@ package tri.novica.gfssystem.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
-import tri.novica.gfssystem.exceptions.SystemException;
 
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -33,6 +31,7 @@ public class Predavanje {
     private LocalDate datum;
     private String tema;
     private Integer posecenost = 0;
+    private Boolean zavrseno = false;
 
     @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private Set<Domaci> domaci = new HashSet<>();
