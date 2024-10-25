@@ -101,4 +101,11 @@ public class PredavanjeRest {
     public PredavanjeDetails zavrsiPredavanje(@PathVariable Long id){
         return predavanjeService.zavrsiPredavanje(id);
     }
+
+    @GetMapping("/grupa/{gId}/predmet/{pId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<PredavanjeInfo> vratiPredavanjaGrupaPredmet(@PathVariable Long gId, @PathVariable Long pId){
+        return predavanjeService.vratiPredavanjaGrupaPredmet(gId, pId);
+    }
 }

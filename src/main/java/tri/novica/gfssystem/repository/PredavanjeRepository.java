@@ -12,5 +12,5 @@ public interface PredavanjeRepository extends JpaRepository<Predavanje, Long> {
 
     @Query("select max(p.rb) from Predavanje p")
     Integer findPoslednjiRB();
-    List<Predavanje> findAllByGrupaIdAndPredmetId(Long grupaId, Long predmetId);
+    List<Predavanje> findAllByGrupaIdAndPredmetIdOrderByDatumAsc(Long grupaId, Long predmetId);
 }

@@ -185,7 +185,7 @@ public class PredavanjeService {
     }
 
     public List<PredavanjeInfo> pretraziPredavanja(Long predmetId, Long grupaId) {
-        return predavanjeRepository.findAllByGrupaIdAndPredmetId(grupaId, predmetId)
+        return predavanjeRepository.findAllByGrupaIdAndPredmetIdOrderByDatumAsc(grupaId, predmetId)
                 .stream().map(
                         predavanje -> mapper.map(predavanje, PredavanjeInfo.class)
                 ).toList();
@@ -197,5 +197,17 @@ public class PredavanjeService {
 
         predavanje.setZavrseno(true);
         return mapper.map(predavanje, PredavanjeDetails.class);
+    }
+
+    public List<PredavanjeInfo> vratiPredavanjaGrupaPredmet(Long gId, Long pId) {
+        predmetRepository.findById(pId)
+                .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + pId, 404));
+        grupaRepository.findById(gId)
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + gId, 404));
+
+        List<Predavanje> predavanja = predavanjeRepository.findAllByGrupaIdAndPredmetIdOrderByDatumAsc(gId, pId);
+        return predavanja.stream().map(
+                p -> mapper.map(p, PredavanjeInfo.class)
+        ).toList();
     }
 }
