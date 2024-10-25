@@ -54,15 +54,15 @@ public class Predavanje {
     }
 
     public void umanjiPosecenost() {
-//        if (posecenost == 0) throw new SystemException("POSECENOST NE MOZE BITI NEGATIVNA! ID = " + id, HttpStatus.BAD_REQUEST);
-        if (posecenost <= 0) {
+        if (posecenost == null || posecenost <= 0) {
             posecenost=0;
             return;
         }
         posecenost--;
     }
 
-    public void uvecajPOsecenost(){
+    public void uvecajPosecenost(){
+        if (posecenost == null) posecenost = 0;
         posecenost++;
     }
 
