@@ -32,6 +32,7 @@ public class JacksonConfigs {
 //        javaTimeModule.addDeserializer(LocalDate.class,
 //                new LocalDateDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
 
+
         //LOCALDATETIME
 //        javaTimeModule.addSerializer(LocalDateTime.class,
 //                new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
@@ -39,6 +40,7 @@ public class JacksonConfigs {
 //                new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
 
         builder.modulesToInstall(javaTimeModule);
+
 
         builder.featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
