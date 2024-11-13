@@ -27,6 +27,8 @@ public class Student {
     private Set<UradjenDomaci> uradjeniDomaci;
     @OneToMany(mappedBy = "student")
     private Set<Aktivnost> aktivnosti;
+    @OneToMany
+    private Set<Polaganje> polaganja;
 
     @Override
     public boolean equals(Object o) {
