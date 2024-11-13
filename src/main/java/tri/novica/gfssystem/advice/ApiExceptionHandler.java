@@ -3,6 +3,7 @@ package tri.novica.gfssystem.advice;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -32,6 +33,15 @@ public class ApiExceptionHandler {
         log.info("Exception handled. Code: {}, Reason: {}", ex.getCode(), ex.getMessage(), ex);
 
         return ResponseEntity.status(code).body(apiException);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ApiException> handleInvalidArgument(MethodArgumentNotValidException ex){
+        ApiException apiException = new ApiException(ex.getMessage(), LocalDateTime.now());
+
+        log.info("Invalid arguments!", ex);
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiException);
     }
 
 }
