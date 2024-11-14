@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.Objects;
+
 @NoArgsConstructor
 @AllArgsConstructor
 @Getter
@@ -28,9 +30,20 @@ public class Polaganje {
     private TestGrupa grupa;
 
     private Integer ostvareniPoeni;
-    private Boolean polozio;
+    private Boolean polozio; //ako ne moze da se padne, default je true
     private Boolean prepisivao = false;
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Polaganje polaganje = (Polaganje) o;
+        if (id!=null && polaganje.id != null) return id.equals(polaganje.id);
+        return Objects.equals(student, polaganje.student) && Objects.equals(test, polaganje.test);
+    }
 
-
+    @Override
+    public int hashCode() {
+        return Objects.hash(student, test);
+    }
 }

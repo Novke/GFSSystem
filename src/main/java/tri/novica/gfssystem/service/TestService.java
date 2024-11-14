@@ -4,19 +4,14 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
+import tri.novica.gfssystem.dto.test.CreatePolaganjeCmd;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
 import tri.novica.gfssystem.dto.test.TestInfo;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
-import tri.novica.gfssystem.entity.Grupa;
-import tri.novica.gfssystem.entity.Predmet;
-import tri.novica.gfssystem.entity.Test;
-import tri.novica.gfssystem.entity.TipTesta;
+import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
-import tri.novica.gfssystem.repository.GrupaRepository;
-import tri.novica.gfssystem.repository.PredmetRepository;
-import tri.novica.gfssystem.repository.TestRepository;
-import tri.novica.gfssystem.repository.TipTestaRepository;
+import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.validation.TestPP;
 
 @Service
@@ -28,6 +23,7 @@ public class TestService {
     private final TipTestaRepository tipTestaRepository;
     private final PredmetRepository predmetRepository;
     private final GrupaRepository grupaRepository;
+    private final StudentRepository studentRepository;
     private final ModelMapper mapper;
     private final TestPP testPP;
 
@@ -56,7 +52,24 @@ public class TestService {
         test.setTipTesta(tipTesta);
         test.setPregledan(false);
 
-        testPP.checkCreate(test);
+        testPP.checkCreateTest(test);
+
+        return mapper.map(testRepository.save(test), TestInfo.class);
+    }
+
+    public TestInfo createPolaganje(CreatePolaganjeCmd cmd, Long testId) {
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+        Student student = studentRepository.findById(cmd.getStudentId())
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + cmd.getStudentId(), 404));
+
+        Polaganje polaganje = mapper.map(cmd, Polaganje.class);
+        polaganje.setTest(test);
+        polaganje.setStudent(student);
+
+        testPP.checkCreatePolaganje(polaganje);
+
+        test.addPolaganje(polaganje);
 
         return mapper.map(testRepository.save(test), TestInfo.class);
     }

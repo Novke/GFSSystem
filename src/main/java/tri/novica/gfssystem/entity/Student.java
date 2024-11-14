@@ -1,14 +1,16 @@
 package tri.novica.gfssystem.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.Objects;
 import java.util.Set;
 
 @Entity
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
 @Table(name = "studenti", uniqueConstraints = @UniqueConstraint(columnNames = {"index", "godina"}))
 public class Student {
@@ -27,7 +29,7 @@ public class Student {
     private Set<UradjenDomaci> uradjeniDomaci;
     @OneToMany(mappedBy = "student")
     private Set<Aktivnost> aktivnosti;
-    @OneToMany
+    @OneToMany(mappedBy = "student")
     private Set<Polaganje> polaganja;
 
     @Override
@@ -41,6 +43,6 @@ public class Student {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, indeks);
+        return Objects.hash(indeks);
     }
 }

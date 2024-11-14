@@ -7,6 +7,8 @@ import lombok.Setter;
 import tri.novica.gfssystem.entity.converter.TestGrupaConverter;
 
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 @Entity
@@ -33,9 +35,27 @@ public class Test {
     private Integer maxPoena;
     private Boolean pregledan;
 
-    @OneToMany
-    private Set<Polaganje> polaganja;
+    @OneToMany(cascade = CascadeType.ALL, mappedBy = "test")
+    private Set<Polaganje> polaganja = new HashSet<>();
     @Convert(converter = TestGrupaConverter.class)
-    private Set<TestGrupa> grupe;
+    private Set<TestGrupa> grupe = new HashSet<>();
 
+    public void addPolaganje(Polaganje polaganje) {
+        polaganje.setTest(this);
+        polaganja.add(polaganje);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Test test = (Test) o;
+        if (id != null && test.id != null) return Objects.equals(id, test.id);
+        return Objects.equals(tipTesta, test.tipTesta) && Objects.equals(predmet, test.predmet) && Objects.equals(grupa, test.grupa) && Objects.equals(datum, test.datum);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tipTesta, predmet, grupa, datum);
+    }
 }
