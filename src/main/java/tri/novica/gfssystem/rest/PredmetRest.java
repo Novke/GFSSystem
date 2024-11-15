@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.predmet.CreatePredmetCmd;
 import tri.novica.gfssystem.dto.predmet.PredmetInfo;
+import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.service.PredmetService;
 
 import java.util.List;
@@ -35,6 +36,13 @@ public class PredmetRest {
     @ResponseStatus(HttpStatus.CREATED)
     public PredmetInfo createPredmet(@RequestBody CreatePredmetCmd predmetCmd){
         return predmetService.save(predmetCmd);
+    }
+
+    @GetMapping("/{id}/tipovi")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<TipTestaInfo> findTipovePredmeta(@PathVariable Long id){
+        return predmetService.findTipovePredmeta(id);
     }
 
 }
