@@ -24,6 +24,7 @@ public class TestService {
     private final PredmetRepository predmetRepository;
     private final GrupaRepository grupaRepository;
     private final StudentRepository studentRepository;
+    private final PolaganjeRepository polaganjeRepository;
     private final ModelMapper mapper;
     private final TestPP testPP;
 
@@ -44,13 +45,19 @@ public class TestService {
         Grupa grupa = grupaRepository.findById(cmd.getGrupaId())
                 .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + cmd.getGrupaId(), 404));
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
-                .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
+//                .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
+                .orElseGet(() -> {
+                   if (cmd.getNovTipTesta() == null || cmd.getNovTipTesta().isBlank())
+                       throw new SystemException("Tip testa nije postavljen!", HttpStatus.BAD_REQUEST);
+                   else return new TipTesta(cmd.getNovTipTesta(), predmet);
+                });
 
         Test test = mapper.map(cmd, Test.class);
         test.setPredmet(predmet);
         test.setGrupa(grupa);
         test.setTipTesta(tipTesta);
         test.setPregledan(false);
+        test.generisiGrupe(cmd.getBrojGrupa());
 
         testPP.checkCreateTest(test);
 

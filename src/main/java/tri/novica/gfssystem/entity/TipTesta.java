@@ -26,6 +26,11 @@ public class TipTesta {
     @ManyToOne(optional = false)
     private Predmet predmet;
 
+    public TipTesta(String naziv, Predmet predmet) {
+        this.naziv = naziv;
+        this.predmet = predmet;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

@@ -14,6 +14,7 @@ public class TestGrupaConverter implements AttributeConverter<Set<TestGrupa>, St
     @Override
     public String convertToDatabaseColumn(Set<TestGrupa> attribute) {
         return attribute != null ? attribute.stream()
+                .sorted()
                 .map(Enum::name)
                 .collect(Collectors.joining(",")) : "";
     }

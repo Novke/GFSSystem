@@ -7,9 +7,7 @@ import lombok.Setter;
 import tri.novica.gfssystem.entity.converter.TestGrupaConverter;
 
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 @Entity
 @Getter
@@ -22,7 +20,7 @@ public class Test {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false, cascade = CascadeType.PERSIST)
     private TipTesta tipTesta;
 
     @ManyToOne(optional = false)
@@ -57,5 +55,13 @@ public class Test {
     @Override
     public int hashCode() {
         return Objects.hash(tipTesta, predmet, grupa, datum);
+    }
+
+    public void generisiGrupe(Integer brojGrupa) {
+        grupe = new LinkedHashSet<>();
+
+        Arrays.stream(TestGrupa.values()).forEach( tg -> {
+            if (grupe.size()<brojGrupa) grupe.add(tg);
+        });
     }
 }

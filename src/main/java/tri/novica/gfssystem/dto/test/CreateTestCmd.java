@@ -1,30 +1,33 @@
 package tri.novica.gfssystem.dto.test;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import tri.novica.gfssystem.entity.TestGrupa;
 
 import java.time.LocalDate;
-import java.util.Set;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateTestCmd {
 
-    @NotNull
     private Long tipTestaId;
-    @NotNull
+    private String novTipTesta;
+    @NotNull(message = "Predmet nije izabran")
     private Long predmetId;
-    @NotNull
+    @NotNull(message = "Grupa nije izabrana")
     private Long grupaId;
-    @NotNull
+    @NotNull(message = "Datum nije izabran")
     private LocalDate datum;
     @NotNull
-    private Set<TestGrupa> grupe;
+    @Min(value = 1, message = "Mora postojati barem 1 grupa")
+    private Integer brojGrupa;
     @NotNull
+    @Min(value = 1, message = "Max poena ne moze biti manje od 1")
+    @Max(value = 100, message = "Max poena ne moze biti vece od 100")
     private Integer maxPoena;
 
 }
