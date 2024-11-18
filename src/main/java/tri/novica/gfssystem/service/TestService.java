@@ -39,6 +39,12 @@ public class TestService {
         return mapper.map(tipTestaRepository.save(tipTesta), TipTestaInfo.class);
     }
 
+    public TestDetails findById(Long id) {
+        return mapper.map(testRepository.findById(id)
+                        .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404)),
+                TestDetails.class);
+    }
+
     public TestInfo createTest(CreateTestCmd cmd) {
         Predmet predmet = predmetRepository.findById(cmd.getPredmetId())
                 .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + cmd.getPredmetId(), 404));

@@ -25,6 +25,13 @@ public class TestRest {
         return testService.createTipTesta(cmd);
     }
 
+    @GetMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails view(@PathVariable Long id){
+        return testService.findById(id);
+    }
+
     @PostMapping
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
