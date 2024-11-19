@@ -3,6 +3,7 @@ package tri.novica.gfssystem.rest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tri.novica.gfssystem.dto.IdCmd;
 import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
 import tri.novica.gfssystem.dto.predavanje.*;
 import tri.novica.gfssystem.service.PredavanjeService;
@@ -48,7 +49,7 @@ public class PredavanjeRest {
     @PatchMapping("/{id}/prisustvo")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public PredavanjeDetails dodajPrisutnog(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+    public PredavanjeDetails dodajPrisutnog(@PathVariable Long id, @RequestBody IdCmd studentId){
         return predavanjeService.dodajPrisutnog(id, studentId.getId());
     }
 
@@ -63,7 +64,7 @@ public class PredavanjeRest {
     @PatchMapping("/{id}/zadatak")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public PredavanjeDetails dodajZadatak(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+    public PredavanjeDetails dodajZadatak(@PathVariable Long id, @RequestBody IdCmd studentId){
         return predavanjeService.dodajZadatak(id, studentId.getId());
     }
 
@@ -77,7 +78,7 @@ public class PredavanjeRest {
     @PatchMapping("/{id}/zvezdica")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public PredavanjeDetails dodajZadatakSaZvezdicom(@PathVariable Long id, @RequestBody PredavanjeStudentId studentId){
+    public PredavanjeDetails dodajZadatakSaZvezdicom(@PathVariable Long id, @RequestBody IdCmd studentId){
         return predavanjeService.dodajZadatakSaZvezdicom(id, studentId.getId());
     }
 
