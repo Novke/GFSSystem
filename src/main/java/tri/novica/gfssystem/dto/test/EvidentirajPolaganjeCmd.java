@@ -9,7 +9,7 @@ import tri.novica.gfssystem.entity.TestGrupa;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class CreatePolaganjeCmd {
+public class EvidentirajPolaganjeCmd {
     @NotNull
     private Long studentId;
     @NotNull
@@ -19,4 +19,5 @@ public class CreatePolaganjeCmd {
     @NotNull
     private Boolean polozio;
     private Boolean prepisivao = false;
+    private String napomene;
 }

@@ -4,7 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import tri.novica.gfssystem.dto.test.CreatePolaganjeCmd;
+import tri.novica.gfssystem.dto.test.EvidentirajPolaganjeCmd;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
 import tri.novica.gfssystem.dto.test.TestDetails;
 import tri.novica.gfssystem.dto.test.TestInfo;
@@ -43,7 +43,7 @@ public class TestRest {
     @PostMapping("/{id}/polaganje")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public TestInfo createPolaganje(@RequestBody @Valid CreatePolaganjeCmd cmd, @PathVariable(name = "id") Long testId){
+    public TestInfo createPolaganje(@RequestBody @Valid EvidentirajPolaganjeCmd cmd, @PathVariable(name = "id") Long testId){
         return testService.createPolaganje(cmd, testId);
     }
 
