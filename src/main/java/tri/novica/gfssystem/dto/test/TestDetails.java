@@ -22,6 +22,7 @@ public class TestDetails {
     private GrupaInfo grupa;
     private LocalDate datum;
     private Integer maxPoena;
+    private Boolean pregledan;
     private Set<TestGrupa> grupe;
     private Set<TestPolaganjeInfo> polaganja;
 }

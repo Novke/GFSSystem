@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.test.CreatePolaganjeCmd;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
+import tri.novica.gfssystem.dto.test.TestDetails;
 import tri.novica.gfssystem.dto.test.TestInfo;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
