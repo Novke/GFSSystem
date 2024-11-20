@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tri.novica.gfssystem.dto.IdCmd;
 import tri.novica.gfssystem.dto.test.EvidentirajPolaganjeCmd;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
 import tri.novica.gfssystem.dto.test.TestDetails;
@@ -40,11 +41,27 @@ public class TestRest {
         return testService.createTest(cmd);
     }
 
+    //update
+
     @PostMapping("/{id}/polaganje")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public TestInfo createPolaganje(@RequestBody @Valid EvidentirajPolaganjeCmd cmd, @PathVariable(name = "id") Long testId){
-        return testService.createPolaganje(cmd, testId);
+    public TestDetails dodajIspitanika(@PathVariable(name = "id") Long testId, @RequestBody IdCmd studentId){
+        return testService.dodajIspitanika(testId, studentId.getId());
+    }
+
+    @DeleteMapping("/{tId}/polaganje/{sId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails skloniIspitanika(@PathVariable(name = "tId") Long testId, @PathVariable(name = "sId") Long studentId){
+        return testService.skloniIspitanika(testId, studentId);
+    }
+
+    @PatchMapping("/{id}/polaganje")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.CREATED)
+    public TestDetails evidentirajIspitanika(@RequestBody @Valid EvidentirajPolaganjeCmd cmd, @PathVariable(name = "id") Long testId){
+        return testService.evidentirajIspitanika(cmd, testId);
     }
 
 }

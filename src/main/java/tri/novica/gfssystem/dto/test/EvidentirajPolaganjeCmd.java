@@ -10,14 +10,12 @@ import tri.novica.gfssystem.entity.TestGrupa;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EvidentirajPolaganjeCmd {
-    @NotNull
+    @NotNull(message = "Nije odabran student!")
     private Long studentId;
-    @NotNull
+    @NotNull(message = "Nije odabrana grupa!")
     private TestGrupa grupa;
-    @NotNull
+    @NotNull(message = "Nisu postavljeni ostvareni poeni!")
     private Integer ostvareniPoeni;
-    @NotNull
-    private Boolean polozio;
     private Boolean prepisivao = false;
     private String napomene;
 }

@@ -32,6 +32,15 @@ public class Polaganje {
     private Integer ostvareniPoeni;
     private Boolean polozio; //ako ne moze da se padne, default je true
     private Boolean prepisivao = false;
+    private String napomene;
+
+    public static Polaganje defaultPolaganje(Test test, Student student) {
+        Polaganje polaganje = new Polaganje();
+        polaganje.test = test;
+        polaganje.student = student;
+        polaganje.prepisivao = false;
+        return polaganje;
+    }
 
     @Override
     public boolean equals(Object o) {
@@ -39,7 +48,7 @@ public class Polaganje {
         if (o == null || getClass() != o.getClass()) return false;
         Polaganje polaganje = (Polaganje) o;
         if (id!=null && polaganje.id != null) return id.equals(polaganje.id);
-        return Objects.equals(student, polaganje.student) && Objects.equals(test, polaganje.test);
+        return Objects.equals(student.getId(), polaganje.student.getId()) && Objects.equals(test.getId(), polaganje.test.getId());
     }
 
     @Override

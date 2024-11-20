@@ -12,9 +12,10 @@ import tri.novica.gfssystem.entity.TestGrupa;
 public class TestPolaganjeInfo {
 
     private Long id;
-    private StudentInfo studentInfo;
+    private StudentInfo student;
     private TestGrupa grupa;
     private Integer ostvareniPoeni;
     private Boolean prepisivao;
     private Boolean polozio;
+    private String napomene;
 }

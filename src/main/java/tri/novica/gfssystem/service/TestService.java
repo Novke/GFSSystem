@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import tri.novica.gfssystem.dto.test.CreatePolaganjeCmd;
+import tri.novica.gfssystem.dto.test.EvidentirajPolaganjeCmd;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
 import tri.novica.gfssystem.dto.test.TestDetails;
 import tri.novica.gfssystem.dto.test.TestInfo;
@@ -55,9 +55,9 @@ public class TestService {
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
 //                .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
                 .orElseGet(() -> {
-                   if (cmd.getNovTipTesta() == null || cmd.getNovTipTesta().isBlank())
-                       throw new SystemException("Tip testa nije postavljen!", HttpStatus.BAD_REQUEST);
-                   else return new TipTesta(cmd.getNovTipTesta(), predmet);
+                    if (cmd.getNovTipTesta() == null || cmd.getNovTipTesta().isBlank())
+                        throw new SystemException("Tip testa nije postavljen!", HttpStatus.BAD_REQUEST);
+                    else return new TipTesta(cmd.getNovTipTesta(), predmet);
                 });
 
         Test test = mapper.map(cmd, Test.class);
@@ -72,7 +72,7 @@ public class TestService {
         return mapper.map(testRepository.save(test), TestInfo.class);
     }
 
-    public TestInfo createPolaganje(CreatePolaganjeCmd cmd, Long testId) {
+    public TestDetails evidentirajIspitanika(EvidentirajPolaganjeCmd cmd, Long testId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
         Student student = studentRepository.findById(cmd.getStudentId())
@@ -84,8 +84,48 @@ public class TestService {
 
         testPP.checkCreatePolaganje(polaganje);
 
-        test.addPolaganje(polaganje);
+        var old = test.getPolaganja().stream().filter(
+                p -> p.getStudent().getId().equals(polaganje.getStudent().getId())
+        ).findFirst();
+        old.ifPresent(p -> {
+            test.getPolaganja().remove(p);
+            polaganjeRepository.delete(p);
+            test.getPolaganja().add(polaganje);
+        });
 
-        return mapper.map(testRepository.save(test), TestInfo.class);
+        return mapper.map(testRepository.save(test), TestDetails.class);
+    }
+
+    public TestDetails dodajIspitanika(Long testId, Long studentId) {
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        Polaganje polaganje = Polaganje.defaultPolaganje(test, student);
+
+        if (test.getPolaganja().stream().noneMatch(
+                p -> p.getStudent().getId().equals(polaganje.getStudent().getId())
+        )) test.getPolaganja().add(polaganje);
+
+        return mapper.map(testRepository.save(test), TestDetails.class);
+    }
+
+    public TestDetails skloniIspitanika(Long testId, Long studentId) {
+        Test test = testRepository.findById(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+        Student student = studentRepository.findById(studentId)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        Polaganje polaganje = test.getPolaganja()
+                .stream()
+                .filter(p -> (p.getStudent().equals(student)))
+                .findFirst()
+                .orElseThrow(() -> new SystemException("Student nije dodat na ispit!", HttpStatus.BAD_REQUEST));
+
+        test.getPolaganja().remove(polaganje);
+        polaganjeRepository.delete(polaganje);
+
+        return mapper.map(testRepository.save(test), TestDetails.class);
     }
 }

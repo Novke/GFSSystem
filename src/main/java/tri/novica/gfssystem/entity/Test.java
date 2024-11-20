@@ -38,11 +38,6 @@ public class Test {
     @Convert(converter = TestGrupaConverter.class)
     private Set<TestGrupa> grupe = new HashSet<>();
 
-    public void addPolaganje(Polaganje polaganje) {
-        polaganje.setTest(this);
-        polaganja.add(polaganje);
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
