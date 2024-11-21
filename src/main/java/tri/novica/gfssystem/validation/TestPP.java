@@ -22,6 +22,13 @@ public class TestPP {
         }
     }
 
+    public void checkUpdateTest(Test test) {
+        checkCreateTest(test);
+        if (test.getPolaganja().stream().anyMatch(
+                p -> p.getOstvareniPoeni() != null && p.getOstvareniPoeni() > test.getMaxPoena()
+        )) throw new SystemException("Postoji student sa vecim brojem poena od novog maksimuma (" + test.getMaxPoena() + ")");
+    }
+
     public void checkCreatePolaganje(Polaganje polaganje) {
         var test = polaganje.getTest();
         if (!test.getGrupe().contains(polaganje.getGrupa()))
@@ -32,4 +39,5 @@ public class TestPP {
             throw new SystemException("Student " + polaganje.getStudent().getIndeks() + " ne pripada grupi " + polaganje.getTest().getGrupa().getNaziv(), BAD_REQUEST);
         }
     }
+
 }

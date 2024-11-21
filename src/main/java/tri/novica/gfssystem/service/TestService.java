@@ -5,10 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import tri.novica.gfssystem.dto.test.EvidentirajPolaganjeCmd;
-import tri.novica.gfssystem.dto.test.CreateTestCmd;
-import tri.novica.gfssystem.dto.test.TestDetails;
-import tri.novica.gfssystem.dto.test.TestInfo;
+import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.entity.*;
@@ -70,6 +67,21 @@ public class TestService {
         testPP.checkCreateTest(test);
 
         return mapper.map(testRepository.save(test), TestInfo.class);
+    }
+
+    public TestDetails updateTest(Long testId, UpdateTestCmd cmd) {
+        Test test = testRepository.findByIdFetchPolaganja(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+
+        mapper.map(cmd, test);
+
+        TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
+                        .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
+
+        test.setTipTesta(tipTesta);
+        testPP.checkUpdateTest(test);
+
+        return mapper.map(testRepository.save(test), TestDetails.class);
     }
 
     public TestDetails evidentirajIspitanika(EvidentirajPolaganjeCmd cmd, Long testId) {

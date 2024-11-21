@@ -5,10 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.IdCmd;
-import tri.novica.gfssystem.dto.test.EvidentirajPolaganjeCmd;
-import tri.novica.gfssystem.dto.test.CreateTestCmd;
-import tri.novica.gfssystem.dto.test.TestDetails;
-import tri.novica.gfssystem.dto.test.TestInfo;
+import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.service.TestService;
@@ -41,7 +38,12 @@ public class TestRest {
         return testService.createTest(cmd);
     }
 
-    //update
+    @PutMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails updateTest(@PathVariable(name = "id") Long testId, @RequestBody @Valid UpdateTestCmd cmd){
+        return testService.updateTest(testId, cmd);
+    }
 
     @PostMapping("/{id}/polaganje")
     @ResponseBody
