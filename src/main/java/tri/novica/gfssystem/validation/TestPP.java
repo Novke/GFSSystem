@@ -20,6 +20,8 @@ public class TestPP {
         if (!test.getTipTesta().getAktivan()){
             throw new SystemException("Tip testa nije aktivan!", BAD_REQUEST);
         }
+        if (test.getPregledan())
+            throw new SystemException("Nemoguce je kreirati pregledan test!");
     }
 
     public void checkUpdateTest(Test test) {
@@ -38,6 +40,14 @@ public class TestPP {
         if (!polaganje.getTest().getGrupa().equals(polaganje.getStudent().getGrupa())){
             throw new SystemException("Student " + polaganje.getStudent().getIndeks() + " ne pripada grupi " + polaganje.getTest().getGrupa().getNaziv(), BAD_REQUEST);
         }
+        if (test.getPregledan())
+            throw new SystemException("Test je oznacen kao pregledan!");
     }
-
+    public void checkZavrsiEvidentiranje(Test test) {
+        if (test.getPregledan())
+            throw new SystemException("Test je vec evidentiran!", BAD_REQUEST);
+        if (test.getPolaganja().stream().anyMatch(
+                p -> p.getOstvareniPoeni() == null
+        )) throw new SystemException("Nisu svi dodati studenti evidentirani!", BAD_REQUEST);
+    }
 }

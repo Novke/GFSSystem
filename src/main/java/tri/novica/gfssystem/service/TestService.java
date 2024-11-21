@@ -140,4 +140,14 @@ public class TestService {
 
         return mapper.map(testRepository.save(test), TestDetails.class);
     }
+
+    public TestDetails zavrsiEvidentiranje(Long testId) {
+        Test test = testRepository.findByIdFetchPolaganja(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+
+        testPP.checkZavrsiEvidentiranje(test);
+        test.setPregledan(true);
+
+        return mapper.map(testRepository.save(test), TestDetails.class);
+    }
 }

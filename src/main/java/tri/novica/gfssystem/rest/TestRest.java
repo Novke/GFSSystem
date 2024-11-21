@@ -66,4 +66,11 @@ public class TestRest {
         return testService.evidentirajIspitanika(cmd, testId);
     }
 
+    @PatchMapping("/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails zavrsiEvidentiranje(@PathVariable(name = "id") Long testId){
+        return testService.zavrsiEvidentiranje(testId);
+    }
+
 }
