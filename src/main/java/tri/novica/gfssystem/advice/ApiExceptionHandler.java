@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.advice;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import tri.novica.gfssystem.exceptions.SystemException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @ControllerAdvice
 @Slf4j
@@ -36,12 +38,19 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    ResponseEntity<ApiException> handleInvalidArgument(MethodArgumentNotValidException ex){
-        ApiException apiException = new ApiException(ex.getMessage(), LocalDateTime.now());
+    ResponseEntity<ApiException> handleInvalidArgument(MethodArgumentNotValidException ex) {
+        List<String> errorMessages = ex.getBindingResult().getFieldErrors().stream()
+                .map(DefaultMessageSourceResolvable::getDefaultMessage) // Samo poruka greške
+                .toList();
 
-        log.info("Invalid arguments!", ex);
+        String userFriendlyMessage = String.join(", ", errorMessages);
+
+        ApiException apiException = new ApiException(userFriendlyMessage, LocalDateTime.now());
+
+        log.info("Invalid arguments: {}", userFriendlyMessage, ex);
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiException);
     }
+
 
 }
