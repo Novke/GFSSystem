@@ -29,7 +29,7 @@ public class Polaganje {
     @Enumerated
     private TestGrupa grupa;
 
-    private Integer ostvareniPoeni;
+    private Double ostvareniPoeni;
     private Boolean polozio; //ako ne moze da se padne, default je true
     private Boolean prepisivao = false;
     private String napomene;

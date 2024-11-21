@@ -14,7 +14,7 @@ public class TestPolaganjeInfo {
     private Long id;
     private StudentInfo student;
     private TestGrupa grupa;
-    private Integer ostvareniPoeni;
+    private Double ostvareniPoeni;
     private Boolean prepisivao;
     private Boolean polozio;
     private String napomene;

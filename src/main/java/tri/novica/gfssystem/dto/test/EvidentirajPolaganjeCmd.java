@@ -15,7 +15,7 @@ public class EvidentirajPolaganjeCmd {
     @NotNull(message = "Nije odabrana grupa!")
     private TestGrupa grupa;
     @NotNull(message = "Nisu postavljeni ostvareni poeni!")
-    private Integer ostvareniPoeni;
+    private Double ostvareniPoeni;
     private Boolean prepisivao = false;
     private String napomene;
 }
