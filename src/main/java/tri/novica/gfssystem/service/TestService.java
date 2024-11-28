@@ -13,6 +13,8 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.validation.TestPP;
 
+import java.util.List;
+
 @Service
 @Transactional
 @RequiredArgsConstructor
@@ -149,5 +151,21 @@ public class TestService {
         test.setPregledan(true);
 
         return mapper.map(testRepository.save(test), TestDetails.class);
+    }
+
+    public List<TestInfo> vratiTestoveGrupaPredmet(Long gId, Long pId) {
+        predmetRepository.findById(pId)
+                .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + pId, 404));
+        grupaRepository.findById(gId)
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + gId, 404));
+
+        List<Test> testovi = testRepository.findAllByGrupaIdAndPredmetIdOrderByDatumAsc(gId, pId);
+        return testovi.stream().map(
+                t -> {
+                    var testInfo = mapper.map(t, TestInfo.class);
+                    testInfo.setPosecenost(t.getPolaganja().size());
+                    return testInfo;
+                }
+        ).toList();
     }
 }

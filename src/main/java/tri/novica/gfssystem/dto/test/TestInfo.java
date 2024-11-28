@@ -23,5 +23,7 @@ public class TestInfo {
     private LocalDate datum;
     private Integer maxPoena;
     private Set<TestGrupa> grupe;
+    private Boolean pregledan;
+    private Integer posecenost;
 
 }

@@ -10,6 +10,8 @@ import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.service.TestService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/test")
 @RequiredArgsConstructor
@@ -71,6 +73,13 @@ public class TestRest {
     @ResponseStatus(HttpStatus.OK)
     public TestDetails zavrsiEvidentiranje(@PathVariable(name = "id") Long testId){
         return testService.zavrsiEvidentiranje(testId);
+    }
+
+    @GetMapping("/grupa/{grupaId}/predmet/{predmetId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public List<TestInfo> vratiTestoveGrupaPredmet(@PathVariable Long grupaId, @PathVariable Long predmetId){
+        return testService.vratiTestoveGrupaPredmet(grupaId, predmetId);
     }
 
 }
