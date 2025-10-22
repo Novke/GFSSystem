@@ -100,7 +100,7 @@ public class PredmetService {
                 domaciPoeni+= cmd.getVrednostDomaci();
                 domaciPoeni+= (cmd.getVrednostDomaciMaxPoena() * d.getBodovi()) / 10; //10 je max prema domacima
             }
-            rezultati.setPoenidomaci(domaciPoeni);
+            rezultati.setPoeniDomaci(domaciPoeni);
 
             //poeni sa testova
             for (TipTesta tip : tipovi){

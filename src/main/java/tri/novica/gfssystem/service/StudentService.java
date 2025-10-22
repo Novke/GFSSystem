@@ -7,11 +7,13 @@ import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.student.CreateStudentCmd;
 import tri.novica.gfssystem.dto.student.StudentDetails;
 import tri.novica.gfssystem.dto.student.StudentInfo;
+import tri.novica.gfssystem.dto.student.pregled.StudentPregledDetails;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.StudentRepository;
+import tri.novica.gfssystem.utility.StudentMapper;
 
 import java.util.List;
 
@@ -30,11 +32,20 @@ public class StudentService {
                 ).toList();
     }
 
-    public StudentDetails findById(Long id) {
+    public StudentPregledDetails findById(Long id) {
         Student student = studentRepository.findByIdFetchDetails(id)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
-        return mapper.map(student, StudentDetails.class);
+        StudentPregledDetails details = StudentMapper.INSTANCE.toPregledDetails(student);
+        details.setAktivnosti(student.getAktivnosti().stream().map(StudentMapper.INSTANCE::toAktivnostDetails).toList());
+//        details.setAktivnosti(StudentMapper.INSTANCE.toAktivnostDetails(student.getAktivnosti()));
+        details.setUradjeniDomaci(student.getUradjeniDomaci().stream().map(StudentMapper.INSTANCE::toDomaciDetails).toList());
+//        details.setUradjeniDomaci(StudentMapper.INSTANCE.toDomaciDetails(student.getUradjeniDomaci()));
+        details.setPolaganja(student.getPolaganja().stream().map(StudentMapper.INSTANCE::toTestDetails).toList());
+//        details.setPolaganja(StudentMapper.INSTANCE.toTestDetails(student.getPolaganja()));
+
+
+        return details;
     }
 
     public StudentInfo create(CreateStudentCmd studentCmd) {

@@ -21,4 +21,15 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
             "AND p.test.tipTesta.id = :tipTestaId")
     Double findMaxPoeniByStudentAndTipTesta(@Param("studentId") Long studentId,
                                             @Param("tipTestaId") Long tipTestaId);
+
+    @Query("SELECT p.ostvareniPoeni FROM Polaganje p " +
+            "WHERE p.student.id = :studentId AND p.test.tipTesta.id = :tipTestaId " +
+            "ORDER BY p.test.datum DESC LIMIT 1")
+    Double findPoslednjiPoeniByStudentAndTipTesta(@Param("studentId") Long studentId,
+                                                   @Param("tipTestaId") Long tipTestaId);
+
+    @Query("SELECT t.maxPoena FROM Test t " +
+            "WHERE t.tipTesta.id = :tipTestaId " +
+            "ORDER BY t.datum DESC LIMIT 1")
+    Double findMaxPoenaTestByTipTesta(@Param("tipTestaId") Long tipTestaId);
 }

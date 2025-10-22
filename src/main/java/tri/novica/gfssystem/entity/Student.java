@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import lombok.ToString;
 
 import java.util.Objects;
 import java.util.Set;
@@ -12,6 +13,7 @@ import java.util.Set;
 @Getter
 @Setter
 @NoArgsConstructor
+@ToString
 @Table(name = "studenti", uniqueConstraints = @UniqueConstraint(columnNames = {"index", "godina"}))
 public class Student {
 

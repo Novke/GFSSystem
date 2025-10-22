@@ -13,7 +13,8 @@ import java.util.Set;
 @Entity
 @Data
 @NoArgsConstructor
-@Table(name = "predavanja")
+@Table(name = "predavanja",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"rb", "grupa_id"}))
 public class Predavanje {
 
     @Id
@@ -26,7 +27,6 @@ public class Predavanje {
     @ManyToOne
     private Grupa grupa;
 
-    @Column(unique = true)
     private int rb;
     private LocalDate datum;
     private String tema;

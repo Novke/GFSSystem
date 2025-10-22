@@ -37,7 +37,7 @@ public class UradjenDomaci {
         uradjenDomaci.student = student;
         uradjenDomaci.domaci = domaci;
         uradjenDomaci.oslobodjen = true;
-        uradjenDomaci.bodovi = 10;
+        uradjenDomaci.bodovi = 10; //TODO obrisati usecase?
 
         return uradjenDomaci;
     }
