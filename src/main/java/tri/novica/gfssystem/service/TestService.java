@@ -13,7 +13,8 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.validation.TestPP;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -41,9 +42,95 @@ public class TestService {
     }
 
     public TestDetails findById(Long id) {
-        return mapper.map(testRepository.findById(id)
-                        .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404)),
-                TestDetails.class);
+        Test test = testRepository.findByIdFetchPolaganja(id)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404));
+
+        TestDetails details = mapper.map(test, TestDetails.class);
+        details.setStatistika(izracunajStatistiku(test));
+
+        return details;
+    }
+
+    private TestStatistikaInfo izracunajStatistiku(Test test) {
+        TestStatistikaInfo stat = new TestStatistikaInfo();
+        Set<Polaganje> polaganja = test.getPolaganja();
+
+        if (polaganja == null || polaganja.isEmpty()) {
+            stat.setUkupnoPolaganja(0);
+            return stat;
+        }
+
+        // Filtriraj samo polaganja koja imaju ostvarene poene (evidentirana)
+        List<Polaganje> evidentirana = polaganja.stream()
+                .filter(p -> p.getOstvareniPoeni() != null)
+                .toList();
+
+        stat.setUkupnoPolaganja(polaganja.size());
+
+        if (evidentirana.isEmpty()) {
+            return stat;
+        }
+
+        // Poeni za statistiku
+        List<Double> poeniLista = evidentirana.stream()
+                .map(Polaganje::getOstvareniPoeni)
+                .sorted()
+                .toList();
+
+        // Prosek
+        double prosek = poeniLista.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        stat.setProsecniPoeni(Math.round(prosek * 100.0) / 100.0);
+
+        // Min/Max
+        stat.setMinPoeni(poeniLista.get(0));
+        stat.setMaxPoeni(poeniLista.get(poeniLista.size() - 1));
+
+        // Standardna devijacija
+        double variance = poeniLista.stream()
+                .mapToDouble(p -> Math.pow(p - prosek, 2))
+                .average()
+                .orElse(0);
+        stat.setStandardnaDevijacija(Math.round(Math.sqrt(variance) * 100.0) / 100.0);
+
+        // Prolaznost
+        int polozenih = (int) evidentirana.stream()
+                .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
+                .count();
+        int palih = evidentirana.size() - polozenih;
+        stat.setBrojPolozenih(polozenih);
+        stat.setBrojPalih(palih);
+        stat.setProcenatProlaznosti(Math.round((polozenih * 100.0 / evidentirana.size()) * 100.0) / 100.0);
+
+        // Statistika po test grupi (A, B, C, D)
+        Map<TestGrupa, List<Polaganje>> poGrupi = evidentirana.stream()
+                .filter(p -> p.getGrupa() != null)
+                .collect(Collectors.groupingBy(Polaganje::getGrupa));
+
+        List<TestStatistikaPoGrupiInfo> statistikaPoGrupi = new ArrayList<>();
+        for (TestGrupa grupa : TestGrupa.values()) {
+            List<Polaganje> grupaPolaganja = poGrupi.getOrDefault(grupa, Collections.emptyList());
+            if (!grupaPolaganja.isEmpty()) {
+                TestStatistikaPoGrupiInfo grupaStat = new TestStatistikaPoGrupiInfo();
+                grupaStat.setGrupa(grupa);
+                grupaStat.setBrojPolaganja(grupaPolaganja.size());
+
+                double grupaProsek = grupaPolaganja.stream()
+                        .mapToDouble(Polaganje::getOstvareniPoeni)
+                        .average()
+                        .orElse(0);
+                grupaStat.setProsecniPoeni(Math.round(grupaProsek * 100.0) / 100.0);
+
+                int grupaPolozenih = (int) grupaPolaganja.stream()
+                        .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
+                        .count();
+                grupaStat.setProcenatProlaznosti(Math.round((grupaPolozenih * 100.0 / grupaPolaganja.size()) * 100.0) / 100.0);
+
+                statistikaPoGrupi.add(grupaStat);
+            }
+        }
+        stat.setStatistikaPoGrupi(statistikaPoGrupi);
+
+        return stat;
     }
 
     public TestInfo createTest(CreateTestCmd cmd) {

@@ -25,4 +25,5 @@ public class TestDetails {
     private Boolean pregledan;
     private Set<TestGrupa> grupe;
     private Set<TestPolaganjeInfo> polaganja;
+    private TestStatistikaInfo statistika;
 }
