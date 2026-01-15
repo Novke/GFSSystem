@@ -2,10 +2,9 @@ package tri.novica.gfssystem.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import tri.novica.gfssystem.entity.Domaci;
-import tri.novica.gfssystem.entity.Grupa;
-import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,4 +21,11 @@ public interface DomaciRepository extends JpaRepository<Domaci, Long> {
     Optional<Domaci> findDomaciPlusGrupaPredmetPredavanje(Long id);
 
     List<Domaci> findAllByGrupaAndPredmetOrderByDatumAsc(Grupa grupa, Predmet predmet);
+
+    @Query("SELECT ud FROM UradjenDomaci ud " +
+            "JOIN FETCH ud.domaci d " +
+            "WHERE ud.student = :student AND d.predmet = :predmet " +
+            "ORDER BY d.datum ASC")
+    List<UradjenDomaci> findUradjeniDomaciByStudentAndPredmet(@Param("student") Student student,
+                                                              @Param("predmet") Predmet predmet);
 }

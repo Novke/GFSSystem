@@ -32,4 +32,12 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
             "WHERE t.tipTesta.id = :tipTestaId " +
             "ORDER BY t.datum DESC LIMIT 1")
     Double findMaxPoenaTestByTipTesta(@Param("tipTestaId") Long tipTestaId);
+
+    @Query("SELECT p FROM Polaganje p " +
+            "JOIN FETCH p.test t " +
+            "JOIN FETCH t.tipTesta " +
+            "WHERE p.student.id = :studentId AND t.predmet.id = :predmetId " +
+            "ORDER BY t.datum ASC")
+    List<Polaganje> findAllByStudentAndPredmet(@Param("studentId") Long studentId,
+                                                @Param("predmetId") Long predmetId);
 }
