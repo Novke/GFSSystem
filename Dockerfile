@@ -3,7 +3,7 @@ FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /build
 COPY pom.xml mvnw ./
 COPY .mvn/ .mvn/
-# mvnw je u gitu bez exec bita
+# chmod za svaki slučaj: checkout sa Windowsa može izgubiti exec bit
 RUN chmod +x mvnw && ./mvnw -q -B dependency:go-offline
 COPY src/ src/
 RUN ./mvnw -q -B -DskipTests package
@@ -15,5 +15,5 @@ WORKDIR /app
 COPY --from=build /build/target/*.jar /app/app.jar
 USER app
 EXPOSE 8080
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 ENTRYPOINT ["java","-jar","/app/app.jar"]
