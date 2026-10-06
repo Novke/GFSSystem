@@ -70,6 +70,19 @@ docker build -t gfs-backend .
 
 Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the database at `shared-mysql:3306/gf` (user `gfs`) and takes the password only from the environment variable `SPRING_DATASOURCE_PASSWORD`. The container listens on 8080.
 
+## Branching and CI
+
+- Flow: `feature/* -> staging -> master`. PRs target `staging` by default; a release is a PR `staging -> master` (opened by
+  Novica or on request). Never push directly to `master`; a direct push to `staging` is fine for quick experiments.
+  `master` is protected: PR plus green check `build` required. This repo is public, so no secrets or real data in it.
+- Staging: every push to `staging` is deployed automatically (about a minute) to `https://staging.gfs.trif.rs`
+  (basic-auth, synthetic data only). The result shows up as commit status `staging-deploy`. Deploy details live in the
+  wrapper repo `Novke/GFS-deploy` (`README.md`).
+- CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 17, service `mysql:8.0`
+  (empty root password, DB `gftest`), `./mvnw -B package` (runs the `contextLoads` test), then `docker build`.
+  To reproduce locally run MySQL on `localhost:3306` with DB `gftest` and root without a password, then `./mvnw -B package`.
+  On novica-dev port 3306 is taken by `shared-mysql`, so there use `./mvnw -B -DskipTests package` and rely on CI for the test.
+
 ## Database
 
 MySQL database `gf` on localhost:3306. Schema is auto-updated via `hibernate.ddl-auto=update`.
