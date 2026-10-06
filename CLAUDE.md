@@ -62,6 +62,14 @@ src/main/java/tri/novica/gfssystem/
 ./mvnw spring-boot:run
 ```
 
+### Docker
+
+```bash
+docker build -t gfs-backend .
+```
+
+Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the database at `shared-mysql:3306/gf` (user `gfs`) and takes the password only from the environment variable `SPRING_DATASOURCE_PASSWORD`. The container listens on 8080.
+
 ## Database
 
 MySQL database `gf` on localhost:3306. Schema is auto-updated via `hibernate.ddl-auto=update`.
