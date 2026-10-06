@@ -25,6 +25,3 @@ public class GfsSystemApplication {
 
 
 }
-
-// TEST kriterijuma 3: namerna sintaksna greška
-class NamernoPokvareno { void x() { int a = ; } }
