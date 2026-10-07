@@ -14,6 +14,8 @@ import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja;
+import tri.novica.gfssystem.service.uzivo.IzvodjenjeService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 
 import java.time.LocalDate;
@@ -36,6 +38,7 @@ class PrezentacijaRestTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean PrezentacijaService service;
+    @MockitoBean IzvodjenjeService izvodjenjeService;
 
     @Test
     void kreirajVraca201IDetalje() throws Exception {
@@ -189,5 +192,21 @@ class PrezentacijaRestTest {
            .andExpect(jsonPath("$[0].datum").value("2026-10-07"))
            .andExpect(jsonPath("$[0].zavrseno").value(false))
            .andExpect(jsonPath("$[0].grupa.naziv").value("GD-2025"));
+    }
+
+    @Test
+    void pokreniVraca201IInfo() throws Exception {
+        when(izvodjenjeService.pokreni(eq(1L), any())).thenReturn(new IzvodjenjeInfo(9L,
+                new PrezentacijaKratko(1L, "Uvod", 7L), "042424", StatusIzvodjenja.AKTIVNO, true,
+                new GrupaKratko(3L, "GD-2025"), null, IZMENJENO, null, 0, 0));
+        mvc.perform(post("/prezentacije/1/izvodjenja").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cuvanje\":true,\"grupaId\":3,\"predavanjeId\":null}"))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.id").value(9))
+           .andExpect(jsonPath("$.kod").value("042424"))
+           .andExpect(jsonPath("$.prezentacija.predmetId").value(7))
+           .andExpect(jsonPath("$.grupa.naziv").value("GD-2025"))
+           .andExpect(jsonPath("$.predavanje").value(org.hamcrest.Matchers.nullValue()));
+        verify(izvodjenjeService).pokreni(1L, new PokreniCmd(true, 3L, null));
     }
 }

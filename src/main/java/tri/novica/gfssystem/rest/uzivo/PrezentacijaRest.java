@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.service.uzivo.IzvodjenjeService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.List;
 public class PrezentacijaRest {
 
     private final PrezentacijaService prezentacijaService;
+    private final IzvodjenjeService izvodjenjeService;
 
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
@@ -72,5 +74,12 @@ public class PrezentacijaRest {
     @ResponseStatus(HttpStatus.OK)
     public List<PredavanjeZaPokretanjeInfo> predavanja(@PathVariable Long id) {
         return prezentacijaService.predavanjaZaPokretanje(id);
+    }
+
+    /** Pokreće izvođenje (faza prijave); bez pitanja u prezentaciji ništa se ne čuva. */
+    @PostMapping("/{id}/izvodjenja")
+    @ResponseStatus(HttpStatus.CREATED)
+    public IzvodjenjeInfo pokreni(@PathVariable Long id, @RequestBody PokreniCmd cmd) {
+        return izvodjenjeService.pokreni(id, cmd);
     }
 }
