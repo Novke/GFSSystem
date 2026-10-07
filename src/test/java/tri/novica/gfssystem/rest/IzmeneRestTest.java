@@ -13,6 +13,8 @@ import tri.novica.gfssystem.dto.student.UpdateStudentCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.dto.test.tip.UpdateTipTestaCmd;
 import tri.novica.gfssystem.service.GrupaService;
+import tri.novica.gfssystem.service.OcenjivanjeService;
+import tri.novica.gfssystem.service.PregledGrupeService;
 import tri.novica.gfssystem.service.StudentService;
 import tri.novica.gfssystem.service.TestService;
 
@@ -30,6 +32,8 @@ class IzmeneRestTest {
     @MockitoBean GrupaService grupe;
     @MockitoBean StudentService studenti;
     @MockitoBean TestService testovi;
+    @MockitoBean PregledGrupeService pregledGrupe;   // GrupaRest: pregled i prisustvo
+    @MockitoBean OcenjivanjeService ocenjivanje;     // StudentRest: kartice po predmetu
 
     static final String STUDENT_OK = """
             {"grupaId":5,"ime":"Ana","prezime":"Anić","indeks":"GD12","godina":2025}""";

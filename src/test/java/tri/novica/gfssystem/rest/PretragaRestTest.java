@@ -24,6 +24,7 @@ import tri.novica.gfssystem.dto.test.TestListItem;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.dto.student.pregled.StudentPregledDetails;
 import tri.novica.gfssystem.service.DomaciService;
+import tri.novica.gfssystem.service.OcenjivanjeService;
 import tri.novica.gfssystem.service.StudentService;
 import tri.novica.gfssystem.service.TestService;
 
@@ -45,6 +46,7 @@ class PretragaRestTest {
     @MockitoBean DomaciService domaci;
     @MockitoBean TestService testovi;
     @MockitoBean StudentService studenti;
+    @MockitoBean OcenjivanjeService ocenjivanje;   // StudentRest: kartice po predmetu
 
     // ------------------------------------------------------------------ sort whitelist
 

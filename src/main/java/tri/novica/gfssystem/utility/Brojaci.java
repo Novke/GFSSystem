@@ -17,8 +17,13 @@ public final class Brojaci {
 
     public static Map<Long, Long> poId(Collection<Long> ids, Function<Collection<Long>, List<Object[]>> upit) {
         if (ids.isEmpty()) return Map.of();
+        return mapa(upit.apply(ids));
+    }
+
+    /** Redovi {@code [id, count]} agregatnog upita kao mapa id -> broj. */
+    public static Map<Long, Long> mapa(List<Object[]> redovi) {
         Map<Long, Long> rezultat = new HashMap<>();
-        for (Object[] red : upit.apply(ids)) {
+        for (Object[] red : redovi) {
             rezultat.put(((Number) red[0]).longValue(), ((Number) red[1]).longValue());
         }
         return rezultat;
