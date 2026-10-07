@@ -33,4 +33,6 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
     boolean existsByPrezentacijaIdAndStatus(Long id, StatusIzvodjenja s);
 
     long countByPrezentacijaId(Long id);
+
+    Optional<Izvodjenje> findFirstByPrezentacijaIdAndStatusOrderByPocetakDesc(Long id, StatusIzvodjenja s);
 }
