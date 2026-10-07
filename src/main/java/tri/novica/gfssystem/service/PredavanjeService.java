@@ -265,19 +265,22 @@ public class PredavanjeService {
         List<Long> ids = strana.map(Predavanje::getId).toList();
         Set<Long> grupaIds = strana.stream().map(Predavanje::getGrupa).filter(Objects::nonNull)
                 .map(Grupa::getId).collect(Collectors.toSet());
-        Map<Long, Long> prisutni = Brojaci.poId(ids, aktivnostRepository::brojPrisutnihPoPredavanju);
+        List<Object[]> prisutniRedovi = ids.isEmpty() ? List.of() : aktivnostRepository.brojPrisutnihPoPredavanju(ids);
+        Map<Long, Long> prisutni = Brojaci.mapa(prisutniRedovi, 1);
+        Map<Long, Long> stariji = Brojaci.mapa(prisutniRedovi, 2);
         Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
 
-        return new PagedModel<>(strana.map(p -> uListItem(p, prisutni, studenti)));
+        return new PagedModel<>(strana.map(p -> uListItem(p, prisutni, stariji, studenti)));
     }
 
     /** Ručno mapiranje (ModelMapper je STRICT, a brojači nisu polja entiteta). */
-    private static PredavanjeListItem uListItem(Predavanje p, Map<Long, Long> prisutni, Map<Long, Long> studenti) {
+    private static PredavanjeListItem uListItem(Predavanje p, Map<Long, Long> prisutni, Map<Long, Long> stariji,
+                                              Map<Long, Long> studenti) {
         Grupa g = p.getGrupa();
         long brojStudenata = g == null ? 0 : studenti.getOrDefault(g.getId(), 0L);
         GrupaInfo grupa = g == null ? null : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata);
         PredmetInfo predmet = new PredmetInfo(p.getPredmet().getId(), p.getPredmet().getNaziv());
         return new PredavanjeListItem(p.getId(), p.getRb(), p.getDatum(), p.getTema(), p.getZavrseno(), predmet, grupa,
-                prisutni.getOrDefault(p.getId(), 0L), brojStudenata);
+                prisutni.getOrDefault(p.getId(), 0L), stariji.getOrDefault(p.getId(), 0L), brojStudenata);
     }
 }

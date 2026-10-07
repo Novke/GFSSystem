@@ -19,10 +19,16 @@ public interface AktivnostRepository extends JpaRepository<Aktivnost, Long> {
     List<Aktivnost> findAllByStudentAndPredavanjePredmetOrderByPredavanjeDatumAsc(Student student, Predmet predmet);
 
     /**
-     * Broj različitih prisutnih studenata po predavanju, za stranicu liste ({@code Brojaci.poId}). Svaka aktivnost
-     * (prisustvo, zadatak, zvezdica) znači da je student bio prisutan. Redovi: {@code [predavanjeId, broj]}.
+     * Brojači prisutnih po predavanju, za stranicu liste, jednim prolazom. Svaka aktivnost (prisustvo, zadatak,
+     * zvezdica) znači da je student bio prisutan. Redovi: {@code [predavanjeId, brojPrisutnih, brojStarijihPrisutnih]},
+     * oba broja po različitim studentima; "stariji" su prisutni koji nisu u grupi predavanja (ponovci, premešteni,
+     * studenti bez grupe), a za predavanje bez grupe je taj broj 0 (nema sa čim da se poredi).
      */
-    @Query("select a.predavanje.id, count(distinct a.student.id) from Aktivnost a where a.predavanje.id in :ids group by a.predavanje.id")
+    @Query("""
+            select p.id, count(distinct s.id),
+                   count(distinct case when pg is not null and (sg is null or sg.id <> pg.id) then s.id end)
+            from Aktivnost a join a.predavanje p left join p.grupa pg join a.student s left join s.grupa sg
+            where p.id in :ids group by p.id""")
     List<Object[]> brojPrisutnihPoPredavanju(@Param("ids") Collection<Long> ids);
 
     /**

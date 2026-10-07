@@ -22,9 +22,14 @@ public final class Brojaci {
 
     /** Redovi {@code [id, count]} agregatnog upita kao mapa id -> broj. */
     public static Map<Long, Long> mapa(List<Object[]> redovi) {
+        return mapa(redovi, 1);
+    }
+
+    /** Redovi {@code [id, count0, count1, ...]}: mapa id -> broj iz kolone {@code kolona} (1 = prvi brojač). */
+    public static Map<Long, Long> mapa(List<Object[]> redovi, int kolona) {
         Map<Long, Long> rezultat = new HashMap<>();
         for (Object[] red : redovi) {
-            rezultat.put(((Number) red[0]).longValue(), ((Number) red[1]).longValue());
+            rezultat.put(((Number) red[0]).longValue(), ((Number) red[kolona]).longValue());
         }
         return rezultat;
     }

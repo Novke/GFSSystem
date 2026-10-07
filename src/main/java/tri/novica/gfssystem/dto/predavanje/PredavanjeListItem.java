@@ -22,6 +22,11 @@ public class PredavanjeListItem {
     private GrupaInfo grupa;
     /** Broj različitih studenata sa bar jednom aktivnošću (prisustvo, zadatak ili zvezdica). */
     private long brojPrisutnih;
+    /**
+     * Koliko od prisutnih nije iz grupe predavanja (ponovci, premešteni, studenti bez grupe); 0 za predavanje bez
+     * grupe. Za prikaz "31/38 +3".
+     */
+    private long brojStarijihPrisutnih;
     /** Broj studenata koji su sada u grupi predavanja. */
     private long brojStudenata;
 }

@@ -184,6 +184,28 @@ class PredavanjePretragaIT {
     }
 
     @Test
+    void brojStarijihPrisutnihSamoIzVanGrupePredavanja() {
+        Student bezGrupe = student("ITX1", null);
+        aktivnost(p2, s1, TipAktivnosti.PRISUSTVO);      // grupa A na predavanju grupe B: stariji
+        aktivnost(p2, s1, TipAktivnosti.ZADATAK);        // duplikat: broji se jednom
+        aktivnost(p2, s5, TipAktivnosti.PRISUSTVO);      // grupa B: nije stariji
+        aktivnost(p1, bezGrupe, TipAktivnosti.PRISUSTVO); // bez grupe: van grupe predavanja
+        em.flush();
+        em.clear();
+        List<PredavanjeListItem> lista = pretraga(filter(null, null, null, null, null, null, null), strana()).getContent();
+        PredavanjeListItem i1 = nadji(lista, p1);
+        assertEquals(3, i1.getBrojPrisutnih());           // s1, s2 + bez grupe
+        assertEquals(1, i1.getBrojStarijihPrisutnih());   // samo student bez grupe
+        PredavanjeListItem i2 = nadji(lista, p2);
+        assertEquals(3, i2.getBrojPrisutnih());           // s4, s1, s5
+        assertEquals(1, i2.getBrojStarijihPrisutnih());   // s1
+        assertEquals(0, nadji(lista, p3).getBrojStarijihPrisutnih());   // niko nije prisutan
+        PredavanjeListItem i4 = nadji(lista, p4);
+        assertEquals(1, i4.getBrojPrisutnih());
+        assertEquals(0, i4.getBrojStarijihPrisutnih());   // predavanje bez grupe: nema sa čim da se poredi
+    }
+
+    @Test
     void praznaStrana() {
         PagedModel<PredavanjeListItem> r = pretraga(filter(-1L, null, null, null, null, null, null), strana());
         assertTrue(r.getContent().isEmpty());
@@ -204,6 +226,7 @@ class PredavanjePretragaIT {
            .andExpect(jsonPath("$.content[0].id").value(p4.getId()))
            .andExpect(jsonPath("$.content[0].grupa").value(nullValue()))
            .andExpect(jsonPath("$.content[0].brojStudenata").value(0))
+           .andExpect(jsonPath("$.content[0].brojStarijihPrisutnih").value(0))
            .andExpect(jsonPath("$.content[0].datum").value("2025-12-01"))
            .andExpect(jsonPath("$.content[2].grupa.naziv").value("IT-A"));
     }
@@ -269,7 +292,7 @@ class PredavanjePretragaIT {
         s.setIme("Ime");
         s.setPrezime(indeks);
         s.setIndeks(indeks);
-        s.setGodina(g.getGodinaUpisa());
+        s.setGodina(g == null ? 2020 : g.getGodinaUpisa());
         s.setGrupa(g);
         em.persist(s);
         return s;

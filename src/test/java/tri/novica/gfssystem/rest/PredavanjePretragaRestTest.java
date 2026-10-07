@@ -96,9 +96,9 @@ class PredavanjePretragaRestTest {
     @Test
     void oblikOdgovoraJePagedModel() throws Exception {
         PredavanjeListItem bezGrupe = new PredavanjeListItem(7L, 3, LocalDate.of(2025, 10, 14), "Integrali", true,
-                new PredmetInfo(1L, "Matematika"), null, 0, 0);
+                new PredmetInfo(1L, "Matematika"), null, 0, 0, 0);
         PredavanjeListItem saGrupom = new PredavanjeListItem(8L, 4, LocalDate.of(2025, 10, 21), "Izvodi", false,
-                new PredmetInfo(1L, "Matematika"), new GrupaInfo(2L, "GD-2025", 2025, 30L), 12, 30);
+                new PredmetInfo(1L, "Matematika"), new GrupaInfo(2L, "GD-2025", 2025, 30L), 12, 2, 30);
         when(service.pretraga(any(), any())).thenReturn(new PagedModel<>(
                 new PageImpl<>(List.of(bezGrupe, saGrupom), PageRequest.of(0, 25), 2)));
         mvc.perform(get("/predavanja/pretraga"))
