@@ -61,8 +61,11 @@ A teacher opens a session for a group (`POST /grupe/{id}/onboarding`, link/QR wi
 the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/{id}/...`; accepting creates the
 `Student` in the session's group). Logic lives in `OnboardingService`, field rules in `validation/PrijavaPP`.
 - **Public API is only `/public/upis/{token}`** (`PublicUpisRest`: `GET` info, `POST` submit; 404 unknown token,
-  410 closed). It has no auth: the frontend nginx serves it as `/api/public/upis/...` and the host nginx exempts only
-  `/api/public/` from basic-auth. Never add anything else under `/public/` that is not meant for the internet.
+  410 closed, 406 for an unacceptable `Accept` before the service runs). It has no auth: the frontend nginx serves it
+  as `/api/public/upis/...`, and the only API prefix the host nginx exempts from basic-auth is `/api/public/` (its
+  public-path regex also exempts the SPA route `/upis/`, assets and hashed bundles, none of which reach the backend).
+  Any new mapping under `/public/**` is therefore unauthenticated on the internet automatically: put only
+  student-facing endpoints there.
 - **Only new students:** dedupe by (normalized index, enrollment year) against `studenti`, against pending submissions in
   the same session, on edit and on accept. `IndeksUtil.normalizuj` strips whitespace and upper-cases (`"gd 1"` -> `GD1`);
   `POST /studenti` uses the same normalization and duplicate check.

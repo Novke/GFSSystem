@@ -13,8 +13,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -26,13 +24,17 @@ import java.util.List;
 @Slf4j
 public class ApiExceptionHandler {
 
-    /** Tekst izuzetka (može sadržati SQL ili putanje) ide samo u log, klijent dobija opštu poruku. */
+    /**
+     * Tekst izuzetka (može sadržati SQL ili putanje) ide samo u log, klijent dobija opštu poruku. Springovi izuzeci sa
+     * sopstvenim statusom (npr. 406 za neprihvatljiv Accept) zadržavaju taj status i ne loguju se kao ERROR.
+     */
     @ExceptionHandler(Exception.class)
-    @ResponseBody
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    ApiException handleUnexpectedErrors(Exception ex){
+    ResponseEntity<ApiException> handleUnexpectedErrors(Exception ex){
+        if (ex instanceof ErrorResponse) {
+            return handleSpringGreske(ex);
+        }
         log.error("Unexpected error", ex);
-        return new ApiException("Sistemska greška.", LocalDateTime.now());
+        return ResponseEntity.internalServerError().body(new ApiException("Sistemska greška.", LocalDateTime.now()));
     }
 
     @ExceptionHandler(SystemException.class)
@@ -56,7 +58,8 @@ public class ApiExceptionHandler {
 
         ApiException apiException = new ApiException(userFriendlyMessage, LocalDateTime.now());
 
-        log.info("Invalid arguments: {}", userFriendlyMessage, ex);
+        // samo poruke, bez izuzetka: on nosi odbijene vrednosti (email, telefon, ime), a log se čuva 30 dana
+        log.info("Invalid arguments: {}", userFriendlyMessage);
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiException);
     }
@@ -78,7 +81,13 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiException> handleSpringGreske(Exception ex) {
         ErrorResponse greska = (ErrorResponse) ex;
         HttpStatusCode status = greska.getStatusCode();
-        String razlog = status.value() == 404 ? "Ne postoji." : "Neispravan zahtev.";
+        String razlog;
+        if (status.is5xxServerError()) {
+            log.error("Unexpected error", ex);
+            razlog = "Sistemska greška.";
+        } else {
+            razlog = status.value() == 404 ? "Ne postoji." : "Neispravan zahtev.";
+        }
         // zaglavlja koja Spring sam postavlja (Allow za 405, Accept za 415)
         return ResponseEntity.status(status).headers(greska.getHeaders()).body(new ApiException(razlog, LocalDateTime.now()));
     }
