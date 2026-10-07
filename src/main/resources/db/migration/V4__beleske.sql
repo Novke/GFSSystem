@@ -1,6 +1,7 @@
--- V4: beleške nastavnika o studentu (redizajn UI-ja, S6). Nova tabela, ni u gf ni u gf_staging je nema,
--- pa nije potrebna idempotentnost kao u V2. Stara slika (ddl-auto=update) novu tabelu ne dira, pa rollback na nju radi.
-CREATE TABLE `beleske` (
+-- V4: beleške nastavnika o studentu (redizajn UI-ja, S6). Idempotentno kao V2 (reset staging baze gradi šemu iz
+-- dump-a produkcije, a baza koja već ima tabelu bez Flyway istorije ne sme da pukne).
+-- Stara slika (ddl-auto=update) novu tabelu ne dira, pa rollback na nju radi.
+CREATE TABLE IF NOT EXISTS `beleske` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `student_id` bigint NOT NULL,
   `tekst` varchar(2000) NOT NULL,

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Lokalna provera Flyway migracija nad tri početna stanja šeme:
-#   prazna      - prazna baza (kao CI gftest): očekivano sve od V1 izvršeno
-#   gf          - šema produkcione baze pre onboardinga: očekivano baseline 1 + V2 i dalje
-#   gf_staging  - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op) i dalje
+# Lokalna provera Flyway migracija (V1 baseline, V2-V4 idempotentne, i svaka sledeća) nad četiri početna stanja šeme:
+#   prazna         - prazna baza (kao CI gftest): očekivano sve od V1 izvršeno
+#   gf             - šema produkcione baze pre onboardinga: očekivano baseline 1 + sve migracije posle V1
+#   gf_staging     - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op) + ostale
+#   vec_migrirana  - gf_staging šema kojoj su V3/V4 objekti već ručno primenjeni, a Flyway istorije nema (kao reset
+#                    staging baze iz dump-a posle migracije): baseline 1 + V2..V4 moraju da prođu kao no-op
 # Za svaki scenario pravi bazu fw_<scenario> u test MySQL-u, učita dump šeme (bez podataka), pokrene jar
 # (ddl-auto=validate) i ispiše flyway_schema_history. Izlaz != 0 ako bilo koji scenario ne startuje.
 #
@@ -17,7 +19,8 @@ MYSQL_PORT="${MYSQL_PORT:-3307}"
 APP_PORT="${APP_PORT:-18082}"
 SCHEMA_DIR="${SCHEMA_DIR:-/data/tmp/redizajn-schema}"
 START_TIMEOUT="${START_TIMEOUT:-60}"
-SCENARIJI=(prazna gf gf_staging)
+MIGRATIONS="src/main/resources/db/migration"
+SCENARIJI=(prazna gf gf_staging vec_migrirana)
 
 cd "$(dirname "$0")/.."
 
@@ -41,6 +44,12 @@ log=""
 zaustavi_app() {
   if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
     kill "$app_pid" 2>/dev/null || true
+    local i
+    for ((i = 0; i < 20; i++)); do   # do 10 s za uredno gašenje, pa SIGKILL
+      kill -0 "$app_pid" 2>/dev/null || break
+      sleep 0.5
+    done
+    kill -9 "$app_pid" 2>/dev/null || true
     wait "$app_pid" 2>/dev/null || true
   fi
   app_pid=""
@@ -54,8 +63,15 @@ for s in "${SCENARIJI[@]}"; do
   mysql_exec -e "DROP DATABASE IF EXISTS \`$db\`; CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
   if [[ "$s" != "prazna" ]]; then
     dump="$SCHEMA_DIR/$s.sql"
+    [[ "$s" == "vec_migrirana" ]] && dump="$SCHEMA_DIR/gf_staging.sql"
     [[ -f "$dump" ]] || { echo "Nema dump-a $dump" >&2; exit 2; }
     mysql_exec "$db" < "$dump"
+  fi
+  if [[ "$s" == "vec_migrirana" ]]; then
+    # objekti iz V3 i V4 već postoje, ali bez flyway_schema_history
+    for m in V3 V4; do
+      mysql_exec "$db" < "$MIGRATIONS"/${m}__*.sql
+    done
   fi
 
   log="$(mktemp "/tmp/flyway-provera-$s.XXXX.log")"
