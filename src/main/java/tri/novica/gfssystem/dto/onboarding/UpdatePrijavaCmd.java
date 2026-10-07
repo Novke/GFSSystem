@@ -1,4 +1,4 @@
-package tri.novica.gfssystem.dto.student;
+package tri.novica.gfssystem.dto.onboarding;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,14 +9,13 @@ import java.time.LocalDate;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class StudentInfo {
-    private Long id;
+public class UpdatePrijavaCmd implements PoljaPrijave {
     private String ime;
     private String prezime;
-    private int godina;
     private String indeks;
-    private String brojTelefona;
+    private Integer godina;
     private String email;
+    private String brojTelefona;
     private LocalDate datumRodjenja;
     private String opstina;
 }

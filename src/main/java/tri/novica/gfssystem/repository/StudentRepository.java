@@ -2,6 +2,7 @@ package tri.novica.gfssystem.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
@@ -23,4 +24,12 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     Optional<Student> findByIdFetchDetails(Long id);
 
     List<Student> findByGrupa(Grupa grupa);
+
+    /** Stari redovi mogu imati razmake ili mala slova u indeksu, zato se normalizuje i kolona. */
+    @Query("""
+        SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Student s
+        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina""")
+    boolean postojiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina);
+
+    long countByGrupaId(Long grupaId);
 }

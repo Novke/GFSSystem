@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.Set;
 
@@ -25,6 +26,10 @@ public class Student {
     private int godina;
     private String indeks;
     private String brojTelefona;
+    private String email;
+    private LocalDate datumRodjenja;
+    @Column(length = 100)
+    private String opstina;
     @ManyToOne
     private Grupa grupa;
     @OneToMany(mappedBy = "student")
