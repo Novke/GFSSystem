@@ -4,8 +4,11 @@ Academic management system for Gradjevinski Fakultet Subotica (GFS).
 
 ## Tech Stack
 
-- **Java 21** with **Spring Boot 4.1** (Jackson 3, `spring.jackson.use-jackson2-defaults=true` keeps the Boot 3 JSON behavior)
-- **Spring Data JPA** with **MySQL** database
+- **Java 21** with **Spring Boot 4.1.1**
+- **Jackson 3** (Boot 4 default) with `spring.jackson.use-jackson2-defaults=true`: keeps the Boot 3 / Jackson 2 JSON
+  behavior the frontend and tests rely on (null into a primitive field gives 0, trailing text after the JSON is ignored,
+  Jackson 2 property order). Without it a body like `{"x": null}` for an `int` would be a 400 instead of 0.
+- **Spring Data JPA** with **MySQL** database, schema owned by **Flyway**
 - **Lombok** for boilerplate reduction
 - **MapStruct** and **ModelMapper** for DTO mapping
 - **Spring Validation** for input validation
@@ -103,18 +106,59 @@ Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the
 - Staging: every push to `staging` is deployed automatically (about a minute) to `https://gfs.dev.trif.rs`
   (basic-auth, synthetic data only). The result shows up as commit status `staging-deploy`. Deploy details live in the
   wrapper repo `Novke/GFS-deploy` (`README.md`).
-- CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 17, service `mysql:8.0`
-  (empty root password, DB `gftest`), `./mvnw -B package` (runs the `contextLoads` test), then `docker build`.
-  To reproduce locally run MySQL on `localhost:3306` with DB `gftest` and root without a password, then `./mvnw -B package`.
-  On novica-dev port 3306 is taken by `shared-mysql`, so there use `./mvnw -B -DskipTests package` and rely on CI for the test.
+- CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 21, service `mysql:8.0`
+  (empty root password, DB `gftest`), `./mvnw -B package` (all tests, including the `*IT` classes against real MySQL
+  with the Flyway schema), then `docker build`.
+- **Local tests on novica-dev** (3306 is `shared-mysql`, never use it for tests): a throwaway MySQL on 3307,
+  `docker run -d --name gfs-redizajn-mysql -p 127.0.0.1:3307:3306 -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=gftest mysql:8.0`,
+  then `SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3307/gftest ./mvnw -B package` (runs every test, ITs included). If a
+  migration changed (checksum mismatch), drop and recreate `gftest` first. The ITs are `@SpringBootTest @Transactional`
+  and roll back, so they keep the DB clean; they only assert on rows they insert themselves.
 
 ## Database
 
 MySQL database `gf` on localhost:3306. The schema is owned by **Flyway** (`src/main/resources/db/migration`), Hibernate only
-checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>__opis.sql` (next free: `V3`); never edit an
-applied migration. `V1` = schema of prod `gf` before onboarding (an existing DB without `flyway_schema_history` gets a
-baseline at 1 via `baseline-on-migrate`); `V2` = onboarding, idempotent. `sql/views.sql` is historical, the view lives in `V1`.
-`scripts/flyway-provera.sh` checks the migrations against an empty DB and the `gf` / `gf_staging` schema dumps (test MySQL on 3307).
+checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>__opis.sql`; never edit a migration that
+is applied to a shared DB (prod `gf`, staging `gf_staging`).
+- `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
+  baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
+  (teacher notes). **V2-V4 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
+- **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
+  and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
+- **Next free version: `V6`.** `V5` is reserved by the parallel "uživo" (live) branch; do not take it.
+- `sql/views.sql` is historical, the view lives in `V1`.
+- `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
+  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with V3/V4 objects already applied, no history). Run
+  `./mvnw -B -DskipTests package` first; it uses the test MySQL on 3307.
+
+## List and overview API conventions
+
+New list endpoints follow one pattern (see `PredavanjeService.pretraga` as the reference):
+- **Paging:** `Pageable` from Spring Data web, defaults/limits in `application.properties` (25 per page, max 100,
+  `spring.data.web.pageable.serialization-mode=via-dto`, so a page is JSON `{content, page: {size, number, totalElements,
+  totalPages}}` as `PagedModel`). Do **not** add `@EnableSpringDataWebSupport`: it switches off Boot's
+  `DataWebAutoConfiguration` and with it these properties. The REST layer calls `PageableUtil.proveri(pageable, <SORT_POLJA>,
+  <PODRAZUMEVANI_SORT>)` (whitelisted sort fields, `id desc` tiebreaker, 400 `Neispravan parametar: sort.`) before the service.
+- **Filters:** one `*Filter` record per list (query params bound by Spring), turned into JPA `Specification`s in
+  `repository/spec/*Specs` (`allOf` of small specs, each null-safe); text search and `LIKE` escaping via `SpecUtil.likeObrazac`.
+  The school year filter `godina=Y` means 1 Oct Y - 30 Sep Y+1 (`SkolskaGodina`, also used with the `Clock` bean for "current").
+- **Rows:** `*ListItem` DTOs (plain classes, mapped by hand because ModelMapper is STRICT), nested `*Ref` for small references
+  (`PredmetInfo`, `GrupaInfo`, `DomaciPredavanjeRef`); overview/dashboard DTOs in `dto/pregled` are Java **records**.
+- **Counters without N+1:** per-row counts (attendees, students in group, done homework) come from one aggregate query per
+  page returning `[id, count...]` rows, turned into a map by `Brojaci.poId` / `Brojaci.mapa(redovi, kolona)`; an empty id set
+  never hits the DB. Example: `AktivnostRepository.brojPrisutnihPoPredavanju` returns `brojPrisutnih` and
+  `brojStarijihPrisutnih` (attendees outside the lecture's group, for "31/38 +3") in a single pass.
+
+### Endpoints added by the UI redesign
+
+- Lists: `GET /predavanja/pretraga`, `/domaci/pretraga`, `/test/pretraga`, `/studenti/pretraga` (filters, paging, sort as above).
+- Dashboard and search: `GET /pregled/kontrolna-tabla` (next lecture, today's, "waiting for you" with lists capped at 10 plus
+  totals `brojTestova`/`brojDomacih`/`brojPrijava`/`brojNezavrsenih`, this week's agenda), `GET /pretraga?q=` (global search, min 2 chars).
+- Groups: `GET /grupe/{id}/pregled` (per-student stats for a subject), `GET /grupe/{id}/prisustvo` (attendance matrix).
+- Students: `GET /studenti/{id}/predmeti` and `/studenti/{studentId}/predmet/{predmetId}` (per-subject student card);
+  notes `GET|POST /studenti/{studentId}/beleske`, `PUT|DELETE /beleske/{id}` (Flyway `V4`).
+- Homework: `POST /domaci/evidentiraj`, `POST /domaci/{id}/oslobodi`.
 
 ## Frontend
 
