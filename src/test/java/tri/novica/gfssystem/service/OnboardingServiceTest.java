@@ -239,7 +239,7 @@ class OnboardingServiceTest {
         OnboardingSesijaDetails d = service.prihvatiSve(1L);
         verify(studentRepository, times(1)).save(any(Student.class));
         assertEquals(StatusPrijave.NA_CEKANJU, a.getStatus());
-        assertNotNull(a.getNapomena());
+        assertEquals("Preskočeno pri prihvatanju svih: student sa ovim indeksom i godinom upisa već postoji.", a.getNapomena());
         assertEquals(StatusPrijave.PRIHVACENA, b.getStatus());
         assertEquals("Prihvaćeno: 1. Preskočeno (indeks već postoji): GD5.", d.getPoruka());
     }
@@ -252,6 +252,28 @@ class OnboardingServiceTest {
         assertEquals(StatusPrijave.ODBIJENA, p.getStatus());
         assertEquals("Pogrešna grupa", p.getNapomena());
         assertEquals(SADA, p.getObradjeno());
+    }
+
+    @Test
+    void odbijanjeVecObradjenePrijaveVraca409() {
+        OnboardingSesija s = sesija(true, SADA.plusDays(7));
+        Prijava p = naCekanju(7L, "GD12", 2026, s);
+        p.setStatus(StatusPrijave.PRIHVACENA);
+        assertEquals(409, assertThrows(SystemException.class, () -> service.odbij(1L, 7L, null)).getCode());
+        assertEquals(StatusPrijave.PRIHVACENA, p.getStatus());
+        verify(prijavaRepository, never()).save(any());
+    }
+
+    @Test
+    void odbijanjeSaPredugackomNapomenomVraca400() {
+        OnboardingSesija s = sesija(true, SADA.plusDays(7));
+        Prijava p = naCekanju(7L, "GD12", 2026, s);
+        SystemException ex = assertThrows(SystemException.class,
+                () -> service.odbij(1L, 7L, new OdbijPrijavuCmd("x".repeat(256))));
+        assertEquals(400, ex.getCode());
+        assertEquals("Napomena može imati najviše 255 znakova.", ex.getMessage());
+        assertEquals(StatusPrijave.NA_CEKANJU, p.getStatus());
+        verify(prijavaRepository, never()).save(any());
     }
 
     @Test
@@ -292,5 +314,31 @@ class OnboardingServiceTest {
         when(prijavaRepository.existsBySesijaIdAndIndeksAndGodinaAndStatusAndIdNot(1L, "GD14", 2026, StatusPrijave.NA_CEKANJU, 7L)).thenReturn(true);
         UpdatePrijavaCmd dupl = new UpdatePrijavaCmd("Ana", "Anić", "GD14", 2026, "ana@example.com", "064123456", null, null);
         assertEquals(400, assertThrows(SystemException.class, () -> service.izmeniPrijavu(1L, 7L, dupl)).getCode());
+    }
+
+    @Test
+    void izmenaObradjenePrijaveVraca409() {
+        OnboardingSesija s = sesija(true, SADA.plusDays(7));
+        Prijava p = naCekanju(7L, "GD12", 2026, s);
+        p.setStatus(StatusPrijave.ODBIJENA);
+        UpdatePrijavaCmd cmd = new UpdatePrijavaCmd("Ana", "Anić", "GD13", 2026, "ana@example.com", "064123456", null, null);
+        assertEquals(409, assertThrows(SystemException.class, () -> service.izmeniPrijavu(1L, 7L, cmd)).getCode());
+        assertEquals("GD12", p.getIndeks());
+        verify(prijavaRepository, never()).save(any());
+    }
+
+    @Test
+    void cirilicniIndeksSeOdbijaALatinicniNormalizuje() {
+        sesija(true, SADA.plusDays(7));
+        // ćirilično "ГД12" (srpska tastatura telefona) bi inače zaobišlo dedupe protiv "GD12"
+        SystemException ex = assertThrows(SystemException.class, () -> service.podnesi(TOKEN, forma("ГД12", 2026), "ip"));
+        assertEquals(400, ex.getCode());
+        assertEquals("Indeks mora imati od 2 do 20 znakova, latinicom (slova A-Z, cifre, / . -).", ex.getMessage());
+        verify(prijavaRepository, never()).save(any());
+
+        service.podnesi(TOKEN, forma("gd 12", 2026), "ip");
+        ArgumentCaptor<Prijava> c = ArgumentCaptor.forClass(Prijava.class);
+        verify(prijavaRepository).save(c.capture());
+        assertEquals("GD12", c.getValue().getIndeks());
     }
 }

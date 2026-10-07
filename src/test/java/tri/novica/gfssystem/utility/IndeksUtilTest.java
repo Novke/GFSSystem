@@ -17,8 +17,8 @@ class IndeksUtilTest {
 
     @Test
     void normalizujUklanjaNeprekidiveRazmake() {
-        assertEquals("GD12", IndeksUtil.normalizuj("GD 12"));       // NBSP (telefonske tastature, copy-paste)
-        assertEquals("GD12", IndeksUtil.normalizuj(" GD  12")); // uski NBSP
+        assertEquals("GD12", IndeksUtil.normalizuj("GD\u00A012"));       // NBSP (telefonske tastature, copy-paste)
+        assertEquals("GD12", IndeksUtil.normalizuj("\u202FGD\u00A0 12")); // uski NBSP
     }
 
     @Test

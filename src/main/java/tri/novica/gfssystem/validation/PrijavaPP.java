@@ -17,7 +17,8 @@ import java.util.regex.Pattern;
 public final class PrijavaPP {
     private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern TELEFON = Pattern.compile("^[0-9 +\\-/]{6,20}$");
-    private static final Pattern INDEKS = Pattern.compile("^[\\p{L}0-9/.-]{2,20}$");
+    /** Normalizovan indeks (velika slova), samo latinica: ćirilično "ГД12" ne sme da zaobiđe dedupe protiv "GD12". */
+    private static final Pattern INDEKS = Pattern.compile("^[A-Z0-9/.-]{2,20}$");
 
     private PrijavaPP() {}
 
@@ -28,7 +29,7 @@ public final class PrijavaPP {
         String prezime = ime(p.getPrezime(), "Prezime je obavezno (najviše 60 znakova).", greske);
         String indeks = IndeksUtil.normalizuj(p.getIndeks());
         if (indeks == null || !INDEKS.matcher(indeks).matches()) {
-            greske.add("Indeks mora imati od 2 do 20 znakova (slova, cifre, / . -).");
+            greske.add("Indeks mora imati od 2 do 20 znakova, latinicom (slova A-Z, cifre, / . -).");
         }
         int ovaGodina = LocalDate.now(clock).getYear();
         Integer godina = p.getGodina();
