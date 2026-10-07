@@ -99,6 +99,7 @@ class PregledServiceIT {
         assertTrue(t.ceka().domaci().isEmpty());
         assertTrue(t.ceka().prijave().isEmpty());
         assertTrue(t.ceka().nezavrsena().isEmpty());
+        assertEquals(0, t.ceka().brojTestova() + t.ceka().brojDomacih() + t.ceka().brojPrijava() + t.ceka().brojNezavrsenih());
         assertTrue(t.nedelja().isEmpty());
 
         mvc.perform(get("/pregled/kontrolna-tabla"))
@@ -109,6 +110,10 @@ class PregledServiceIT {
            .andExpect(jsonPath("$.ceka.domaci.length()").value(0))
            .andExpect(jsonPath("$.ceka.prijave.length()").value(0))
            .andExpect(jsonPath("$.ceka.nezavrsena.length()").value(0))
+           .andExpect(jsonPath("$.ceka.brojTestova").value(0))
+           .andExpect(jsonPath("$.ceka.brojDomacih").value(0))
+           .andExpect(jsonPath("$.ceka.brojPrijava").value(0))
+           .andExpect(jsonPath("$.ceka.brojNezavrsenih").value(0))
            .andExpect(jsonPath("$.nedelja.length()").value(0));
     }
 
@@ -220,6 +225,7 @@ class PregledServiceIT {
         List<PredavanjeListItem> r = service.kontrolnaTabla().ceka().nezavrsena();
         assertEquals(10, r.size());
         assertEquals(ids.subList(0, 10), r.stream().map(PredavanjeListItem::getId).toList());
+        assertEquals(12, service.kontrolnaTabla().ceka().brojNezavrsenih());   // ukupno, ne samo prvih 10
     }
 
     // ================================================================== čeka na tebe
@@ -258,6 +264,22 @@ class PregledServiceIT {
         assertEquals(10, c.testovi().size());
         assertEquals(10, c.domaci().size());
         assertEquals(SREDA.minusDays(1), c.testovi().getFirst().getDatum());
+        assertEquals(12, c.brojTestova());   // ukupno, ne samo prvih 10
+        assertEquals(12, c.brojDomacih());
+    }
+
+    @Test
+    void cekaBrojPrijavaJeZbirSvihSesijaNeSamoPrvih10() {
+        for (int i = 1; i <= 12; i++) {
+            OnboardingSesija s = sesija(nova, String.format("psit1%027d", i), SREDA.plusDays(i).atTime(10, 0));
+            prijava(s, "PB" + i + "A", StatusPrijave.NA_CEKANJU);
+            prijava(s, "PB" + i + "B", StatusPrijave.NA_CEKANJU);
+            prijava(s, "PB" + i + "C", StatusPrijave.PRIHVACENA);   // ne broji se
+        }
+        flushClear();
+        KontrolnaTablaInfo.Ceka c = service.kontrolnaTabla().ceka();
+        assertEquals(10, c.prijave().size());
+        assertEquals(24, c.brojPrijava());
     }
 
     @Test

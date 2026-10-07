@@ -88,6 +88,12 @@ public class OnboardingService {
                 .map(this::info).toList();
     }
 
+    /** Ukupan broj prijava na čekanju u svim sesijama (zbir {@code brojNaCekanju} svih sesija iz {@link #saPrijavamaNaCekanju}). */
+    @Transactional(readOnly = true)
+    public long brojPrijavaNaCekanju() {
+        return prijavaRepository.countByStatus(StatusPrijave.NA_CEKANJU);
+    }
+
     @Transactional(readOnly = true)
     public OnboardingSesijaDetails details(Long sesijaId) {
         OnboardingSesija sesija = sesijaRepository.findById(sesijaId).orElseThrow(() -> nemaSesije(sesijaId));

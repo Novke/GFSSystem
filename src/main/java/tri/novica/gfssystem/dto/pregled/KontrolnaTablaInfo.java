@@ -27,15 +27,25 @@ public record KontrolnaTablaInfo(
      * Stavke koje čekaju nastavnika, najviše 10 po listi, najnovije prve (prijave: prvo sesije kojima rok ističe najranije).
      * Testovi, domaći i nezavršena predavanja su samo iz tekuće školske godine.
      *
-     * @param testovi    testovi sa {@code pregledan != true} i datumom do danas
-     * @param domaci     domaći sa {@code pregledan != true} i datumom do danas
-     * @param prijave    onboarding sesije sa bar jednom prijavom na čekanju
-     * @param nezavrsena nezavršena predavanja sa datumom pre danas
+     * Liste su skraćene na 10, ali brojevi su ukupni (da UI može da pokaže "10 od 23"); nikad null.
+     *
+     * @param testovi         testovi sa {@code pregledan != true} i datumom do danas
+     * @param domaci          domaći sa {@code pregledan != true} i datumom do danas
+     * @param prijave         onboarding sesije sa bar jednom prijavom na čekanju
+     * @param nezavrsena      nezavršena predavanja sa datumom pre danas
+     * @param brojTestova     ukupno takvih testova (ne samo prvih 10)
+     * @param brojDomacih     ukupno takvih domaćih
+     * @param brojPrijava     ukupno prijava na čekanju u svim sesijama (zbir {@code brojNaCekanju}, ne samo prvih 10 sesija)
+     * @param brojNezavrsenih ukupno takvih nezavršenih predavanja
      */
     public record Ceka(
             List<TestListItem> testovi,
             List<DomaciListItem> domaci,
             List<CekaStavkaInfo> prijave,
-            List<PredavanjeListItem> nezavrsena) {
+            List<PredavanjeListItem> nezavrsena,
+            long brojTestova,
+            long brojDomacih,
+            long brojPrijava,
+            long brojNezavrsenih) {
     }
 }

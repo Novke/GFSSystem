@@ -5,9 +5,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tri.novica.gfssystem.dto.domaci.DomaciFilter;
+import tri.novica.gfssystem.dto.domaci.DomaciListItem;
 import tri.novica.gfssystem.dto.grupa.GrupaInfo;
 import tri.novica.gfssystem.dto.pregled.*;
 import tri.novica.gfssystem.dto.predavanje.PredavanjeFilter;
@@ -15,6 +17,7 @@ import tri.novica.gfssystem.dto.predavanje.PredavanjeListItem;
 import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.test.TestFilter;
+import tri.novica.gfssystem.dto.test.TestListItem;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.repository.DomaciRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
@@ -70,17 +73,27 @@ public class PregledService {
         List<PredavanjeListItem> uToku = predavanjeService.pretraga(
                 new PredavanjeFilter(null, null, null, false, null, danas, danas),
                 strana(MAX_U_TOKU, PredavanjeService.SORT_POLJA, PredavanjeService.PODRAZUMEVANI_SORT)).getContent();
+        PagedModel<TestListItem> testovi = testService.pretraga(new TestFilter(null, null, godina, false, null, null, danas),
+                strana(MAX_CEKA, TestService.SORT_POLJA, TestService.PODRAZUMEVANI_SORT));
+        PagedModel<DomaciListItem> domaci = domaciService.pretraga(new DomaciFilter(null, null, godina, false, null, null, danas),
+                strana(MAX_CEKA, DomaciService.SORT_POLJA, DomaciService.PODRAZUMEVANI_SORT));
+        PagedModel<PredavanjeListItem> nezavrsena = predavanjeService.pretraga(
+                new PredavanjeFilter(null, null, godina, false, null, null, danas.minusDays(1)),
+                strana(MAX_CEKA, PredavanjeService.SORT_POLJA, PredavanjeService.PODRAZUMEVANI_SORT));
         KontrolnaTablaInfo.Ceka ceka = new KontrolnaTablaInfo.Ceka(
-                testService.pretraga(new TestFilter(null, null, godina, false, null, null, danas),
-                        strana(MAX_CEKA, TestService.SORT_POLJA, TestService.PODRAZUMEVANI_SORT)).getContent(),
-                domaciService.pretraga(new DomaciFilter(null, null, godina, false, null, null, danas),
-                        strana(MAX_CEKA, DomaciService.SORT_POLJA, DomaciService.PODRAZUMEVANI_SORT)).getContent(),
+                testovi.getContent(),
+                domaci.getContent(),
                 onboardingService.saPrijavamaNaCekanju(MAX_CEKA).stream()
                         .map(s -> new CekaStavkaInfo(s.getId(), s.getGrupa(), s.getBrojNaCekanju(), s.getIstice()))
                         .toList(),
-                predavanjeService.pretraga(new PredavanjeFilter(null, null, godina, false, null, null, danas.minusDays(1)),
-                        strana(MAX_CEKA, PredavanjeService.SORT_POLJA, PredavanjeService.PODRAZUMEVANI_SORT)).getContent());
+                nezavrsena.getContent(),
+                ukupno(testovi), ukupno(domaci), onboardingService.brojPrijavaNaCekanju(), ukupno(nezavrsena));
         return new KontrolnaTablaInfo(sledece(godina), uToku, ceka, nedelja(danas));
+    }
+
+    /** Ukupan broj redova upita (ne samo prve strane); metadata nikad nije null kad je lista napravljena iz {@code Page}. */
+    private static long ukupno(PagedModel<?> strana) {
+        return strana.getMetadata() == null ? strana.getContent().size() : strana.getMetadata().totalElements();
     }
 
     /** Upit se trim-uje; kraći od {@value #MIN_DUZINA_UPITA} znaka (ili null) daje prazne nizove bez upita u bazu. */
