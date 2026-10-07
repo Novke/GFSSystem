@@ -25,9 +25,10 @@ public record KontrolnaTablaInfo(
 
     /**
      * Stavke koje čekaju nastavnika, najviše 10 po listi, najnovije prve (prijave: prvo sesije kojima rok ističe najranije).
+     * Testovi, domaći i nezavršena predavanja su samo iz tekuće školske godine.
      *
-     * @param testovi    testovi sa {@code pregledan != true}
-     * @param domaci     domaći sa {@code pregledan != true}
+     * @param testovi    testovi sa {@code pregledan != true} i datumom do danas
+     * @param domaci     domaći sa {@code pregledan != true} i datumom do danas
      * @param prijave    onboarding sesije sa bar jednom prijavom na čekanju
      * @param nezavrsena nezavršena predavanja sa datumom pre danas
      */

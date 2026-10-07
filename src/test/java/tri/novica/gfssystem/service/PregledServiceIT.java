@@ -132,18 +132,24 @@ class PregledServiceIT {
         Student d = student("S4", stara);
         student("S5", stara);
         Student bezGrupe = student("S6", null);
+        // ponovac sa aktivnošću i polaganjem samo u prošloj školskoj godini (2085/86) se ne broji
+        Student prosleGodine = student("S7", stara);
 
-        Predavanje staroMat = predavanje(mat, stara, 5, LocalDate.of(2086, 3, 1), true);
-        Predavanje staroFiz = predavanje(fiz, stara, 6, LocalDate.of(2086, 3, 2), true);
+        // tekuća školska godina je 2086/87 (1. 10. 2086 - 30. 9. 2087)
+        Predavanje staroMat = predavanje(mat, stara, 5, LocalDate.of(2086, 10, 1), true);
+        Predavanje staroFiz = predavanje(fiz, stara, 6, LocalDate.of(2086, 11, 2), true);
+        Predavanje proslaGodinaMat = predavanje(mat, stara, 7, LocalDate.of(2086, 9, 30), true);
         aktivnost(staroMat, a);
         aktivnost(staroMat, c);
         aktivnost(staroMat, bezGrupe);
         aktivnost(pobednik, n1);    // ista grupa: nije "stariji"
         aktivnost(staroFiz, d);
         TipTesta kol = tip("Kolokvijum PSIT", mat);
-        tri.novica.gfssystem.entity.Test testMat = test(kol, mat, stara, LocalDate.of(2086, 4, 1), true);
+        tri.novica.gfssystem.entity.Test testMat = test(kol, mat, stara, LocalDate.of(2087, 9, 30), true);
         polaganje(testMat, b);
         polaganje(testMat, c);
+        aktivnost(proslaGodinaMat, prosleGodine);
+        polaganje(test(kol, mat, stara, LocalDate.of(2086, 9, 30), true), prosleGodine);
         flushClear();
 
         SledecePredavanjeInfo s = service.kontrolnaTabla().sledece();
@@ -156,7 +162,7 @@ class PregledServiceIT {
         assertEquals(15, s.rb());
         assertEquals(2, s.brojStudenata());
         assertEquals(2, s.grupa().getBrojStudenata());
-        assertEquals(3, s.brojStarijih());   // a (aktivnost), b (polaganje), c (oba)
+        assertEquals(3, s.brojStarijih());   // a (aktivnost), b (polaganje), c (oba); ne S7 (prošla godina)
     }
 
     @Test
@@ -276,6 +282,84 @@ class PregledServiceIT {
         assertEquals(nova.getId(), s.grupa().getId());
         assertEquals("PS-2087", s.grupa().getNaziv());
         assertEquals(1, p.get(0).brojNaCekanju());
+    }
+
+    @Test
+    void cekaSamoTekucaSkolskaGodinaIVecOdrzano() {
+        TipTesta kol = tip("Kolokvijum PSIT", mat);
+        LocalDate proslaGodina = LocalDate.of(2086, 9, 30);
+        LocalDate pocetakGodine = LocalDate.of(2086, 10, 1);
+        tri.novica.gfssystem.entity.Test tProsla = test(kol, mat, nova, proslaGodina, false);
+        tri.novica.gfssystem.entity.Test tPocetak = test(kol, mat, nova, pocetakGodine, false);
+        tri.novica.gfssystem.entity.Test tDanas = test(kol, mat, nova, SREDA, false);
+        tri.novica.gfssystem.entity.Test tSutra = test(kol, mat, nova, SREDA.plusDays(1), false);
+        Domaci dProsla = domaci(mat, nova, proslaGodina, "Prošla", false);
+        Domaci dPocetak = domaci(mat, nova, pocetakGodine, "Početak", false);
+        Domaci dDanas = domaci(mat, nova, SREDA, "Danas", false);
+        Domaci dSutra = domaci(mat, nova, SREDA.plusDays(1), "Sutra", null);
+        Predavanje pProsla = predavanje(mat, stara, 1, proslaGodina, false);
+        Predavanje pPocetak = predavanje(mat, stara, 2, pocetakGodine, false);
+        Set<Long> nasiT = Set.of(tProsla.getId(), tPocetak.getId(), tDanas.getId(), tSutra.getId());
+        Set<Long> nasiD = Set.of(dProsla.getId(), dPocetak.getId(), dDanas.getId(), dSutra.getId());
+        Set<Long> nasaP = Set.of(pProsla.getId(), pPocetak.getId());
+        flushClear();
+
+        KontrolnaTablaInfo t = service.kontrolnaTabla();
+        assertEquals(List.of(tDanas.getId(), tPocetak.getId()),
+                t.ceka().testovi().stream().map(TestListItem::getId).filter(nasiT::contains).toList());
+        assertEquals(List.of(dDanas.getId(), dPocetak.getId()),
+                t.ceka().domaci().stream().map(DomaciListItem::getId).filter(nasiD::contains).toList());
+        assertEquals(List.of(pPocetak.getId()), idPredavanja(t.ceka().nezavrsena(), nasaP));
+        // budući su i dalje u "ova nedelja"
+        assertTrue(t.nedelja().stream().anyMatch(s -> s.tip() == AgendaStavkaInfo.Tip.TEST && s.id().equals(tSutra.getId())));
+        assertTrue(t.nedelja().stream().anyMatch(s -> s.tip() == AgendaStavkaInfo.Tip.DOMACI && s.id().equals(dSutra.getId())));
+    }
+
+    @Test
+    void cekaGranicaSkolskeGodine30Septembar1Oktobar() {
+        TipTesta kol = tip("Kolokvijum PSIT", mat);
+        LocalDate kraj = LocalDate.of(2087, 9, 30);
+        LocalDate pocetak = LocalDate.of(2087, 10, 1);
+        tri.novica.gfssystem.entity.Test tKraj = test(kol, mat, nova, kraj, false);
+        tri.novica.gfssystem.entity.Test tPocetak = test(kol, mat, nova, pocetak, false);
+        Domaci dKraj = domaci(mat, nova, kraj, "Kraj", false);
+        Domaci dPocetak = domaci(mat, nova, pocetak, "Početak", false);
+        Predavanje pKraj = predavanje(mat, nova, 1, kraj, false);
+        Predavanje pPrethodni = predavanje(mat, nova, 2, kraj.minusDays(1), false);
+        Set<Long> nasiT = Set.of(tKraj.getId(), tPocetak.getId());
+        Set<Long> nasiD = Set.of(dKraj.getId(), dPocetak.getId());
+        Set<Long> nasaP = Set.of(pKraj.getId(), pPrethodni.getId());
+        flushClear();
+
+        // 30. 9. 23:59: još 2086/87; 1. 10. je budućnost
+        sat.postavi(kraj.atTime(23, 59, 59));
+        KontrolnaTablaInfo t = service.kontrolnaTabla();
+        assertEquals(List.of(tKraj.getId()), t.ceka().testovi().stream().map(TestListItem::getId).filter(nasiT::contains).toList());
+        assertEquals(List.of(dKraj.getId()), t.ceka().domaci().stream().map(DomaciListItem::getId).filter(nasiD::contains).toList());
+        assertEquals(List.of(pPrethodni.getId()), idPredavanja(t.ceka().nezavrsena(), nasaP));
+        assertEquals(List.of(pKraj.getId()), idPredavanja(t.uToku(), nasaP));
+
+        // 1. 10. 00:00: nova školska godina 2087/88; sve od 30. 9. ispada iz "čeka"
+        sat.postavi(pocetak.atStartOfDay());
+        t = service.kontrolnaTabla();
+        assertEquals(List.of(tPocetak.getId()), t.ceka().testovi().stream().map(TestListItem::getId).filter(nasiT::contains).toList());
+        assertEquals(List.of(dPocetak.getId()), t.ceka().domaci().stream().map(DomaciListItem::getId).filter(nasiD::contains).toList());
+        assertEquals(List.of(), idPredavanja(t.ceka().nezavrsena(), nasaP));
+    }
+
+    @Test
+    void brojStarijihGranicaSkolskeGodine() {
+        Predavanje poslednje = predavanje(mat, nova, 1, LocalDate.of(2087, 10, 1), true);
+        Student naKraju = student("K1", stara);
+        Student naPocetku = student("K2", stara);
+        aktivnost(predavanje(mat, stara, 1, LocalDate.of(2087, 9, 30), true), naKraju);
+        aktivnost(poslednje, naPocetku);   // stariji na predavanju nove grupe
+        flushClear();
+
+        sat.postavi(LocalDate.of(2087, 9, 30).atTime(23, 59, 59));
+        assertEquals(1, service.kontrolnaTabla().sledece().brojStarijih());   // 2086/87: samo K1
+        sat.postavi(LocalDate.of(2087, 10, 1).atStartOfDay());
+        assertEquals(1, service.kontrolnaTabla().sledece().brojStarijih());   // 2087/88: samo K2
     }
 
     // ================================================================== ova nedelja

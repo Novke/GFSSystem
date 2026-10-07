@@ -24,6 +24,7 @@ import tri.novica.gfssystem.repository.spec.DomaciSpecs;
 import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
 import tri.novica.gfssystem.repository.spec.TestSpecs;
 import tri.novica.gfssystem.utility.PageableUtil;
+import tri.novica.gfssystem.utility.SkolskaGodina;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
@@ -36,7 +37,9 @@ import java.util.Set;
 
 /**
  * Kontrolna tabla (početna) i globalna pretraga. Liste koriste {@code pretraga} servisa iz lista (isti filteri,
- * mapiranje i brojači), "danas" i tekuća nedelja dolaze iz {@link Clock} bean-a.
+ * mapiranje i brojači), "danas", tekuća nedelja i tekuća školska godina dolaze iz {@link Clock} bean-a.
+ * "Čeka na tebe" i broj starijih su ograničeni na tekuću školsku godinu; testovi i domaći u "čeka" samo ako su
+ * već održani (datum do danas), budući su u "ova nedelja" i listama.
  */
 @Service
 @RequiredArgsConstructor
@@ -63,20 +66,21 @@ public class PregledService {
 
     public KontrolnaTablaInfo kontrolnaTabla() {
         LocalDate danas = LocalDate.now(clock);
+        int godina = SkolskaGodina.tekuca(clock);
         List<PredavanjeListItem> uToku = predavanjeService.pretraga(
                 new PredavanjeFilter(null, null, null, false, null, danas, danas),
                 strana(MAX_U_TOKU, PredavanjeService.SORT_POLJA, PredavanjeService.PODRAZUMEVANI_SORT)).getContent();
         KontrolnaTablaInfo.Ceka ceka = new KontrolnaTablaInfo.Ceka(
-                testService.pretraga(new TestFilter(null, null, null, false, null, null, null),
+                testService.pretraga(new TestFilter(null, null, godina, false, null, null, danas),
                         strana(MAX_CEKA, TestService.SORT_POLJA, TestService.PODRAZUMEVANI_SORT)).getContent(),
-                domaciService.pretraga(new DomaciFilter(null, null, null, false, null, null, null),
+                domaciService.pretraga(new DomaciFilter(null, null, godina, false, null, null, danas),
                         strana(MAX_CEKA, DomaciService.SORT_POLJA, DomaciService.PODRAZUMEVANI_SORT)).getContent(),
                 onboardingService.saPrijavamaNaCekanju(MAX_CEKA).stream()
                         .map(s -> new CekaStavkaInfo(s.getId(), s.getGrupa(), s.getBrojNaCekanju(), s.getIstice()))
                         .toList(),
-                predavanjeService.pretraga(new PredavanjeFilter(null, null, null, false, null, null, danas.minusDays(1)),
+                predavanjeService.pretraga(new PredavanjeFilter(null, null, godina, false, null, null, danas.minusDays(1)),
                         strana(MAX_CEKA, PredavanjeService.SORT_POLJA, PredavanjeService.PODRAZUMEVANI_SORT)).getContent());
-        return new KontrolnaTablaInfo(sledece(), uToku, ceka, nedelja(danas));
+        return new KontrolnaTablaInfo(sledece(godina), uToku, ceka, nedelja(danas));
     }
 
     /** Upit se trim-uje; kraći od {@value #MIN_DUZINA_UPITA} znaka (ili null) daje prazne nizove bez upita u bazu. */
@@ -98,13 +102,17 @@ public class PregledService {
         return PageableUtil.proveri(PageRequest.of(0, velicina), polja, sort);
     }
 
-    /** Predmet i grupa poslednjeg predavanja po (datum, id), {@code rb + 1}; null kad predavanja nema. */
-    private SledecePredavanjeInfo sledece() {
+    /**
+     * Predmet i grupa poslednjeg predavanja po (datum, id), {@code rb + 1}; null kad predavanja nema. Stariji se broje
+     * samo po aktivnostima i polaganjima iz školske godine {@code godina}.
+     */
+    private SledecePredavanjeInfo sledece(int godina) {
         return predavanjeRepository.findFirstByOrderByDatumDescIdDesc().map(p -> {
             Grupa g = p.getGrupa();
             long brojStudenata = g == null ? 0 : studentRepository.countByGrupaId(g.getId());
             long brojStarijih = g == null || g.getGodinaUpisa() == null ? 0
-                    : studentRepository.brojStarijihNaPredmetu(p.getPredmet().getId(), g.getGodinaUpisa());
+                    : studentRepository.brojStarijihNaPredmetu(p.getPredmet().getId(), g.getGodinaUpisa(),
+                            SkolskaGodina.pocetak(godina), SkolskaGodina.kraj(godina));
             GrupaInfo grupa = g == null ? null : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata);
             return new SledecePredavanjeInfo(predmet(p.getPredmet()), grupa, p.getRb() + 1, brojStudenata, brojStarijih);
         }).orElse(null);

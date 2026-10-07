@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -47,13 +48,17 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
     List<Object[]> brojStudenataPoGrupi(@Param("ids") Collection<Long> ids);
 
     /**
-     * Studenti iz grupa sa godinom upisa manjom od {@code godinaUpisa} koji imaju bar jednu aktivnost (na predavanju)
-     * ili bar jedno polaganje (testa) na predmetu: ponovci koji dolaze na nastavu. Studenti bez grupe se ne broje.
+     * Studenti iz grupa sa godinom upisa manjom od {@code godinaUpisa} koji imaju bar jednu aktivnost (predavanje sa
+     * datumom u [{@code od}, {@code doDatuma}]) ili bar jedno polaganje (test sa datumom u tom opsegu) na predmetu:
+     * ponovci koji dolaze na nastavu (kontrolna tabla daje opseg tekuće školske godine). Studenti bez grupe se ne broje.
      */
     @Query("""
         select count(s) from Student s
         where s.grupa.godinaUpisa < :godinaUpisa
-          and (exists (select a.id from Aktivnost a where a.student = s and a.predavanje.predmet.id = :predmetId)
-            or exists (select p.id from Polaganje p where p.student = s and p.test.predmet.id = :predmetId))""")
-    long brojStarijihNaPredmetu(@Param("predmetId") Long predmetId, @Param("godinaUpisa") int godinaUpisa);
+          and (exists (select a.id from Aktivnost a where a.student = s and a.predavanje.predmet.id = :predmetId
+                         and a.predavanje.datum between :od and :doDatuma)
+            or exists (select p.id from Polaganje p where p.student = s and p.test.predmet.id = :predmetId
+                         and p.test.datum between :od and :doDatuma))""")
+    long brojStarijihNaPredmetu(@Param("predmetId") Long predmetId, @Param("godinaUpisa") int godinaUpisa,
+                                @Param("od") LocalDate od, @Param("doDatuma") LocalDate doDatuma);
 }
