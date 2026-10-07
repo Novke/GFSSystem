@@ -682,6 +682,48 @@ class PrezentacijaServiceTest {
         verify(promene, never()).slajdoviPromenjeni(any());
     }
 
+    /** Ruling 8: aktivna izvođenja se zaključavaju posle prezentacije, a pre bilo kog upisa slajdova. */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"izmeni", "dodajSlajd", "izmeniSlajd", "obrisiSlajd",
+            "duplirajSlajd", "redosled"})
+    void izvodjenjaSeZakljucavajuPrePisanjaSlajdova(String operacija) {
+        Slajd a = infoUBazi("A", 1);
+        Slajd b = infoUBazi("B", 2);
+        List<String> pisanjaPreZakljucavanja = new ArrayList<>();
+        doAnswer(inv -> {
+            mockingDetails(slajdRepository).getInvocations().stream()
+                    .map(i -> i.getMethod().getName())
+                    .filter(m -> m.startsWith("save") || m.startsWith("delete") || m.equals("flush"))
+                    .forEach(pisanjaPreZakljucavanja::add);
+            return null;
+        }).when(promene).zakljucaj(1L);
+
+        switch (operacija) {
+            case "izmeni" -> service.izmeni(1L, new UpdatePrezentacijaCmd("Novo", null, false, TelefonPrikaz.DUGMAD, true));
+            case "dodajSlajd" -> service.dodajSlajd(1L, infoCmd("C"), a.getId());
+            case "izmeniSlajd" -> service.izmeniSlajd(b.getId(), infoCmd("B2"));
+            case "obrisiSlajd" -> service.obrisiSlajd(b.getId());
+            case "duplirajSlajd" -> service.duplirajSlajd(a.getId());
+            case "redosled" -> service.redosled(1L, List.of(b.getId(), a.getId()));
+            default -> fail(operacija);
+        }
+
+        InOrder redom = inOrder(prezentacijaRepository, promene, slajdRepository);
+        redom.verify(prezentacijaRepository).findByIdForUpdate(1L);
+        redom.verify(promene).zakljucaj(1L);
+        redom.verify(slajdRepository).flush();
+        assertEquals(List.of(), pisanjaPreZakljucavanja);
+    }
+
+    @Test
+    void obrisiPrezentacijuIstoZakljucavaIzvodjenja() {
+        service.obrisi(1L);
+        InOrder redom = inOrder(prezentacijaRepository, promene, slajdRepository);
+        redom.verify(prezentacijaRepository).findByIdForUpdate(1L);
+        redom.verify(promene).zakljucaj(1L);
+        redom.verify(slajdRepository).deleteAll(anyIterable());
+    }
+
     @Test
     void bezImplementacijePromenaSePreskace() {
         reset(promeneProvider);   // ifAvailable bez bean-a ne radi ništa

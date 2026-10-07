@@ -29,7 +29,8 @@ import java.util.Optional;
  * Izvođenje prezentacije uživo: pokretanje, nastavničke komande (stanje-mašina iz spec-a 2.3-2.5 i 4.5), tajmer,
  * moderacija i završetak. Svaka izmena prvo zaključa red izvođenja ({@code findByIdForUpdate}), poveća
  * {@code verzija} za 1 i objavi {@link IzvodjenjePromenjeno} (klijentima ide tek posle commit-a). Redosled
- * zaključavanja je uvek prezentacija -> izvođenje ({@code pokreni} i izmene slajdova kroz {@link PrezentacijaPromene}).
+ * zaključavanja je uvek prezentacija -> izvođenje -> slajdovi/runde: {@code pokreni} drži prezentaciju, izmene slajdova
+ * kroz {@link PrezentacijaPromene#zakljucaj} zaključaju izvođenja pre upisa, a komande drže samo izvođenje.
  * READ COMMITTED kao {@link PrezentacijaService}: čitanje posle čekanja na zaključavanje vidi ono što je prethodnik
  * upravo upisao.
  */
@@ -545,6 +546,16 @@ public class IzvodjenjeService {
     }
 
     // ---------------------------------------------------------------- izmene prezentacije tokom izvođenja
+
+    /**
+     * Zaključava aktivna izvođenja prezentacije rastuće po id-ju. Poziva se (kroz {@link PrezentacijaPromene}) dok je
+     * prezentacija već zaključana, a pre upisa slajdova; prvo učitavanje je pod zaključavanjem, pa je stanje sveže.
+     */
+    public void zakljucajAktivna(Long prezentacijaId) {
+        for (Long id : izvodjenjeRepository.findIdsByPrezentacijaIdAndStatus(prezentacijaId, StatusIzvodjenja.AKTIVNO)) {
+            izvodjenjeRepository.findByIdForUpdate(id);
+        }
+    }
 
     /** Slajdovi ili podaci prezentacije su izmenjeni: faza trenutnog slajda se preračuna, verzija raste. */
     public void prezentacijaPromenjena(Long prezentacijaId) {

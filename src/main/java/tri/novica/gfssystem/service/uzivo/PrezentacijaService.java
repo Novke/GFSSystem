@@ -33,7 +33,9 @@ import java.util.function.Consumer;
  * prezentacije idu redom. Izmene rade u READ COMMITTED: kod operacija po id-ju slajda prvo se čita id prezentacije, a
  * tek onda zaključava, pa čitanje posle zaključavanja mora videti ono što je prethodnik upravo upisao (u REPEATABLE
  * READ bi videlo snimak od pre čekanja). Slajdovi se brišu kroz JPA (ne kaskadom u bazi), da {@code orphanRemoval}
- * obriše i pitanje i opcije. Posle svake izmene slajdova javlja se {@link PrezentacijaPromene} (izvođenje u toku).
+ * obriše i pitanje i opcije. Posle zaključavanja prezentacije, a pre upisa, {@link PrezentacijaPromene#zakljucaj}
+ * zaključa aktivna izvođenja (red prezentacija -> izvođenje -> slajdovi); posle svake izmene slajdova javlja se
+ * {@link PrezentacijaPromene} (izvođenje u toku).
  */
 @Service
 @RequiredArgsConstructor
@@ -272,8 +274,14 @@ public class PrezentacijaService {
 
     // ---------------------------------------------------------------- pomoćno
 
+    /**
+     * Zaključava red prezentacije, pa (kroz {@link PrezentacijaPromene#zakljucaj}) i njena aktivna izvođenja, pre bilo
+     * kakvog upisa: red zaključavanja prezentacija -> izvođenje -> slajdovi je isti u svim putanjama.
+     */
     private Prezentacija zakljucaj(Long id) {
-        return prezentacijaRepository.findByIdForUpdate(id).orElseThrow(PrezentacijaService::nijePronadjena);
+        Prezentacija p = prezentacijaRepository.findByIdForUpdate(id).orElseThrow(PrezentacijaService::nijePronadjena);
+        javi(pr -> pr.zakljucaj(id));
+        return p;
     }
 
     private Prezentacija zakljucajZaSlajd(Long slajdId) {

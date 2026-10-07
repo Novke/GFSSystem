@@ -933,6 +933,21 @@ class IzvodjenjeServiceTest {
     }
 
     @Test
+    void zakljucajAktivnaRastucePoId() {
+        Izvodjenje drugo = new Izvodjenje();
+        drugo.setId(8L);
+        when(izvodjenjeRepository.findIdsByPrezentacijaIdAndStatus(1L, StatusIzvodjenja.AKTIVNO))
+                .thenReturn(List.of(IZ, 8L));
+        when(izvodjenjeRepository.findByIdForUpdate(8L)).thenReturn(Optional.of(drugo));
+        new UzivoPrezentacijaPromene(service).zakljucaj(1L);
+        InOrder red = inOrder(izvodjenjeRepository);
+        red.verify(izvodjenjeRepository).findByIdForUpdate(IZ);
+        red.verify(izvodjenjeRepository).findByIdForUpdate(8L);
+        verifyNoInteractions(publisher);
+        assertEquals(1, iz.getVerzija(), "samo zaključavanje, bez promene");
+    }
+
+    @Test
     void promeneBezAktivnihIzvodjenjaNistaNeRade() {
         when(izvodjenjeRepository.findIdsByPrezentacijaIdAndStatus(2L, StatusIzvodjenja.AKTIVNO))
                 .thenReturn(List.of());

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predmet;
@@ -19,6 +21,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,6 +43,7 @@ class IzvodjenjeServiceDbTest {
     @Autowired GrupaRepository grupaRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired Clock clock;
+    @Autowired PlatformTransactionManager transakcije;
 
     Predmet predmet;
     Grupa grupa;
@@ -257,5 +263,46 @@ class IzvodjenjeServiceDbTest {
         assertEquals(Faza.ZATVORENO, st.faza());
         assertEquals(verzija + 1, st.verzija());
         assertNull(st.runda().rokMs());
+    }
+
+    /**
+     * Ruling 8: izmena slajda zaključa aktivno izvođenje PRE upisa slajda. Druga transakcija drži red slajda, pa izmena
+     * stoji baš na upisu slajda; u tom trenutku treća veza ne sme dobiti red izvođenja (bez pred-zaključavanja bi ga
+     * dobila, jer bi se izvođenje zaključavalo tek u povratnom pozivu posle upisa).
+     */
+    @Test
+    void izmenaSlajdaZakljucavaIzvodjenjePreUpisaSlajda() throws Exception {
+        PrezentacijaDetails p = prezentacija(null);
+        Long id = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+        Long slajdId = p.slajdovi().get(0).id();
+        CountDownLatch drziSlajd = new CountDownLatch(1);
+        CountDownLatch pusti = new CountDownLatch(1);
+
+        CompletableFuture<Void> drugaTransakcija = CompletableFuture.runAsync(() ->
+                new TransactionTemplate(transakcije).executeWithoutResult(tx -> {
+                    jdbc.queryForList("select id from slajdovi where id = ? for update", slajdId);
+                    drziSlajd.countDown();
+                    try {
+                        assertTrue(pusti.await(30, TimeUnit.SECONDS));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }));
+        assertTrue(drziSlajd.await(10, TimeUnit.SECONDS));
+        CompletableFuture<SlajdDetails> izmena = CompletableFuture.supplyAsync(() ->
+                prezentacijaService.izmeniSlajd(slajdId, new SlajdCmd(TipSlajda.INFO, "Uvod 2", "- a", null, null, true, null)));
+        Thread.sleep(1500);   // izmena sada čeka na red slajda
+
+        Throwable zakljucano = null;
+        try {
+            jdbc.queryForList("select id from izvodjenja where id = ? for update nowait", id);
+        } catch (RuntimeException e) {
+            zakljucano = e;
+        }
+        pusti.countDown();
+        drugaTransakcija.get(30, TimeUnit.SECONDS);
+        assertEquals("Uvod 2", izmena.get(30, TimeUnit.SECONDS).naslov());
+        assertNotNull(zakljucano, "izvođenje mora biti zaključano pre upisa slajda");
+        assertEquals(List.of(id), jdbc.queryForList("select id from izvodjenja where id = ? for update nowait", Long.class, id));
     }
 }
