@@ -22,6 +22,7 @@ src/main/java/tri/novica/gfssystem/
 │   ├── domaci/      # Homework DTOs
 │   ├── grupa/       # Group DTOs
 │   ├── ocenjivanje/ # Grading DTOs
+│   ├── onboarding/  # Student onboarding DTOs (sessions, submissions, public form)
 │   ├── predavanje/  # Lecture DTOs
 │   ├── predmet/     # Subject DTOs
 │   ├── student/     # Student DTOs (includes pregled/ subdirectory)
@@ -51,6 +52,27 @@ src/main/java/tri/novica/gfssystem/
 - **TipTesta** - Test type
 - **Polaganje** - Test attempt/result
 - **TestGrupa** - Test group association
+- **OnboardingSesija** - Onboarding session of a group (`onboarding_sesije`): public token, active flag, expiry, max submissions
+- **Prijava** - A student's submission in a session (`prijave`), status `StatusPrijave` (`NA_CEKANJU`, `PRIHVACENA`, `ODBIJENA`)
+
+## Onboarding
+
+A teacher opens a session for a group (`POST /grupe/{id}/onboarding`, link/QR with a 32-char token), students submit
+the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/{id}/...`; accepting creates the
+`Student` in the session's group). Logic lives in `OnboardingService`, field rules in `validation/PrijavaPP`.
+- **Public API is only `/public/upis/{token}`** (`PublicUpisRest`: `GET` info, `POST` submit; 404 unknown token,
+  410 closed). It has no auth: the frontend nginx serves it as `/api/public/upis/...` and the host nginx exempts only
+  `/api/public/` from basic-auth. Never add anything else under `/public/` that is not meant for the internet.
+- **Only new students:** dedupe by (normalized index, enrollment year) against `studenti`, against pending submissions in
+  the same session, on edit and on accept. `IndeksUtil.normalizuj` strips whitespace and upper-cases (`"gd 1"` -> `GD1`);
+  `POST /studenti` uses the same normalization and duplicate check.
+- **Concurrency:** every change to a session (submit, accept, reject, accept-all, edit, `PATCH`) first locks the session
+  row (`findByTokenForUpdate` / `findByIdForUpdate`, `PESSIMISTIC_WRITE`) inside the same `@Transactional` method.
+- **Time** comes from the `Clock` bean in `GfsSystemApplication`; use `LocalDateTime.now(clock)`, tests use `Clock.fixed`.
+- **Errors never leak:** `ApiExceptionHandler` maps unreadable JSON to 400 "Neispravan format podataka.", a bad path
+  parameter to 400, Spring's own 404/405/415 to their status, and anything unexpected to 500 "Sistemska greška." (the
+  exception text goes only to the log). The client IP for the log is the first `X-Forwarded-For` element (log only).
+- Tests: `OnboardingServiceTest` (Mockito) and `rest/PublicUpisRestTest` (`@WebMvcTest`, mocked service) run without a DB.
 
 ## Build & Run
 

@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.rest;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -34,7 +35,7 @@ public class StudentRest {
     @PostMapping
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public StudentInfo createStudent(@RequestBody CreateStudentCmd studentCmd){
+    public StudentInfo createStudent(@Valid @RequestBody CreateStudentCmd studentCmd){
         return studentService.create(studentCmd);
     }
 

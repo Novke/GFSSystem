@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.rest;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -37,7 +38,7 @@ public class GrupaRest {
     @PostMapping
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
-    public GrupaInfo createGrupa(@RequestBody CreateGrupaCmd grupaCmd){
+    public GrupaInfo createGrupa(@Valid @RequestBody CreateGrupaCmd grupaCmd){
         return grupaService.save(grupaCmd);
     }
 
