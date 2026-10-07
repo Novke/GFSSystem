@@ -75,7 +75,7 @@ Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the
 - Flow: `feature/* -> staging -> master`. PRs target `staging` by default; a release is a PR `staging -> master` (opened by
   Novica or on request). Never push directly to `master`; a direct push to `staging` is fine for quick experiments.
   `master` is protected: PR plus green check `build` required. This repo is public, so no secrets or real data in it.
-- Staging: every push to `staging` is deployed automatically (about a minute) to `https://staging.gfs.trif.rs`
+- Staging: every push to `staging` is deployed automatically (about a minute) to `https://gfs.dev.trif.rs`
   (basic-auth, synthetic data only). The result shows up as commit status `staging-deploy`. Deploy details live in the
   wrapper repo `Novke/GFS-deploy` (`README.md`).
 - CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 17, service `mysql:8.0`
