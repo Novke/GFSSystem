@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.grupa.CreateGrupaCmd;
 import tri.novica.gfssystem.dto.grupa.GrupaDetails;
 import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.grupa.UpdateGrupaCmd;
 import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.service.GrupaService;
 import tri.novica.gfssystem.service.StudentService;
@@ -40,6 +41,13 @@ public class GrupaRest {
     @ResponseStatus(HttpStatus.CREATED)
     public GrupaInfo createGrupa(@Valid @RequestBody CreateGrupaCmd grupaCmd){
         return grupaService.save(grupaCmd);
+    }
+
+    @PutMapping("{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public GrupaInfo updateGrupa(@PathVariable Long id, @Valid @RequestBody UpdateGrupaCmd grupaCmd){
+        return grupaService.update(id, grupaCmd);
     }
 
     @GetMapping("/{id}/studenti")

@@ -13,4 +13,9 @@ public class TipTestaInfo {
 
     private String naziv;
 
+    private Boolean aktivan;
+
+    public TipTestaInfo(Long id, String naziv) {
+        this(id, naziv, null);
+    }
 }

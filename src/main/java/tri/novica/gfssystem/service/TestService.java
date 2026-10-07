@@ -15,6 +15,7 @@ import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
+import tri.novica.gfssystem.dto.test.tip.UpdateTipTestaCmd;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
@@ -54,6 +55,15 @@ public class TestService {
         tipTesta.setAktivan(true);
 
         return mapper.map(tipTestaRepository.save(tipTesta), TipTestaInfo.class);
+    }
+
+    /** Preimenovanje i (de)aktivacija tipa testa; predmet tipa se ne menja. */
+    public TipTestaInfo updateTipTesta(Long id, UpdateTipTestaCmd cmd) {
+        TipTesta tip = tipTestaRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + id, 404));
+        tip.setNaziv(cmd.getNaziv().trim());
+        tip.setAktivan(cmd.getAktivan());
+        return mapper.map(tipTestaRepository.save(tip), TipTestaInfo.class);
     }
 
     public TestDetails findById(Long id) {
@@ -328,7 +338,7 @@ public class TestService {
         GrupaInfo grupa = new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), studenti.getOrDefault(g.getId(), 0L));
         PredmetInfo predmet = new PredmetInfo(t.getPredmet().getId(), t.getPredmet().getNaziv());
         TipTesta tip = t.getTipTesta();
-        return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv()), t.getMaxPoena(),
+        return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv(), tip.getAktivan()), t.getMaxPoena(),
                 t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
     }
 }

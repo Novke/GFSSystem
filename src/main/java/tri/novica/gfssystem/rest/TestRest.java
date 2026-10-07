@@ -11,6 +11,7 @@ import tri.novica.gfssystem.dto.IdCmd;
 import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
+import tri.novica.gfssystem.dto.test.tip.UpdateTipTestaCmd;
 import tri.novica.gfssystem.service.TestService;
 import tri.novica.gfssystem.utility.PageableUtil;
 
@@ -46,6 +47,13 @@ public class TestRest {
     @ResponseStatus(HttpStatus.CREATED)
     public TipTestaInfo createTipTesta(@RequestBody @Valid CreateTipTestaCmd cmd){
         return testService.createTipTesta(cmd);
+    }
+
+    @PutMapping("/tip/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TipTestaInfo updateTipTesta(@PathVariable Long id, @RequestBody @Valid UpdateTipTestaCmd cmd){
+        return testService.updateTipTesta(id, cmd);
     }
 
     @GetMapping("/{id}")

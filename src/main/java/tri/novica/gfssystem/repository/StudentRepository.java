@@ -33,6 +33,13 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
         WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina""")
     boolean postojiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina);
 
+    /** Isto što {@link #postojiStudent}, ali bez studenta koji se menja (izmena na sopstveni indeks i godinu je dozvoljena). */
+    @Query("""
+        SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Student s
+        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina AND s.id <> :izuzetId""")
+    boolean postojiDrugiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina,
+                                @Param("izuzetId") Long izuzetId);
+
     long countByGrupaId(Long grupaId);
 
     /** Broj studenata po grupi, za stranicu liste ({@code Brojaci.poId}). Redovi: {@code [grupaId, broj]}. */

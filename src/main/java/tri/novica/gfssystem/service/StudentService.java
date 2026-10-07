@@ -16,6 +16,7 @@ import tri.novica.gfssystem.dto.student.StudentDetails;
 import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.dto.student.StudentListItem;
+import tri.novica.gfssystem.dto.student.UpdateStudentCmd;
 import tri.novica.gfssystem.dto.student.pregled.*;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.entity.*;
@@ -74,9 +75,7 @@ public class StudentService {
     public StudentInfo create(CreateStudentCmd studentCmd) {
         Grupa grupa = findGrupaOrThrow(studentCmd.getGrupaId());
         String indeks = IndeksUtil.normalizuj(studentCmd.getIndeks());
-        if (studentRepository.postojiStudent(indeks, studentCmd.getGodina())) {
-            throw new SystemException(DUPLIKAT, HttpStatus.BAD_REQUEST);
-        }
+        proveriDuplikat(indeks, studentCmd.getGodina(), null);
 
         Student newStudent = mapper.map(studentCmd, Student.class);
         newStudent.setIndeks(indeks);
@@ -87,6 +86,41 @@ public class StudentService {
                 StudentInfo.class
         );
 
+    }
+
+    /**
+     * Izmena studenta (pun zamenski zapis): izostavljeno opciono polje se briše. Grupa je nova grupa studenta, pa
+     * isto služi za premeštanje. Indeks se normalizuje i dedupe-uje kao pri dodavanju, ali bez samog studenta.
+     */
+    public StudentInfo update(Long id, UpdateStudentCmd cmd) {
+        Student student = studentRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+        Grupa grupa = findGrupaOrThrow(cmd.getGrupaId());
+        String indeks = IndeksUtil.normalizuj(cmd.getIndeks());
+        proveriDuplikat(indeks, cmd.getGodina(), id);
+
+        // eksplicitno (ne ModelMapper): on preskače null, a PUT mora da obriše email, opštinu...
+        student.setIme(cmd.getIme());
+        student.setPrezime(cmd.getPrezime());
+        student.setIndeks(indeks);
+        student.setGodina(cmd.getGodina());
+        student.setEmail(email(cmd.getEmail()));
+        student.setBrojTelefona(cmd.getBrojTelefona());
+        student.setDatumRodjenja(cmd.getDatumRodjenja());
+        student.setOpstina(cmd.getOpstina());
+        student.setGrupa(grupa);
+
+        return mapper.map(studentRepository.save(student), StudentInfo.class);
+    }
+
+    /** Dedupe po (normalizovan indeks, godina upisa); {@code izuzetId} je student koji se menja (ili null pri dodavanju). */
+    private void proveriDuplikat(String normalizovanIndeks, int godina, Long izuzetId) {
+        boolean postoji = izuzetId == null
+                ? studentRepository.postojiStudent(normalizovanIndeks, godina)
+                : studentRepository.postojiDrugiStudent(normalizovanIndeks, godina, izuzetId);
+        if (postoji) {
+            throw new SystemException(DUPLIKAT, HttpStatus.BAD_REQUEST);
+        }
     }
 
     /** Trim i mala slova; prazno -> null. */

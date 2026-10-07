@@ -10,6 +10,7 @@ import tri.novica.gfssystem.dto.student.CreateStudentCmd;
 import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.dto.student.StudentListItem;
+import tri.novica.gfssystem.dto.student.UpdateStudentCmd;
 import tri.novica.gfssystem.dto.student.pregled.StudentNaPredmetuDetails;
 import tri.novica.gfssystem.dto.student.pregled.StudentPregledDetails;
 import tri.novica.gfssystem.service.StudentService;
@@ -56,6 +57,14 @@ public class StudentRest {
     @ResponseStatus(HttpStatus.CREATED)
     public StudentInfo createStudent(@Valid @RequestBody CreateStudentCmd studentCmd){
         return studentService.create(studentCmd);
+    }
+
+    /** Izmena podataka i premeštanje u drugu grupu ({@code grupaId} u telu). */
+    @PutMapping("{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public StudentInfo updateStudent(@PathVariable Long id, @Valid @RequestBody UpdateStudentCmd studentCmd){
+        return studentService.update(id, studentCmd);
     }
 
     @GetMapping("{studentId}/predmet/{predmetId}")

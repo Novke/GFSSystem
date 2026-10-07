@@ -16,4 +16,6 @@ public interface GrupaRepository extends JpaRepository<Grupa, Long> {
 
     boolean existsByNazivIgnoreCase(String naziv);
 
+    boolean existsByNazivIgnoreCaseAndIdNot(String naziv, Long id);
+
 }

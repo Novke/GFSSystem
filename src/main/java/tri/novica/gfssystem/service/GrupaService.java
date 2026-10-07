@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.grupa.CreateGrupaCmd;
 import tri.novica.gfssystem.dto.grupa.GrupaDetails;
 import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.grupa.UpdateGrupaCmd;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
@@ -36,11 +37,30 @@ public class GrupaService {
     public GrupaInfo save(CreateGrupaCmd grupaCmd){
         String naziv = grupaCmd.getNaziv() == null ? null : grupaCmd.getNaziv().trim();
         if (naziv != null && grupaRepository.existsByNazivIgnoreCase(naziv)) {
-            throw new SystemException("Grupa sa nazivom " + naziv + " već postoji.", HttpStatus.BAD_REQUEST);
+            throw nazivZauzet(naziv);
         }
         Grupa grupa = mapper.map(grupaCmd, Grupa.class);
         grupa.setNaziv(naziv);
         return mapper.map(grupaRepository.save(grupa), GrupaInfo.class);
+    }
+
+    /** Izmena naziva i godine upisa; naziv ne sme da pripada nekoj drugoj grupi (sopstveni je dozvoljen). */
+    public GrupaInfo update(Long id, UpdateGrupaCmd cmd) {
+        Grupa grupa = grupaRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+        String naziv = cmd.getNaziv().trim();
+        if (grupaRepository.existsByNazivIgnoreCaseAndIdNot(naziv, id)) {
+            throw nazivZauzet(naziv);
+        }
+        grupa.setNaziv(naziv);
+        grupa.setGodinaUpisa(cmd.getGodinaUpisa());
+        GrupaInfo info = mapper.map(grupaRepository.save(grupa), GrupaInfo.class);
+        info.setBrojStudenata(studentRepository.countByGrupaId(id));
+        return info;
+    }
+
+    private static SystemException nazivZauzet(String naziv) {
+        return new SystemException("Grupa sa nazivom " + naziv + " već postoji.", HttpStatus.BAD_REQUEST);
     }
 
     public GrupaDetails findById(Long id) {
