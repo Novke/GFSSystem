@@ -13,7 +13,9 @@ import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.utility.IndeksUtil;
 import tri.novica.gfssystem.utility.StudentMapper;
+import tri.novica.gfssystem.utility.Utility;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -21,6 +23,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class StudentService {
+
+    public static final String DUPLIKAT = "Student sa ovim indeksom i godinom upisa već postoji u sistemu.";
 
     private final StudentRepository studentRepository;
     private final GrupaRepository grupaRepository;
@@ -55,14 +59,27 @@ public class StudentService {
 
     public StudentInfo create(CreateStudentCmd studentCmd) {
         Grupa grupa = findGrupaOrThrow(studentCmd.getGrupaId());
+        String indeks = IndeksUtil.normalizuj(studentCmd.getIndeks());
+        if (studentRepository.postojiStudent(indeks, studentCmd.getGodina())) {
+            throw new SystemException(DUPLIKAT, HttpStatus.BAD_REQUEST);
+        }
 
         Student newStudent = mapper.map(studentCmd, Student.class);
+        newStudent.setIndeks(indeks);
+        newStudent.setEmail(email(studentCmd.getEmail()));
         newStudent.setGrupa(grupa);
 
         return mapper.map(studentRepository.save(newStudent),
                 StudentInfo.class
         );
 
+    }
+
+    /** Trim i mala slova; prazno -> null. */
+    private static String email(String email) {
+        if (email == null) return null;
+        String e = email.trim().toLowerCase(Locale.ROOT);
+        return e.isEmpty() ? null : e;
     }
 
     private Grupa findGrupaOrThrow(Long grupaId) {
@@ -75,7 +92,9 @@ public class StudentService {
         Grupa grupa = findGrupaOrThrow(id);
 
         return studentRepository.findByGrupa(grupa)
-                .stream().map(
+                .stream()
+                .sorted(Comparator.comparingInt(student -> Utility.index2int(student.getIndeks())))
+                .map(
                         student -> mapper.map(student, StudentInfo.class)
                 ).toList();
     }
