@@ -10,6 +10,7 @@ import tri.novica.gfssystem.dto.grupa.GrupaInfo;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
+import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.utility.Utility;
 
 import java.util.Comparator;
@@ -20,19 +21,26 @@ import java.util.List;
 public class GrupaService {
 
     private final GrupaRepository grupaRepository;
+    private final StudentRepository studentRepository;
     private final ModelMapper mapper;
 
     public List<GrupaInfo> findAll() {
         return grupaRepository.findAll().stream()
-                .map(
-                        grupa -> mapper.map(grupa, GrupaInfo.class)
-                ).toList();
+                .map(grupa -> {
+                    GrupaInfo info = mapper.map(grupa, GrupaInfo.class);
+                    info.setBrojStudenata(studentRepository.countByGrupaId(grupa.getId()));
+                    return info;
+                }).toList();
     }
 
     public GrupaInfo save(CreateGrupaCmd grupaCmd){
-        return mapper.map(grupaRepository.save(
-                mapper.map(grupaCmd, Grupa.class)
-                ), GrupaInfo.class);
+        String naziv = grupaCmd.getNaziv() == null ? null : grupaCmd.getNaziv().trim();
+        if (naziv != null && grupaRepository.existsByNazivIgnoreCase(naziv)) {
+            throw new SystemException("Grupa sa nazivom " + naziv + " već postoji.", HttpStatus.BAD_REQUEST);
+        }
+        Grupa grupa = mapper.map(grupaCmd, Grupa.class);
+        grupa.setNaziv(naziv);
+        return mapper.map(grupaRepository.save(grupa), GrupaInfo.class);
     }
 
     public GrupaDetails findById(Long id) {

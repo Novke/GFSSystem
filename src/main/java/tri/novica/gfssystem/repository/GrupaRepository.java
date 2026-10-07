@@ -14,4 +14,6 @@ public interface GrupaRepository extends JpaRepository<Grupa, Long> {
     @Query("SELECT g FROM Grupa g LEFT JOIN fetch g.studenti where g.id = :id")
     Optional<Grupa> findByIdFetchStudents(@Param("id") Long id);
 
+    boolean existsByNazivIgnoreCase(String naziv);
+
 }

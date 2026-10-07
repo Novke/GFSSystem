@@ -12,7 +12,13 @@ public class Utility {
         Matcher matcher = pattern.matcher(index);
 
         if (matcher.find()) {
-            return Integer.parseInt(matcher.group());
+            try {
+                return Integer.parseInt(matcher.group());
+            } catch (NumberFormatException e) {
+                // npr. broj telefona upisan kao indeks: ne sme da obori sortiranje (i stranicu grupe)
+                log.error("Number too large in index: " + index);
+                return Integer.MAX_VALUE;
+            }
         } else {
             // Handle the case where no number is found
 //            throw new IllegalArgumentException("No number found in the input string: " + index);
