@@ -110,7 +110,11 @@ Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the
 
 ## Database
 
-MySQL database `gf` on localhost:3306. Schema is auto-updated via `hibernate.ddl-auto=update`.
+MySQL database `gf` on localhost:3306. The schema is owned by **Flyway** (`src/main/resources/db/migration`), Hibernate only
+checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>__opis.sql` (next free: `V3`); never edit an
+applied migration. `V1` = schema of prod `gf` before onboarding (an existing DB without `flyway_schema_history` gets a
+baseline at 1 via `baseline-on-migrate`); `V2` = onboarding, idempotent. `sql/views.sql` is historical, the view lives in `V1`.
+`scripts/flyway-provera.sh` checks the migrations against an empty DB and the `gf` / `gf_staging` schema dumps (test MySQL on 3307).
 
 ## Frontend
 
