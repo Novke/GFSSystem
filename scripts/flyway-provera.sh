@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Lokalna provera Flyway migracija nad tri početna stanja šeme:
-#   prazna      - prazna baza (kao CI gftest): očekivano V1 i V2 izvršene
-#   gf          - šema produkcione baze pre onboardinga: očekivano baseline 1 + V2
-#   gf_staging  - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op)
+#   prazna      - prazna baza (kao CI gftest): očekivano sve od V1 izvršeno
+#   gf          - šema produkcione baze pre onboardinga: očekivano baseline 1 + V2 i dalje
+#   gf_staging  - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op) i dalje
 # Za svaki scenario pravi bazu fw_<scenario> u test MySQL-u, učita dump šeme (bez podataka), pokrene jar
 # (ddl-auto=validate) i ispiše flyway_schema_history. Izlaz != 0 ako bilo koji scenario ne startuje.
 #

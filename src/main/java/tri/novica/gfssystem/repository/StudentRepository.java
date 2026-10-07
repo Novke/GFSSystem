@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,4 +33,8 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
     boolean postojiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina);
 
     long countByGrupaId(Long grupaId);
+
+    /** Broj studenata po grupi, za stranicu liste ({@code Brojaci.poId}). Redovi: {@code [grupaId, broj]}. */
+    @Query("select s.grupa.id, count(s) from Student s where s.grupa.id in :ids group by s.grupa.id")
+    List<Object[]> brojStudenataPoGrupi(@Param("ids") Collection<Long> ids);
 }
