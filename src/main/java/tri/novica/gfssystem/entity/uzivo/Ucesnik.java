@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "ucesnici")
 @Getter @Setter @NoArgsConstructor
+@DynamicUpdate
 public class Ucesnik {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
