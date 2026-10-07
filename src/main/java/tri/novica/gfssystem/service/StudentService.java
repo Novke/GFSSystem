@@ -2,17 +2,27 @@ package tri.novica.gfssystem.service;
 
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tri.novica.gfssystem.dto.grupa.GrupaInfo;
 import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.student.CreateStudentCmd;
 import tri.novica.gfssystem.dto.student.StudentDetails;
+import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentInfo;
+import tri.novica.gfssystem.dto.student.StudentListItem;
 import tri.novica.gfssystem.dto.student.pregled.*;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.spec.StudentSpecs;
+import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.IndeksUtil;
 import tri.novica.gfssystem.utility.StudentMapper;
 import tri.novica.gfssystem.utility.Utility;
@@ -23,6 +33,10 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class StudentService {
+
+    /** Polja po kojima lista studenata sme da se sortira ({@code PageableUtil.proveri}). */
+    public static final Set<String> SORT_POLJA = Set.of("prezime", "ime", "indeks", "godina");
+    public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.asc("prezime"), Sort.Order.asc("ime"));
 
     public static final String DUPLIKAT = "Student sa ovim indeksom i godinom upisa već postoji u sistemu.";
 
@@ -171,5 +185,39 @@ public class StudentService {
         details.setTestoviPoTipu(testoviPoTipu);
 
         return details;
+    }
+
+    /**
+     * Lista studenata sa filterima i stranicom. {@code pageable} je već prošao {@code PageableUtil.proveri}
+     * (REST sloj). Grupa dolazi u istom upitu, broj studenata grupe jednim agregatnim upitom po stranici.
+     */
+    public PagedModel<StudentListItem> pretraga(StudentFilter f, Pageable pageable) {
+        Integer godinaReference = null;
+        if (f.starijiOdGrupe() != null) {
+            godinaReference = grupaRepository.findById(f.starijiOdGrupe())
+                    .orElseThrow(() -> new SystemException("Grupa ne postoji! ID = " + f.starijiOdGrupe(), HttpStatus.NOT_FOUND))
+                    .getGodinaUpisa();
+        }
+        Specification<Student> spec = Specification.allOf(
+                StudentSpecs.zaPrikaz(),
+                StudentSpecs.grupa(f.grupaId()),
+                f.starijiOdGrupe() == null ? Specification.<Student>unrestricted() : StudentSpecs.grupaStarijaOd(godinaReference),
+                StudentSpecs.q(f.q()));
+        Page<Student> strana = studentRepository.findAll(spec, pageable);
+
+        Set<Long> grupaIds = strana.stream().map(Student::getGrupa).filter(Objects::nonNull)
+                .map(Grupa::getId).collect(Collectors.toSet());
+        Map<Long, Long> brojStudenata = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+
+        return new PagedModel<>(strana.map(s -> uListItem(s, brojStudenata)));
+    }
+
+    /** Ručno mapiranje (ModelMapper je STRICT, a broj studenata grupe nije polje entiteta). */
+    private static StudentListItem uListItem(Student s, Map<Long, Long> brojStudenata) {
+        Grupa g = s.getGrupa();
+        GrupaInfo grupa = g == null ? null
+                : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata.getOrDefault(g.getId(), 0L));
+        return new StudentListItem(s.getId(), s.getIme(), s.getPrezime(), s.getIndeks(), s.getGodina(), s.getEmail(),
+                s.getBrojTelefona(), grupa);
     }
 }

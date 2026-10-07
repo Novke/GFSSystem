@@ -3,14 +3,24 @@ package tri.novica.gfssystem.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.spec.TestSpecs;
+import tri.novica.gfssystem.utility.Brojaci;
+import tri.novica.gfssystem.utility.SkolskaGodina;
 import tri.novica.gfssystem.validation.TestPP;
 
 import java.util.*;
@@ -20,6 +30,10 @@ import java.util.stream.Collectors;
 @Transactional
 @RequiredArgsConstructor
 public class TestService {
+
+    /** Polja po kojima lista testova sme da se sortira ({@code PageableUtil.proveri}). */
+    public static final Set<String> SORT_POLJA = Set.of("datum", "maxPoena");
+    public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.desc("datum"));
 
     private final TestRepository testRepository;
     private final TipTestaRepository tipTestaRepository;
@@ -254,5 +268,56 @@ public class TestService {
                     return testInfo;
                 }
         ).toList();
+    }
+
+    /**
+     * Lista testova sa filterima i stranicom. {@code pageable} je već prošao {@code PageableUtil.proveri}
+     * (REST sloj). Predmet, grupa i tip dolaze u istom upitu, statistika polaganja jednim agregatnim upitom po stranici.
+     */
+    public PagedModel<TestListItem> pretraga(TestFilter f, Pageable pageable) {
+        SkolskaGodina.proveri(f.godina());
+        Specification<Test> spec = Specification.allOf(
+                TestSpecs.zaPrikaz(),
+                TestSpecs.predmet(f.predmetId()),
+                TestSpecs.grupa(f.grupaId()),
+                TestSpecs.tipTesta(f.tipTestaId()),
+                TestSpecs.godina(f.godina()),
+                TestSpecs.pregledan(f.pregledan()),
+                TestSpecs.od(f.od()),
+                TestSpecs.doDatuma(f.doDatuma()));
+        Page<Test> strana = testRepository.findAll(spec, pageable);
+
+        List<Long> ids = strana.map(Test::getId).toList();
+        Set<Long> grupaIds = strana.stream().map(t -> t.getGrupa().getId()).collect(Collectors.toSet());
+        Map<Long, Object[]> statistika = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (Object[] red : polaganjeRepository.statistikaPoTestu(ids)) {
+                statistika.put(((Number) red[0]).longValue(), red);
+            }
+        }
+        Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+
+        return new PagedModel<>(strana.map(t -> uListItem(t, statistika.get(t.getId()), studenti)));
+    }
+
+    /** Ručno mapiranje; {@code statistika} je red {@code [testId, brojPolaganja, brojSaPoenima, prosek, brojPolozenih]} ili null. */
+    private static TestListItem uListItem(Test t, Object[] statistika, Map<Long, Long> studenti) {
+        long brojPolaganja = 0;
+        Double prosek = null;
+        Double procenatProlaznosti = null;
+        if (statistika != null) {
+            brojPolaganja = ((Number) statistika[1]).longValue();
+            long saPoenima = ((Number) statistika[2]).longValue();
+            if (saPoenima > 0) {
+                prosek = ((Number) statistika[3]).doubleValue();
+                procenatProlaznosti = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
+            }
+        }
+        Grupa g = t.getGrupa();
+        GrupaInfo grupa = new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), studenti.getOrDefault(g.getId(), 0L));
+        PredmetInfo predmet = new PredmetInfo(t.getPredmet().getId(), t.getPredmet().getNaziv());
+        TipTesta tip = t.getTipTesta();
+        return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv()), t.getMaxPoena(),
+                t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
     }
 }

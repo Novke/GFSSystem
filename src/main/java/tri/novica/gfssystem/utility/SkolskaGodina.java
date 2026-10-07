@@ -15,7 +15,7 @@ public final class SkolskaGodina {
 
     /** Razuman opseg za query parametar; van njega {@link LocalDate} puca ili upit nema smisla. */
     public static final int MIN = 1900;
-    public static final int MAX = 9999;
+    public static final int MAX = 9998;
 
     private SkolskaGodina() {
     }

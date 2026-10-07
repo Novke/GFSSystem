@@ -8,6 +8,7 @@ import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Polaganje;
 import tri.novica.gfssystem.entity.TipTesta;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -40,4 +41,15 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
             "ORDER BY t.datum ASC")
     List<Polaganje> findAllByStudentAndPredmet(@Param("studentId") Long studentId,
                                                 @Param("predmetId") Long predmetId);
+
+    /**
+     * Statistika polaganja po testu, za stranicu liste. Redovi: {@code [testId, brojPolaganja, brojSaPoenima,
+     * prosekPoena, brojPolozenih]}; prosek i položeni računaju samo polaganja sa {@code ostvareniPoeni != null}
+     * (prolaz je {@code polozio = true}), a testovi bez polaganja se ne vraćaju.
+     */
+    @Query("""
+            select p.test.id, count(p), count(p.ostvareniPoeni), avg(p.ostvareniPoeni),
+                   coalesce(sum(case when p.ostvareniPoeni is not null and p.polozio = true then 1 else 0 end), 0)
+            from Polaganje p where p.test.id in :ids group by p.test.id""")
+    List<Object[]> statistikaPoTestu(@Param("ids") Collection<Long> ids);
 }

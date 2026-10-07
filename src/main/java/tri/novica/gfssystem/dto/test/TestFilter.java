@@ -1,0 +1,11 @@
+package tri.novica.gfssystem.dto.test;
+
+import java.time.LocalDate;
+
+/**
+ * Filteri liste testova ({@code GET /test/pretraga}); svako polje je opciono, null = bez filtera.
+ * {@code godina} je školska godina (1. 10. godina - 30. 9. godina+1), {@code od}/{@code doDatuma} su uključivi.
+ */
+public record TestFilter(Long predmetId, Long grupaId, Integer godina, Boolean pregledan, Long tipTestaId,
+                         LocalDate od, LocalDate doDatuma) {
+}

@@ -2,13 +2,18 @@ package tri.novica.gfssystem.rest;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.student.CreateStudentCmd;
+import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentInfo;
+import tri.novica.gfssystem.dto.student.StudentListItem;
 import tri.novica.gfssystem.dto.student.pregled.StudentNaPredmetuDetails;
 import tri.novica.gfssystem.dto.student.pregled.StudentPregledDetails;
 import tri.novica.gfssystem.service.StudentService;
+import tri.novica.gfssystem.utility.PageableUtil;
 
 import java.util.List;
 
@@ -25,6 +30,20 @@ public class StudentRest {
     public List<StudentInfo> findAll(){
         return studentService.findAll();
     }
+    /**
+     * Lista studenata za UI: filteri su opcioni, {@code page}/{@code size} (podrazumevano 25, najviše 100) i
+     * {@code sort} po {@code prezime}, {@code ime}, {@code indeks}, {@code godina} (podrazumevano prezime pa ime).
+     * Literal {@code pretraga} ima prednost nad {@code {id}}.
+     */
+    @GetMapping("pretraga")
+    @ResponseStatus(HttpStatus.OK)
+    public PagedModel<StudentListItem> pretraga(@RequestParam(required = false) Long grupaId,
+            @RequestParam(required = false) Long starijiOdGrupe, @RequestParam(required = false) String q,
+            Pageable pageable) {
+        return studentService.pretraga(new StudentFilter(grupaId, starijiOdGrupe, q),
+                PageableUtil.proveri(pageable, StudentService.SORT_POLJA, StudentService.PODRAZUMEVANI_SORT));
+    }
+
     @GetMapping("{id}")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)

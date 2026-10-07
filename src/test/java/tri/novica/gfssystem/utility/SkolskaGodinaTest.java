@@ -42,11 +42,14 @@ class SkolskaGodinaTest {
     void proveriPropustaNullIRazumneGodine() {
         assertDoesNotThrow(() -> SkolskaGodina.proveri(null));
         assertDoesNotThrow(() -> SkolskaGodina.proveri(2025));
+        assertDoesNotThrow(() -> SkolskaGodina.proveri(SkolskaGodina.MIN));
+        assertDoesNotThrow(() -> SkolskaGodina.proveri(SkolskaGodina.MAX));
+        assertDoesNotThrow(() -> SkolskaGodina.kraj(SkolskaGodina.MAX));   // 30. 9. 9999 je u opsegu MySQL DATE
     }
 
     @Test
     void proveriOdbijaGodinuVanOpsega() {
-        for (int g : new int[]{0, -1, 1899, 10000, Integer.MAX_VALUE}) {
+        for (int g : new int[]{0, -1, 1899, 9999, 10000, Integer.MAX_VALUE}) {
             SystemException ex = assertThrows(SystemException.class, () -> SkolskaGodina.proveri(g));
             assertEquals(400, ex.getCode());
             assertEquals("Neispravan parametar: godina.", ex.getMessage());
