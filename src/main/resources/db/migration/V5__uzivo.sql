@@ -1,8 +1,11 @@
 -- V5: interaktivna prezentacija uživo (cilj 4, prva celina): mediji, prezentacije, slajdovi, pitanja i opcije,
 -- izvođenja, učesnici, runde pitanja i odgovori. Samo nove tabele (aditivno; stara slika radi nad ovom šemom).
 -- Enum kolone su varchar(20) (entiteti: @Enumerated(STRING) + @JdbcTypeCode(SqlTypes.VARCHAR)).
+-- Idempotentno kao V2-V4: reset staging baze (reset-db.sh) gradi šemu iz dump-a bez flyway_schema_history, pa
+-- Flyway radi baseline 1 i ponovo izvršava V2 i dalje. Baza koja ove tabele već ima ne sme da pukne, zato je svaka
+-- tabela CREATE TABLE IF NOT EXISTS (DDL inače isti; redosled poštuje strane ključeve).
 
-CREATE TABLE `mediji` (
+CREATE TABLE IF NOT EXISTS `mediji` (
   `id` varchar(36) NOT NULL,
   `naziv` varchar(255) NOT NULL,
   `mime` varchar(100) NOT NULL,
@@ -11,7 +14,7 @@ CREATE TABLE `mediji` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `prezentacije` (
+CREATE TABLE IF NOT EXISTS `prezentacije` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `predmet_id` bigint NOT NULL,
   `naziv` varchar(200) NOT NULL,
@@ -26,7 +29,7 @@ CREATE TABLE `prezentacije` (
   CONSTRAINT `fk_prezentacije_predmet` FOREIGN KEY (`predmet_id`) REFERENCES `predmeti` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `pitanja` (
+CREATE TABLE IF NOT EXISTS `pitanja` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `tip` varchar(20) NOT NULL,
   `tekst` text NOT NULL,
@@ -44,7 +47,7 @@ CREATE TABLE `pitanja` (
   CONSTRAINT `fk_pitanja_slika` FOREIGN KEY (`slika_id`) REFERENCES `mediji` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `pitanje_opcije` (
+CREATE TABLE IF NOT EXISTS `pitanje_opcije` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `pitanje_id` bigint NOT NULL,
   `rb` int NOT NULL,
@@ -55,7 +58,7 @@ CREATE TABLE `pitanje_opcije` (
   CONSTRAINT `fk_pitanje_opcije_pitanje` FOREIGN KEY (`pitanje_id`) REFERENCES `pitanja` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `slajdovi` (
+CREATE TABLE IF NOT EXISTS `slajdovi` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `prezentacija_id` bigint NOT NULL,
   `rb` int NOT NULL,
@@ -74,7 +77,7 @@ CREATE TABLE `slajdovi` (
   CONSTRAINT `fk_slajdovi_pitanje` FOREIGN KEY (`pitanje_id`) REFERENCES `pitanja` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `izvodjenja` (
+CREATE TABLE IF NOT EXISTS `izvodjenja` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `prezentacija_id` bigint NOT NULL,
   `kod` char(6) NOT NULL,
@@ -108,7 +111,7 @@ CREATE TABLE `izvodjenja` (
   CONSTRAINT `fk_izvodjenja_predavanje` FOREIGN KEY (`predavanje_id`) REFERENCES `predavanja` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `ucesnici` (
+CREATE TABLE IF NOT EXISTS `ucesnici` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `izvodjenje_id` bigint NOT NULL,
   `ime` varchar(40) NOT NULL,
@@ -121,7 +124,7 @@ CREATE TABLE `ucesnici` (
   CONSTRAINT `fk_ucesnici_izvodjenje` FOREIGN KEY (`izvodjenje_id`) REFERENCES `izvodjenja` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `pitanje_runde` (
+CREATE TABLE IF NOT EXISTS `pitanje_runde` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `izvodjenje_id` bigint NOT NULL,
   `slajd_id` bigint DEFAULT NULL,
@@ -138,7 +141,7 @@ CREATE TABLE `pitanje_runde` (
   CONSTRAINT `fk_pitanje_runde_slajd` FOREIGN KEY (`slajd_id`) REFERENCES `slajdovi` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `odgovori` (
+CREATE TABLE IF NOT EXISTS `odgovori` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `runda_id` bigint NOT NULL,
   `ucesnik_id` bigint NOT NULL,
