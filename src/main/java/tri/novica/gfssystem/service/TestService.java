@@ -21,6 +21,7 @@ import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.repository.spec.TestSpecs;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.SkolskaGodina;
+import tri.novica.gfssystem.utility.Utility;
 import tri.novica.gfssystem.validation.TestPP;
 
 import java.util.*;
@@ -223,6 +224,9 @@ public class TestService {
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        if (!Utility.smeNaNastavuGrupe(student, test.getGrupa()))
+            throw new SystemException("Student " + student.getIndeks() + " ne pripada grupi " + test.getGrupa().getNaziv(), 400);
 
         Polaganje polaganje = Polaganje.defaultPolaganje(test, student);
 
