@@ -304,6 +304,7 @@ public class TestService {
                 TestSpecs.tipTesta(f.tipTestaId()),
                 TestSpecs.godina(f.godina()),
                 TestSpecs.pregledan(f.pregledan()),
+                TestSpecs.q(f.q()),
                 TestSpecs.od(f.od()),
                 TestSpecs.doDatuma(f.doDatuma()));
         Page<Test> strana = testRepository.findAll(spec, pageable);

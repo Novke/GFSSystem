@@ -45,4 +45,15 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
     /** Broj studenata po grupi, za stranicu liste ({@code Brojaci.poId}). Redovi: {@code [grupaId, broj]}. */
     @Query("select s.grupa.id, count(s) from Student s where s.grupa.id in :ids group by s.grupa.id")
     List<Object[]> brojStudenataPoGrupi(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Studenti iz grupa sa godinom upisa manjom od {@code godinaUpisa} koji imaju bar jednu aktivnost (na predavanju)
+     * ili bar jedno polaganje (testa) na predmetu: ponovci koji dolaze na nastavu. Studenti bez grupe se ne broje.
+     */
+    @Query("""
+        select count(s) from Student s
+        where s.grupa.godinaUpisa < :godinaUpisa
+          and (exists (select a.id from Aktivnost a where a.student = s and a.predavanje.predmet.id = :predmetId)
+            or exists (select p.id from Polaganje p where p.student = s and p.test.predmet.id = :predmetId))""")
+    long brojStarijihNaPredmetu(@Param("predmetId") Long predmetId, @Param("godinaUpisa") int godinaUpisa);
 }

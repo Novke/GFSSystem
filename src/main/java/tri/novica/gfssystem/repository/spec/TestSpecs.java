@@ -45,6 +45,15 @@ public final class TestSpecs {
         return SpecUtil.logicko("pregledan", pregledan);
     }
 
+    /** {@code q} u nazivu tipa testa ili nazivu predmeta (bez obzira na velika i mala slova; prazan q je bez filtera). */
+    public static Specification<Test> q(String q) {
+        String obrazac = SpecUtil.likeObrazac(q);
+        if (obrazac == null) return Specification.unrestricted();
+        return (root, query, cb) -> cb.or(
+                SpecUtil.sadrzi(cb, root.get("tipTesta").get("naziv"), obrazac),
+                SpecUtil.sadrzi(cb, root.get("predmet").get("naziv"), obrazac));
+    }
+
     public static Specification<Test> od(LocalDate od) {
         return SpecUtil.datumOd(od);
     }

@@ -2,6 +2,8 @@ package tri.novica.gfssystem.service;
 
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.grupa.CreateGrupaCmd;
@@ -12,10 +14,12 @@ import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.StudentRepository;
+import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.Utility;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,20 @@ public class GrupaService {
                     info.setBrojStudenata(studentRepository.countByGrupaId(grupa.getId()));
                     return info;
                 }).toList();
+    }
+
+    /**
+     * Grupe čiji naziv sadrži {@code q} (bez obzira na velika i mala slova), najnovije generacije prve, sa brojem
+     * studenata (jedan agregatni upit). Za globalnu pretragu.
+     */
+    public List<GrupaInfo> pretraga(String q, int najvise) {
+        List<Grupa> grupe = grupaRepository.findByNazivContainingIgnoreCase(q, PageRequest.of(0, najvise,
+                Sort.by(Sort.Order.desc("godinaUpisa"), Sort.Order.asc("naziv"), Sort.Order.desc("id"))));
+        Map<Long, Long> broj = Brojaci.poId(grupe.stream().map(Grupa::getId).toList(),
+                studentRepository::brojStudenataPoGrupi);
+        return grupe.stream()
+                .map(g -> new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), broj.getOrDefault(g.getId(), 0L)))
+                .toList();
     }
 
     public GrupaInfo save(CreateGrupaCmd grupaCmd){
