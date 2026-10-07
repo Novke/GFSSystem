@@ -4,7 +4,7 @@ Academic management system for Gradjevinski Fakultet Subotica (GFS).
 
 ## Tech Stack
 
-- **Java 17** with **Spring Boot 3.3.4**
+- **Java 21** with **Spring Boot 4.1** (Jackson 3, `spring.jackson.use-jackson2-defaults=true` keeps the Boot 3 JSON behavior)
 - **Spring Data JPA** with **MySQL** database
 - **Lombok** for boilerplate reduction
 - **MapStruct** and **ModelMapper** for DTO mapping
