@@ -46,6 +46,12 @@ public class PredavanjeRest {
         return predavanjeService.findById(id);
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void obrisi(@PathVariable Long id) {
+        predavanjeService.obrisi(id);
+    }
+
     @PostMapping("/start")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)

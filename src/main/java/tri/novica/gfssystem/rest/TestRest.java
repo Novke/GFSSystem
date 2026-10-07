@@ -69,6 +69,12 @@ public class TestRest {
         return testService.updateTest(testId, cmd);
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void obrisi(@PathVariable(name = "id") Long testId) {
+        testService.obrisi(testId);
+    }
+
     @PostMapping("/{id}/polaganje")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)

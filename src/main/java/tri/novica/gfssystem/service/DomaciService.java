@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.service;
 
 import lombok.RequiredArgsConstructor;
+import jakarta.transaction.Transactional;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -61,6 +62,14 @@ public class DomaciService {
         domaci.setDatum(LocalDate.now());
 
         return mapper.map(domaciRepository.save(domaci), DomaciId.class);
+    }
+
+    /** Briše domaći zajedno sa urađenim domaćim (kaskada); predavanje, grupa i predmet ostaju. */
+    @Transactional
+    public void obrisi(Long id) {
+        Domaci domaci = domaciRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+        domaciRepository.delete(domaci);
     }
 
     public DomaciDetails getDomaci(Long id) {

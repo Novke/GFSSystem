@@ -211,6 +211,13 @@ public class TestService {
         return mapper.map(testRepository.save(test), TestDetails.class);
     }
 
+    /** Briše test zajedno sa polaganjima (kaskada); studenti i tip testa ostaju. */
+    public void obrisi(Long id) {
+        Test test = testRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404));
+        testRepository.delete(test);
+    }
+
     public TestDetails dodajIspitanika(Long testId, Long studentId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));

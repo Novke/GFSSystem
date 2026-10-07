@@ -50,6 +50,19 @@ public class PredavanjeService {
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND)),
                 PredavanjeDetails.class);
     }
+    /**
+     * Briše predavanje i njegove aktivnosti (kaskada). Domaći vezani za predavanje ostaju, samo im se
+     * {@code predavanje} postavlja na null (FK {@code domaci.predavanje_id}).
+     */
+    public void obrisi(Long id) {
+        Predavanje predavanje = predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+        predavanje.getDomaci().forEach(d -> d.setPredavanje(null));
+        predavanje.getDomaci().clear();
+        predavanjeRepository.flush();
+        predavanjeRepository.delete(predavanje);
+    }
+
     public PredavanjeDetails startPredavanje(StartPredavanjeCmd startPredavanjeCmd) {
 
         Long predmetId = startPredavanjeCmd.getPredmetId();

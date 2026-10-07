@@ -52,6 +52,12 @@ public class DomaciRest {
         return domaciService.getDomaci(id);
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void obrisi(@PathVariable Long id) {
+        domaciService.obrisi(id);
+    }
+
     @PostMapping("/evidentiraj")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
