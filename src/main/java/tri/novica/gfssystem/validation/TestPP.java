@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 import tri.novica.gfssystem.entity.Polaganje;
 import tri.novica.gfssystem.entity.Test;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.utility.Utility;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
@@ -37,7 +38,7 @@ public class TestPP {
             throw new SystemException("Grupa " + polaganje.getGrupa().name() + " ne postoji u testu!", BAD_REQUEST);
         if (polaganje.getOstvareniPoeni()> test.getMaxPoena())
             throw new SystemException("Ostvareni broj poena ne moze biti veci od maksimalnog broja poena na testu", BAD_REQUEST);
-        if (!polaganje.getTest().getGrupa().equals(polaganje.getStudent().getGrupa())){
+        if (!Utility.smeNaNastavuGrupe(polaganje.getStudent(), polaganje.getTest().getGrupa())){
             throw new SystemException("Student " + polaganje.getStudent().getIndeks() + " ne pripada grupi " + polaganje.getTest().getGrupa().getNaziv(), BAD_REQUEST);
         }
         if (test.getPregledan())

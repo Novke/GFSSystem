@@ -20,6 +20,7 @@ import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.SkolskaGodina;
+import tri.novica.gfssystem.utility.Utility;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -99,7 +100,10 @@ public class PredavanjeService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
 
-
+        // predavanje bez grupe (grupa_id je nullable) prima svakoga; inace samo grupu i starije generacije
+        Grupa grupa = predavanje.getGrupa();
+        if (grupa != null && !Utility.smeNaNastavuGrupe(student, grupa))
+            throw new SystemException("Student " + student.getIndeks() + " ne pripada grupi " + grupa.getNaziv(), HttpStatus.BAD_REQUEST);
 
         Aktivnost aktivnost = new Aktivnost(predavanje, student, TipAktivnosti.PRISUSTVO);
         Set<Aktivnost> aktivnosti = predavanje.getAktivnosti();
