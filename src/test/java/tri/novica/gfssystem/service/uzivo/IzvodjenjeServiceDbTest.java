@@ -126,6 +126,11 @@ class IzvodjenjeServiceDbTest {
         assertEquals(new GrupaKratko(grupa.getId(), grupa.getNaziv()), info.grupa());
         assertTrue(info.cuvanje());
         assertEquals(info.kod(), jdbc.queryForObject("select aktivan_kod from izvodjenja where id = ?", String.class, id));
+        // jedno aktivno izvođenje po prezentaciji
+        SystemException drugo = assertThrows(SystemException.class,
+                () -> service.pokreni(p.id(), new PokreniCmd(false, null, null)));
+        assertEquals(409, drugo.getCode());
+        assertEquals("Prezentacija već ima izvođenje u toku.", drugo.getMessage());
         // dok traje izvođenje, prezentacija se ne može obrisati
         SystemException e = assertThrows(SystemException.class, () -> prezentacijaService.obrisi(p.id()));
         assertEquals(409, e.getCode());
@@ -204,9 +209,11 @@ class IzvodjenjeServiceDbTest {
         assertEquals(1, broj("select count(*) from pitanje_runde where izvodjenje_id = ?", id));
         e = assertThrows(SystemException.class, () -> k(id, TipKomande.SLEDECI));
         assertEquals(410, e.getCode());
-        assertEquals(List.of(id), service.lista(p.id(), StatusIzvodjenja.ZAVRSENO).stream().map(IzvodjenjeInfo::id).toList());
-        assertEquals(1, service.lista(p.id(), null).get(0).brojUcesnika());
-        assertEquals(1, service.lista(p.id(), null).get(0).brojPitanja());
+        Long novo = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+        k(novo, TipKomande.ZAVRSI);
+        assertEquals(List.of(novo, id), service.lista(p.id(), StatusIzvodjenja.ZAVRSENO).stream().map(IzvodjenjeInfo::id).toList());
+        assertEquals(1, service.lista(p.id(), null).get(1).brojUcesnika());
+        assertEquals(1, service.lista(p.id(), null).get(1).brojPitanja());
 
         service.obrisi(id);
         assertEquals(0, broj("select count(*) from izvodjenja where id = ?", id));

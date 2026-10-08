@@ -56,6 +56,7 @@ public class IzvodjenjeService {
     static final String UCESNIK_NIJE_PRONADJEN = "Učesnik nije pronađen.";
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
+    static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
 
     /** Odgovori se primaju i pitanje se zatvara tek 1 s posle roka (mreža). */
     static final Duration TOLERANCIJA = Duration.ofSeconds(1);
@@ -83,13 +84,17 @@ public class IzvodjenjeService {
     // ---------------------------------------------------------------- pokretanje, lista, rezultati, brisanje
 
     /**
-     * Novo izvođenje u fazi prijave. Prvo zaključa prezentaciju (isti red kao izmene slajdova; brisanje prezentacije
-     * tada ne može proći između provere "nema aktivnog izvođenja" i ovog upisa).
+     * Novo izvođenje u fazi prijave; 409 dok prezentacija već ima aktivno izvođenje. Prvo zaključa prezentaciju (isti
+     * red kao izmene slajdova; brisanje prezentacije i drugo pokretanje ne mogu proći između provere i ovog upisa).
      */
     public IzvodjenjeInfo pokreni(Long prezentacijaId, PokreniCmd cmd) {
         PokreniCmd c = cmd == null ? new PokreniCmd(false, null, null) : cmd;
         Prezentacija p = prezentacijaRepository.findByIdForUpdate(prezentacijaId)
                 .orElseThrow(() -> new SystemException(PrezentacijaService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND));
+        // jedno aktivno izvođenje po prezentaciji; pod zaključanom prezentacijom, pa dva pokretanja idu redom
+        if (izvodjenjeRepository.existsByPrezentacijaIdAndStatus(p.getId(), StatusIzvodjenja.AKTIVNO)) {
+            throw new SystemException(VEC_U_TOKU, HttpStatus.CONFLICT);
+        }
 
         boolean cuvanje = c.cuvanje();
         Grupa grupa = null;

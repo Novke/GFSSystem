@@ -312,6 +312,22 @@ class IzvodjenjeServiceTest {
     }
 
     @Test
+    void pokreniDokTrajeDrugoIzvodjenje409() {
+        when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
+        when(izvodjenjeRepository.existsByPrezentacijaIdAndStatus(1L, StatusIzvodjenja.AKTIVNO)).thenReturn(true);
+        SystemException e = assertThrows(SystemException.class,
+                () -> service.pokreni(1L, new PokreniCmd(true, null, null)));
+        assertEquals(409, e.getCode());
+        assertEquals("Prezentacija već ima izvođenje u toku.", e.getMessage());
+        // provera je pod zaključanom prezentacijom (dva istovremena pokretanja idu redom)
+        InOrder red = inOrder(prezentacijaRepository, izvodjenjeRepository);
+        red.verify(prezentacijaRepository).findByIdForUpdate(1L);
+        red.verify(izvodjenjeRepository).existsByPrezentacijaIdAndStatus(1L, StatusIzvodjenja.AKTIVNO);
+        verify(izvodjenjeRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(kodGenerator);
+    }
+
+    @Test
     void pokreniNepostojecePrezentacije404() {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.empty());
         SystemException e = assertThrows(SystemException.class,
