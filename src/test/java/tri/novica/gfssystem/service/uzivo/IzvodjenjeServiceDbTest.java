@@ -41,6 +41,8 @@ class IzvodjenjeServiceDbTest {
     @Autowired PrezentacijaService prezentacijaService;
     @Autowired PredmetRepository predmetRepository;
     @Autowired GrupaRepository grupaRepository;
+    @Autowired tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository prezentacijaRepository;
+    @Autowired tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository izvodjenjeRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired Clock clock;
     @Autowired PlatformTransactionManager transakcije;
@@ -236,6 +238,7 @@ class IzvodjenjeServiceDbTest {
         st = k(id, TipKomande.ZAVRSI);
         assertEquals(StatusIzvodjenja.ZAVRSENO, st.izvodjenje().status());
         assertNull(st.runda());
+        assertNull(st.faza());
         assertTrue(st.ucesnici().isEmpty());
         assertEquals(1, broj("select count(*) from izvodjenja where id = ?", id));
         assertEquals(0, broj("select count(*) from pitanje_runde where izvodjenje_id = ?", id));
@@ -311,5 +314,34 @@ class IzvodjenjeServiceDbTest {
         assertEquals("Uvod 2", izmena.get(30, TimeUnit.SECONDS).naslov());
         assertNotNull(zakljucano, "izvođenje mora biti zaključano pre upisa slajda");
         assertEquals(List.of(id), jdbc.queryForList("select id from izvodjenja where id = ? for update nowait", Long.class, id));
+    }
+
+    /** Ruling 10: prepoznavanje zauzetog aktivnog koda nad pravim MySQL/Hibernate lancem izuzetaka. */
+    @Test
+    void zauzetKodSePrepoznajeSamoZaUkAktivanKod() {
+        PrezentacijaDetails p = prezentacija(null);
+        IzvodjenjeInfo prvo = service.pokreni(p.id(), new PokreniCmd(false, null, null));
+
+        RuntimeException duplikat = assertThrows(RuntimeException.class, () -> upisi(p.id(), prvo.kod(), null));
+        assertTrue(IzvodjenjeService.zauzetKod(duplikat), duplikat.toString());
+
+        RuntimeException losaGrupa = assertThrows(RuntimeException.class, () -> upisi(p.id(), "000001", -1L));
+        assertFalse(IzvodjenjeService.zauzetKod(losaGrupa), losaGrupa.toString());
+    }
+
+    void upisi(Long prezentacijaId, String aktivanKod, Long grupaId) {
+        new TransactionTemplate(transakcije).executeWithoutResult(tx -> {
+            Izvodjenje iz = new Izvodjenje();
+            iz.setPrezentacija(prezentacijaRepository.getReferenceById(prezentacijaId));
+            if (grupaId != null) iz.setGrupa(grupaRepository.getReferenceById(grupaId));
+            iz.setKod(aktivanKod);
+            iz.setAktivanKod(aktivanKod);
+            iz.setStatus(StatusIzvodjenja.AKTIVNO);
+            iz.setPocetak(LocalDateTime.now(clock));
+            iz.setPrikaz(Prikaz.PRIJAVA);
+            iz.setEkran(Ekran.NORMALAN);
+            iz.setTelefonPrikaz(TelefonPrikaz.DUGMAD);
+            izvodjenjeRepository.saveAndFlush(iz);
+        });
     }
 }

@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
@@ -325,6 +326,34 @@ class IzvodjenjeServiceTest {
         red.verify(izvodjenjeRepository).existsByPrezentacijaIdAndStatus(1L, StatusIzvodjenja.AKTIVNO);
         verify(izvodjenjeRepository, never()).saveAndFlush(any());
         verifyNoInteractions(kodGenerator);
+    }
+
+    void pokreniKadUpisPadne(RuntimeException greska) {
+        when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
+        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(2L);
+        when(kodGenerator.novi()).thenReturn("123456");
+        when(izvodjenjeRepository.saveAndFlush(any())).thenThrow(greska);
+    }
+
+    @Test
+    void zauzetAktivanKodJe503() {
+        pokreniKadUpisPadne(new DataIntegrityViolationException("upis", new java.sql.SQLIntegrityConstraintViolationException(
+                "Duplicate entry '123456' for key 'izvodjenja.uk_izvodjenja_aktivan_kod'")));
+        SystemException e = assertThrows(SystemException.class,
+                () -> service.pokreni(1L, new PokreniCmd(true, null, null)));
+        assertEquals(503, e.getCode());
+        assertEquals("Trenutno nema slobodnog koda, pokušaj ponovo.", e.getMessage());
+    }
+
+    @Test
+    void drugaGreskaIntegritetaSeProsledjuje() {
+        DataIntegrityViolationException greska = new DataIntegrityViolationException("upis",
+                new java.sql.SQLIntegrityConstraintViolationException(
+                        "Cannot add or update a child row: a foreign key constraint fails (`gftest`.`izvodjenja`, "
+                                + "CONSTRAINT `fk_izvodjenja_grupa` FOREIGN KEY (`grupa_id`) REFERENCES `grupe` (`id`))"));
+        pokreniKadUpisPadne(greska);
+        assertSame(greska, assertThrows(DataIntegrityViolationException.class,
+                () -> service.pokreni(1L, new PokreniCmd(true, null, null))));
     }
 
     @Test
@@ -820,6 +849,7 @@ class IzvodjenjeServiceTest {
         assertEquals("123456", iz.getKod());
         assertEquals(sada(), iz.getKraj());
         assertNull(iz.getTrenutnaRundaId());
+        assertNull(iz.getFaza(), "bez rundi nema ni faze");
         verify(rokPlaner).otkazi(r.getId());
         InOrder red = inOrder(odgovorRepository, rundaRepository, ucesnikRepository);
         red.verify(odgovorRepository).deleteAllByIzvodjenjeId(IZ);
@@ -836,6 +866,7 @@ class IzvodjenjeServiceTest {
         assertNull(iz.getAktivanKod());
         assertEquals(T0, iz.getKraj());
         assertNotNull(iz.getTrenutnaRundaId());
+        assertEquals(Faza.ZATVORENO, iz.getFaza(), "sa čuvanjem faza ostaje");
         verify(odgovorRepository, never()).deleteAllByIzvodjenjeId(any());
         verify(rundaRepository, never()).deleteAllByIzvodjenjeId(any());
         verify(ucesnikRepository, never()).deleteAllByIzvodjenjeId(any());

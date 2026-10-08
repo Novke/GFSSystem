@@ -21,9 +21,7 @@ import tri.novica.gfssystem.repository.uzivo.*;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Izvođenje prezentacije uživo: pokretanje, nastavničke komande (stanje-mašina iz spec-a 2.3-2.5 i 4.5), tajmer,
@@ -57,6 +55,8 @@ public class IzvodjenjeService {
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
     static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
+    /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V5). */
+    static final String UK_AKTIVAN_KOD = "uk_izvodjenja_aktivan_kod";
 
     /** Odgovori se primaju i pitanje se zatvara tek 1 s posle roka (mreža). */
     static final Duration TOLERANCIJA = Duration.ofSeconds(1);
@@ -137,8 +137,12 @@ public class IzvodjenjeService {
         try {
             iz = izvodjenjeRepository.saveAndFlush(iz);
         } catch (DataIntegrityViolationException e) {
-            // isti kod je u međuvremenu dobilo drugo izvođenje (UNIQUE aktivan_kod)
-            throw new SystemException(KodGenerator.NEMA_KODA, HttpStatus.SERVICE_UNAVAILABLE);
+            if (zauzetKod(e)) {
+                // isti kod je u međuvremenu dobilo drugo izvođenje (UNIQUE aktivan_kod)
+                throw new SystemException(KodGenerator.NEMA_KODA, HttpStatus.SERVICE_UNAVAILABLE);
+            }
+            log.error("Upis izvođenja nije uspeo: prezentacija={}", p.getId(), e);
+            throw e;
         }
         log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}", iz.getId(), p.getId(), cuvanje);
         return IzvodjenjeMapper.info(iz, 0, 0);
@@ -459,7 +463,8 @@ public class IzvodjenjeService {
 
     /**
      * Završava izvođenje (komanda ZAVRSI i automatski posle 12 h): otvoreno pitanje se zatvara, kod se oslobađa. Bez
-     * čuvanja se brišu odgovori, runde i učesnici; ostaje samo red izvođenja. Ne menja verziju (to radi pozivalac).
+     * čuvanja se brišu odgovori, runde i učesnici (i trenutna runda i faza se prazne); ostaje samo red izvođenja. Ne
+     * menja verziju (to radi pozivalac).
      */
     public void zavrsi(Izvodjenje iz) {
         if (iz.getFaza() == Faza.OTVORENO) {
@@ -469,7 +474,9 @@ public class IzvodjenjeService {
         iz.setAktivanKod(null);
         iz.setKraj(sada());
         if (!iz.isCuvanje()) {
+            // runde se brišu, pa ni faza pitanja više ne postoji
             iz.setTrenutnaRundaId(null);
+            iz.setFaza(null);
             // @Modifying(flushAutomatically): izmene izvođenja se upišu pre brisanja
             odgovorRepository.deleteAllByIzvodjenjeId(iz.getId());
             rundaRepository.deleteAllByIzvodjenjeId(iz.getId());
@@ -651,6 +658,27 @@ public class IzvodjenjeService {
         return ucesnikRepository.findByIdAndIzvodjenjeId(ucesnikId, iz.getId())
                 .filter(u -> !u.isIzbacen())
                 .orElseThrow(() -> new SystemException(UCESNIK_NIJE_PRONADJEN, HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * Da li je greška integriteta baš povreda jedinstvenosti aktivnog koda ({@code uk_izvodjenja_aktivan_kod}); traži
+     * ime ključa kroz lanac uzroka (Hibernate ime ograničenja ili poruka MySQL-a "Duplicate entry ... for key ...").
+     */
+    static boolean zauzetKod(Throwable greska) {
+        Set<Throwable> videni = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable t = greska; t != null && videni.add(t); t = t.getCause()) {
+            if (t instanceof org.hibernate.exception.ConstraintViolationException c && sadrziKljuc(c.getConstraintName())) {
+                return true;
+            }
+            if (t instanceof java.sql.SQLException && sadrziKljuc(t.getMessage())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sadrziKljuc(String tekst) {
+        return tekst != null && tekst.toLowerCase(Locale.ROOT).contains(UK_AKTIVAN_KOD);
     }
 
     private static void proveriAktivno(Izvodjenje iz) {
