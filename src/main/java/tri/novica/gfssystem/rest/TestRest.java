@@ -77,6 +77,17 @@ public class TestRest {
         return testService.updateTest(testId, cmd);
     }
 
+    /**
+     * Prag prolaza testa: telo {@code {"pragProlaza": <broj>|null}}, null uklanja prag. Radi i na pregledanom testu
+     * (za razliku od {@code PUT /test/{id}}), vraća {@code TestDetails} sa preračunatom prolaznošću.
+     */
+    @PatchMapping("/{id}/prag-prolaza")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails postaviPragProlaza(@PathVariable(name = "id") Long testId, @RequestBody @Valid PragProlazaCmd cmd){
+        return testService.postaviPragProlaza(testId, cmd);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void obrisi(@PathVariable(name = "id") Long testId) {

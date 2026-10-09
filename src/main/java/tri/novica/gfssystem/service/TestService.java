@@ -189,9 +189,7 @@ public class TestService {
         Test test = testRepository.findByIdFetchPolaganja(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
 
-        mapper.map(cmd, test);
-        // ModelMapper preskače null, pa bi se prag nikad ne mogao ukloniti: PUT zaglavlja uvek postavlja prag (null = bez praga)
-        test.setPragProlaza(cmd.getPragProlaza());
+        mapper.map(cmd, test);   // prag prolaza se ovde ne menja (PUT ga ne poznaje), vidi postaviPragProlaza
 
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
                         .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
@@ -200,6 +198,20 @@ public class TestService {
         testPP.checkUpdateTest(test);
 
         return mapper.map(testRepository.save(test), TestDetails.class);
+    }
+
+    /**
+     * Postavlja ili uklanja ({@code null}) prag prolaza. Za razliku od {@link #updateTest}, dozvoljeno je i na
+     * pregledanom (završenom) testu, jer prolaznost zavisi samo od praga i poena koji već postoje.
+     */
+    public TestDetails postaviPragProlaza(Long testId, PragProlazaCmd cmd) {
+        Test test = testRepository.findByIdFetchPolaganja(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+        test.setPragProlaza(cmd.getPragProlaza());
+        testPP.checkPragProlaza(test);
+        TestDetails details = mapper.map(testRepository.save(test), TestDetails.class);
+        details.setStatistika(izracunajStatistiku(test));   // prolaznost se menja zajedno sa pragom
+        return details;
     }
 
     public TestDetails evidentirajIspitanika(EvidentirajPolaganjeCmd cmd, Long testId) {
@@ -336,7 +348,10 @@ public class TestService {
             long saPoenima = ((Number) statistika[2]).longValue();
             if (saPoenima > 0) {
                 prosek = ((Number) statistika[3]).doubleValue();
-                if (t.getPragProlaza() != null) procenatProlaznosti = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
+                if (t.getPragProlaza() != null) {
+                    double procenat = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
+                    procenatProlaznosti = Math.round(procenat * 100.0) / 100.0;   // 2 decimale kao u detaljima testa
+                }
             }
         }
         Grupa g = t.getGrupa();

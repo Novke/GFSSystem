@@ -160,7 +160,9 @@ New list endpoints follow one pattern (see `PredavanjeService.pretraga` as the r
 - Students: `GET /studenti/{id}/predmeti` and `/studenti/{studentId}/predmet/{predmetId}` (per-subject student card);
   notes `GET|POST /studenti/{studentId}/beleske`, `PUT|DELETE /beleske/{id}` (Flyway `V4`).
 - Homework: `POST /domaci/evidentiraj`, `POST /domaci/{id}/oslobodi`.
-- Pass rate: optional per-test `pragProlaza` (points, `testovi.prag_prolaza`; set via `POST /test` and `PUT /test/{id}`, validated 0..maxPoena).
+- Pass rate: optional per-test `pragProlaza` (points, `testovi.prag_prolaza`, validated 0..maxPoena): set on create (`POST /test`) and changed
+  afterwards only by `PATCH /test/{id}/prag-prolaza` with `{"pragProlaza": n|null}` (null clears; works on finished tests too). `PUT /test/{id}`
+  ignores it (it rejects finished tests and must not erase a threshold).
   No threshold = no pass concept (`procenatProlaznosti`, `brojPolozenih`, `brojPalih` are null). Rule in `utility/Prolaz` (poeni >= prag, not
   `prepisivao`; stored `polozio` is ignored); `PolaganjeRepository.statistikaPoTestu` mirrors it in JPQL, keep them in sync.
 

@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PagedModel;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import tri.novica.gfssystem.dto.domaci.DomaciFilter;
@@ -29,6 +30,7 @@ import java.util.Set;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -243,6 +245,19 @@ class PretragaIT {
     }
 
     @Test
+    void testProcenatProlaznostiZaokruzenNaDveDecimale() {
+        tri.novica.gfssystem.entity.Test t = test(em.find(TipTesta.class, kolokvijum.getId()), mat, gb, LocalDate.of(2025, 12, 8), 40, false);
+        t.setPragProlaza(10);
+        polaganje(t, s1, 10.0, null);
+        polaganje(t, s2, 30.0, null);
+        polaganje(t, s3, 9.0, null);
+        em.flush();
+        em.clear();
+        TestListItem i = nadjiT(test(tf(null, null, null, null, null, null, null), 100).getContent(), t);
+        assertEquals(66.67, i.getProcenatProlaznosti(), 1e-12);   // 2 od 3, ne 66.666...
+    }
+
+    @Test
     void testPragNulaSvimaSaPoenimaProlaze() {
         tri.novica.gfssystem.entity.Test t = test(em.find(TipTesta.class, kolokvijum.getId()), mat, gb, LocalDate.of(2025, 12, 6), 40, false);
         t.setPragProlaza(0);
@@ -316,6 +331,70 @@ class PretragaIT {
            .andExpect(jsonPath("$.content[1].tipTesta.naziv").value("Ispit"));
         mvc.perform(get("/test/pretraga").param("sort", "grupe,asc")).andExpect(status().isBadRequest());
         mvc.perform(get("/test/" + t2.getId())).andExpect(status().isOk());   // /{id} i dalje radi
+    }
+
+    @Test
+    void testPatchPragProlazaHttp() throws Exception {
+        // t1 je pregledan (PUT ga ne dira), a PATCH prag sme
+        String url = "/test/" + t1.getId() + "/prag-prolaza";
+        patch(url, "{\"pragProlaza\":20}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.pragProlaza").value(20))
+                .andExpect(jsonPath("$.statistika.brojPolozenih").value(2));   // 40 i 20 poena, prag je uključen
+        patch(url, "{\"pragProlaza\":50}").andExpect(status().isOk())        // prag == max
+                .andExpect(jsonPath("$.statistika.brojPolozenih").value(0));
+        patch(url, "{\"pragProlaza\":null}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.pragProlaza").value(nullValue()))
+                .andExpect(jsonPath("$.statistika.procenatProlaznosti").value(nullValue()));
+        String poruka = "Prag prolaza mora biti između 0 i maksimalnog broja poena.";
+        patch(url, "{\"pragProlaza\":51}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.reason").value(poruka));
+        patch(url, "{\"pragProlaza\":-1}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.reason").value(poruka));
+        patch("/test/999999999/prag-prolaza", "{\"pragProlaza\":1}").andExpect(status().isNotFound());
+    }
+
+    @Test
+    void testPutNeMenjaPrag() throws Exception {
+        var t = em.find(tri.novica.gfssystem.entity.Test.class, t2.getId());   // t2 je odvojen posle seed-a
+        t.setPragProlaza(30);   // max 100, nepregledan (TestPP ne dozvoljava PUT sa pregledan = null)
+        t.setPregledan(false);
+        t.setGrupe(Set.of(TestGrupa.A));
+        em.flush();
+        em.clear();
+        mvc.perform(put("/test/" + t2.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datum\":\"2025-10-15\",\"maxPoena\":100,\"tipTestaId\":" + ispit.getId()
+                                + ",\"pragProlaza\":80}"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.pragProlaza").value(30));   // prag iz tela se ignoriše
+        mvc.perform(put("/test/" + t2.getId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datum\":\"2025-10-15\",\"maxPoena\":100,\"tipTestaId\":" + ispit.getId() + "}"))
+           .andExpect(jsonPath("$.pragProlaza").value(30));   // izostavljen prag ga ne briše
+    }
+
+    @Test
+    void studentDetaljiSadrzeGodinuKontaktIGrupu() throws Exception {
+        Student s = em.find(Student.class, s1.getId());   // s1 je odvojen posle seed-a
+        s.setDatumRodjenja(LocalDate.of(2005, 3, 14));
+        s.setOpstina("Subotica");
+        em.flush();
+        em.clear();
+        mvc.perform(get("/studenti/" + s1.getId())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.godina").value(2023))
+                .andExpect(jsonPath("$.email").value("ana@x.rs"))
+                .andExpect(jsonPath("$.brojTelefona").value("064111"))
+                .andExpect(jsonPath("$.grupaId").value(ga.getId()))
+                .andExpect(jsonPath("$.grupa").value("PIT-A"))
+                .andExpect(jsonPath("$.datumRodjenja").value("2005-03-14"))
+                .andExpect(jsonPath("$.opstina").value("Subotica"));
+        mvc.perform(get("/studenti/" + s5.getId())).andExpect(status().isOk())   // bez grupe
+                .andExpect(jsonPath("$.godina").value(2025))
+                .andExpect(jsonPath("$.grupaId").value(nullValue()))
+                .andExpect(jsonPath("$.grupa").value(nullValue()))
+                .andExpect(jsonPath("$.email").value(nullValue()))
+                .andExpect(jsonPath("$.datumRodjenja").value(nullValue()));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions patch(String url, String body) throws Exception {
+        return mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(url)
+                .contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     // ================================================================== studenti

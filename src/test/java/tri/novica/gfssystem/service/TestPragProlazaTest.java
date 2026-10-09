@@ -12,6 +12,7 @@ import org.mockito.quality.Strictness;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
 import tri.novica.gfssystem.dto.test.CreateTestCmd;
+import tri.novica.gfssystem.dto.test.PragProlazaCmd;
 import tri.novica.gfssystem.dto.test.TestDetails;
 import tri.novica.gfssystem.dto.test.TestInfo;
 import tri.novica.gfssystem.dto.test.UpdateTestCmd;
@@ -92,9 +93,10 @@ class TestPragProlazaTest {
         var v = validator.validate(create(40, -1));
         assertEquals(1, v.size());
         assertEquals(PORUKA, v.iterator().next().getMessage());
-        assertEquals(1, validator.validate(new UpdateTestCmd(LocalDate.now(), 40, -5, 4L)).size());
+        assertEquals(1, validator.validate(new PragProlazaCmd(-5)).size());
         assertTrue(validator.validate(create(40, null)).isEmpty());
         assertTrue(validator.validate(create(40, 0)).isEmpty());
+        assertTrue(validator.validate(new PragProlazaCmd(null)).isEmpty());
     }
 
     @Test
@@ -102,14 +104,15 @@ class TestPragProlazaTest {
         var ex = assertThrows(SystemException.class, () -> service.createTest(create(40, 41)));
         assertEquals(PORUKA, ex.getMessage());
         assertEquals(400, ex.getCode());
-        ex = assertThrows(SystemException.class, () -> service.updateTest(10L, new UpdateTestCmd(LocalDate.now(), 40, 41, 4L)));
+        ex = assertThrows(SystemException.class, () -> service.postaviPragProlaza(10L, new PragProlazaCmd(41)));
         assertEquals(PORUKA, ex.getMessage());
+        assertEquals(400, ex.getCode());
     }
 
     @Test
-    void sniziMaksimumIspodPragaOdbijaSe() {
+    void sniziMaksimumIspodPragaOdbijaSePriPutu() {
         test.setPragProlaza(30);
-        assertThrows(SystemException.class, () -> service.updateTest(10L, new UpdateTestCmd(LocalDate.now(), 20, 30, 4L)));
+        assertThrows(SystemException.class, () -> service.updateTest(10L, new UpdateTestCmd(LocalDate.now(), 20, 4L)));
     }
 
     // ------------------------------------------------------------------ upis
@@ -122,13 +125,27 @@ class TestPragProlazaTest {
     }
 
     @Test
-    void putPostavljaIUklanjaPrag() {
-        TestDetails d = service.updateTest(10L, new UpdateTestCmd(LocalDate.of(2025, 11, 2), 40, 20, 4L));
+    void putNeDiraPrag() {
+        test.setPragProlaza(20);
+        TestDetails d = service.updateTest(10L, new UpdateTestCmd(LocalDate.of(2025, 11, 2), 40, 4L));
         assertEquals(20, d.getPragProlaza());
         assertEquals(20, test.getPragProlaza());
-        d = service.updateTest(10L, new UpdateTestCmd(LocalDate.of(2025, 11, 2), 40, null, 4L));
-        assertNull(d.getPragProlaza());
-        assertNull(test.getPragProlaza());   // null iz PUT-a briše prag (ModelMapper sam preskače null)
+    }
+
+    @Test
+    void patchPostavljaIUklanjaPragNaPregledanomTestu() {
+        test.setPregledan(true);   // PUT bi ovde odbio, PATCH prag sme
+        assertEquals(20, service.postaviPragProlaza(10L, new PragProlazaCmd(20)).getPragProlaza());
+        assertEquals(40, service.postaviPragProlaza(10L, new PragProlazaCmd(40)).getPragProlaza());   // prag == max
+        assertEquals(0, service.postaviPragProlaza(10L, new PragProlazaCmd(0)).getPragProlaza());
+        assertNull(service.postaviPragProlaza(10L, new PragProlazaCmd(null)).getPragProlaza());
+        assertNull(test.getPragProlaza());
+    }
+
+    @Test
+    void patchNepostojecegTestaJe404() {
+        var ex = assertThrows(SystemException.class, () -> service.postaviPragProlaza(99L, new PragProlazaCmd(10)));
+        assertEquals(404, ex.getCode());
     }
 
     // ------------------------------------------------------------------ prolaznost u detaljima
