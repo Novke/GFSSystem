@@ -87,7 +87,7 @@ public class UcesnikService {
         u.setIzbacen(false);
         u.setKreirano(LocalDateTime.now(clock));
         u = ucesnikRepository.save(u);
-        publisher.publishEvent(new IzvodjenjePromenjeno(iz.getId()));
+        publisher.publishEvent(new UcesnikPrijavljen(iz.getId()));
         return new Prijavljen(info(u), token);
     }
 

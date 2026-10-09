@@ -121,10 +121,11 @@ class IzvodjenjeRestTest {
 
     @Test
     void rezultatiIBrisanje() throws Exception {
-        when(service.rezultati(5L)).thenReturn(new IzvodjenjeRezultati(INFO, List.of(), List.of()));
+        when(service.rezultati(5L)).thenReturn(new IzvodjenjeRezultati(INFO, true, List.of(), List.of()));
         mvc.perform(get("/izvodjenja/5/rezultati"))
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.izvodjenje.id").value(5))
+           .andExpect(jsonPath("$.takmicenje").value(true))
            .andExpect(jsonPath("$.pitanja").isArray());
         mvc.perform(delete("/izvodjenja/5")).andExpect(status().isNoContent());
         verify(service).obrisi(5L);

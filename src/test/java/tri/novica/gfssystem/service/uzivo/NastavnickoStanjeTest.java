@@ -304,6 +304,9 @@ class NastavnickoStanjeTest {
         assertEquals(100, p2.procenatTacnih());
         assertEquals(2, rez.rangLista().size());
         assertEquals(2, rez.izvodjenje().brojPitanja());
+        assertEquals(iz.isTakmicenje(), rez.takmicenje());
+        iz.setTakmicenje(!iz.isTakmicenje());
+        assertEquals(iz.isTakmicenje(), service.rezultati(IZ).takmicenje(), "takmičenje iz podešavanja izvođenja");
 
         // obrisan slajd: rb nepoznat; anketa nema procenat
         r1.setSlajdId(null);

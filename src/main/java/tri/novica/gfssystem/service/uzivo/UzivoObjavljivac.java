@@ -1,7 +1,7 @@
 package tri.novica.gfssystem.service.uzivo;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.Message;
@@ -24,37 +24,51 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 
 /**
  * Šalje stanja izvođenja klijentima (spec 4.3), uvek posle commit-a, pa klijent nikad ne vidi stanje koje nije u bazi.
+ * <p>
+ * <b>Niti:</b> slušaoci događaja (nit zahteva ili STOMP nit, posle commit-a, možda još sa JDBC vezom zahteva) samo
+ * zaprljaju izvođenje i, kad treba odmah, zakažu obradu; nikad ne čitaju bazu i ne čekaju bravu. Čitanje i slanje
+ * radi samo nit objavljivača ({@link #obradi}: {@code taskScheduler} odmah posle komande, ili {@link #flush} na
+ * 250 ms), pod bravom tog izvođenja, pa snimci jednog izvođenja izlaze redom kojim su pročitani (lično stanje ne nosi
+ * novu verziju, a klijent prima i jednaku), a nit koja čeka bravu ne drži vezu sa bazom.
  * <ul>
- *   <li>promena (komanda, tajmer, prijava, moderacija): odmah javno stanje, lično stanje svakom učesniku i
- *       nastavničko stanje, sve iz jednog čitanja ({@link StanjeService#snimci});</li>
- *   <li>odgovor, povezivanje i prekid veze samo zaprljaju izvođenje (i učesnika kome treba lično stanje); na 250 ms
- *       {@link #flush} po izvođenju jednom pročita stanje i pošalje nastavničko stanje i lična stanja zaprljanih
- *       učesnika. Talas od 300 odgovora za 2 s je tako najviše 4 čitanja u sekundi, a telefon vidi "primljen" za
- *       najviše ~250 ms plus čitanje;</li>
- *   <li>izbacivanje: izbačenom (koga {@code licnaZaSve} ne sadrži) lično stanje sa {@code izbacen=true}.</li>
+ *   <li>komanda, tajmer, moderacija, izmena prezentacije ({@link IzvodjenjePromenjeno}): sve (javno, lično svima,
+ *       nastavničko) iz jednog čitanja, odmah;</li>
+ *   <li>prijava ({@link UcesnikPrijavljen}): sve, ali tek u flush-u, pa talas od 300 prijava pravi najviše 4 čitanja u
+ *       sekundi (ne 300 čitanja i 300 x 300 ličnih poruka);</li>
+ *   <li>odgovor: nastavničko i lično stanje tog učesnika u flush-u ("primljen" za najviše ~250 ms plus čitanje);
+ *       povezivanje i prekid: nastavničko u flush-u;</li>
+ *   <li>izbacivanje: izbačenom (koga {@code licnaZaSve} ne sadrži) lično stanje sa {@code izbacen=true}, odmah.</li>
  * </ul>
- * Čitanje i slanje za jedno izvođenje idu pod istom bravom, pa snimci istog izvođenja izlaze redom kojim su pročitani
- * (lično stanje ne nosi novu verziju, a klijent prima i jednaku). Greška jednog izvođenja se loguje i ne zaustavlja
- * ostala ni sledeći flush.
+ * Greška jednog izvođenja se loguje i ne zaustavlja ostala ni sledeći flush.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class UzivoObjavljivac {
 
     static final long FLUSH_MS = 250;
     private static final int BROJ_BRAVA = 64;
+    public static final String LICNO = "/queue/licno";
 
     private final SimpMessageSendingOperations poruke;
     private final StanjeService stanjeService;
     private final PovezanostRegistar povezanost;
+    private final Executor izvrsilac;
 
-    /** Zaprljana izvođenja -> učesnici kojima treba lično stanje (prazan skup: samo nastavničko). */
-    private final Map<Long, Set<Long>> prljavi = new ConcurrentHashMap<>();
+    /** Zaprljana izvođenja i šta im treba poslati; menja se samo kroz {@code compute}, skida se atomično. */
+    private final Map<Long, Zahtev> prljavi = new ConcurrentHashMap<>();
     private final Object[] brave = napraviBrave();
+
+    public UzivoObjavljivac(SimpMessageSendingOperations poruke, StanjeService stanjeService,
+                            PovezanostRegistar povezanost, @Qualifier("taskScheduler") Executor izvrsilac) {
+        this.poruke = poruke;
+        this.stanjeService = stanjeService;
+        this.povezanost = povezanost;
+        this.izvrsilac = izvrsilac;
+    }
 
     public static String javnoOdrediste(Long izvodjenjeId) {
         return "/topic/izvodjenja/" + izvodjenjeId + "/javno";
@@ -64,44 +78,35 @@ public class UzivoObjavljivac {
         return "/topic/izvodjenja/" + izvodjenjeId + "/nastavnik";
     }
 
-    public static final String LICNO = "/queue/licno";
+    /** Šta izvođenju treba poslati (skuplja se do obrade). */
+    private static final class Zahtev {
+        boolean sve;
+        final Set<Long> licna = new HashSet<>();
+        final Set<Long> izbaceni = new HashSet<>();
+    }
 
     // ---------------------------------------------------------------- događaji servisa (posle commit-a)
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onPromena(IzvodjenjePromenjeno e) {
-        Long id = e.izvodjenjeId();
-        if (id == null) return;
-        synchronized (brava(id)) {
-            // sve što je zaprljano do sad pokriva ovo čitanje
-            prljavi.remove(id);
-            try {
-                StanjeService.Snimci s = stanjeService.snimci(id);
-                poruke.convertAndSend(javnoOdrediste(id), s.javno());
-                s.licna().forEach((ucesnikId, licno) -> licnoUcesniku(ucesnikId, licno));
-                poruke.convertAndSend(nastavnikOdrediste(id), s.nastavnicko());
-            } catch (Exception ex) {
-                zabelezi(id, ex);
-            }
-        }
+        if (zaprljaj(e.izvodjenjeId(), z -> z.sve = true)) odmah(e.izvodjenjeId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onPrijava(UcesnikPrijavljen e) {
+        zaprljaj(e.izvodjenjeId(), z -> z.sve = true);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onOdgovor(OdgovorPrimljen e) {
-        zaprljaj(e.izvodjenjeId(), e.ucesnikId());
+        if (e.ucesnikId() == null) return;
+        zaprljaj(e.izvodjenjeId(), z -> z.licna.add(e.ucesnikId()));
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onIzbacen(UcesnikIzbacen e) {
-        Long id = e.izvodjenjeId();
-        if (id == null || e.ucesnikId() == null) return;
-        synchronized (brava(id)) {
-            try {
-                licnoUcesniku(e.ucesnikId(), stanjeService.licno(id, e.ucesnikId()));
-            } catch (Exception ex) {
-                zabelezi(id, ex);
-            }
-        }
+        if (e.ucesnikId() == null) return;
+        if (zaprljaj(e.izvodjenjeId(), z -> z.izbaceni.add(e.ucesnikId()))) odmah(e.izvodjenjeId());
     }
 
     // ---------------------------------------------------------------- povezanost
@@ -111,36 +116,55 @@ public class UzivoObjavljivac {
         Sesija s = sesija(e.getMessage());
         if (s == null) return;
         povezanost.povezan(s.ucesnikId(), s.sesijaId());
-        zaprljaj(s.izvodjenjeId(), null);
+        zaprljaj(s.izvodjenjeId(), z -> { });
     }
 
     @EventListener
     public void onPrekinut(SessionDisconnectEvent e) {
         povezanost.prekinut(e.getSessionId());
         Sesija s = sesija(e.getMessage());
-        if (s != null) zaprljaj(s.izvodjenjeId(), null);
+        if (s != null) zaprljaj(s.izvodjenjeId(), z -> { });
     }
 
-    // ---------------------------------------------------------------- periodično slanje
+    // ---------------------------------------------------------------- nit objavljivača
 
-    /** Zaprljana izvođenja: po jedno čitanje, nastavničko stanje i lična stanja zaprljanih učesnika. */
+    /** Sva zaprljana izvođenja, jedno po jedno (svako jednim čitanjem). */
     @Scheduled(fixedRate = FLUSH_MS)
     public void flush() {
         for (Long id : List.copyOf(prljavi.keySet())) {
-            synchronized (brava(id)) {
-                // skinut atomično: ono što stigne posle ide u sledeći flush
-                Set<Long> ucesnici = prljavi.remove(id);
-                if (ucesnici == null) continue;
-                try {
-                    StanjeService.Snimci s = stanjeService.snimci(id);
-                    poruke.convertAndSend(nastavnikOdrediste(id), s.nastavnicko());
-                    for (Long ucesnikId : ucesnici) {
+            obradi(id);
+        }
+    }
+
+    /**
+     * Pod bravom izvođenja: skine zahtev (ono što stigne posle čeka sledeću obradu), jednom pročita stanje i pošalje
+     * šta zahtev traži. Nikad ne baca izuzetak.
+     */
+    void obradi(Long id) {
+        synchronized (brava(id)) {
+            Zahtev z = prljavi.remove(id);
+            if (z == null) return;
+            try {
+                for (Long ucesnikId : z.izbaceni) {
+                    try {
+                        licnoUcesniku(ucesnikId, stanjeService.licno(id, ucesnikId));
+                    } catch (Exception ex) {
+                        zabelezi(id, ex);
+                    }
+                }
+                StanjeService.Snimci s = stanjeService.snimci(id);
+                if (z.sve) {
+                    poruke.convertAndSend(javnoOdrediste(id), s.javno());
+                    s.licna().forEach(this::licnoUcesniku);
+                } else {
+                    for (Long ucesnikId : z.licna) {
                         LicnoStanje licno = s.licna().get(ucesnikId);
                         if (licno != null) licnoUcesniku(ucesnikId, licno);
                     }
-                } catch (Exception ex) {
-                    zabelezi(id, ex);
                 }
+                poruke.convertAndSend(nastavnikOdrediste(id), s.nastavnicko());
+            } catch (Exception ex) {
+                zabelezi(id, ex);
             }
         }
     }
@@ -152,13 +176,23 @@ public class UzivoObjavljivac {
 
     // ---------------------------------------------------------------- pomoćno
 
-    private void zaprljaj(Long izvodjenjeId, Long ucesnikId) {
-        if (izvodjenjeId == null) return;
-        prljavi.compute(izvodjenjeId, (k, skup) -> {
-            Set<Long> s = skup == null ? new HashSet<>() : skup;
-            if (ucesnikId != null) s.add(ucesnikId);
-            return s;
+    private boolean zaprljaj(Long izvodjenjeId, java.util.function.Consumer<Zahtev> izmena) {
+        if (izvodjenjeId == null) return false;
+        prljavi.compute(izvodjenjeId, (k, z) -> {
+            Zahtev n = z == null ? new Zahtev() : z;
+            izmena.accept(n);
+            return n;
         });
+        return true;
+    }
+
+    /** Obrada odmah na niti objavljivača; ako zakazivanje ne uspe, zahtev ostaje za flush. */
+    private void odmah(Long id) {
+        try {
+            izvrsilac.execute(() -> obradi(id));
+        } catch (Exception ex) {
+            log.warn("Objava nije zakazana, ide u sledeći flush: izvodjenje={}", id, ex);
+        }
     }
 
     private void licnoUcesniku(Long ucesnikId, LicnoStanje licno) {
@@ -195,12 +229,17 @@ public class UzivoObjavljivac {
      * Studentska sesija iz poruke događaja: DISCONNECT nosi atribute sesije, a CONNECT_ACK ih nosi u originalnoj
      * CONNECT poruci ({@code simpConnectMessage}). Nastavnička sesija -> {@code null}.
      */
-    private static Sesija sesija(Message<?> m) {
-        String sesijaId = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
+    public static Map<String, Object> atributiSesije(Message<?> m) {
         Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(m.getHeaders());
         if (atributi == null && m.getHeaders().get(SimpMessageHeaderAccessor.CONNECT_MESSAGE_HEADER) instanceof Message<?> c) {
             atributi = SimpMessageHeaderAccessor.getSessionAttributes(c.getHeaders());
         }
+        return atributi;
+    }
+
+    private static Sesija sesija(Message<?> m) {
+        String sesijaId = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
+        Map<String, Object> atributi = atributiSesije(m);
         if (sesijaId == null || atributi == null || atributi.get(UzivoHandshakeInterceptor.ATR_ULOGA) != Uloga.STUDENT) {
             return null;
         }

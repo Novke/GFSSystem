@@ -12,6 +12,8 @@ import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import tri.novica.gfssystem.service.uzivo.IzbaceniRegistar;
 import tri.novica.gfssystem.service.uzivo.UcesnikIzbacen;
 
@@ -24,7 +26,7 @@ import static org.mockito.Mockito.mock;
 
 /**
  * Autorizacija STOMP poruka po ulozi (bez Springa): tačna odredišta po regexu, student samo svoje izvođenje, nastavnik
- * ne šalje ništa, token bucket po sesiji (kapacitet 10, dopuna 5/s) i tiho odbacivanje poruka izbačenih učesnika.
+ * ne šalje ništa, token bucket po učesniku (kapacitet 10, dopuna 5/s) i tiho odbacivanje poruka izbačenih učesnika.
  */
 class UzivoChannelInterceptorTest {
 
@@ -158,13 +160,17 @@ class UzivoChannelInterceptorTest {
     }
 
     @Test
-    void kofaJePoSesiji() {
+    void kofaJePoUcesnikuIDeleJeSveNjegoveSesije() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 10; i++) {
-            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
+        for (int i = 0; i < 5; i++) {
+            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
+            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
         }
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
-        assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s3", a)), "nova sesija, ista kofa");
+        // drugi učesnik ima svoju kofu
+        assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s4", student(5, 12))));
+        assertEquals(2, interceptor.brojKofa());
     }
 
     @Test
@@ -189,15 +195,84 @@ class UzivoChannelInterceptorTest {
     }
 
     @Test
-    void disconnectBriseKofu() {
+    void disconnectSaPotvrdomNeVracaKapacitet() {
         Map<String, Object> a = student(5, 11);
         for (int i = 0; i < 10; i++) {
             posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
         }
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        h.setSessionId("s1");
+        h.setSessionAttributes(a);
+        h.setReceipt("77");   // Spring odgovori RECEIPT-om i veza ostaje otvorena
+        Message<byte[]> disconnect = MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
+        assertSame(disconnect, posalji(disconnect), "DISCONNECT se nikad ne odbacuje");
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
         assertEquals(1, interceptor.brojKofa());
+    }
+
+    @Test
+    void disconnectTrosiToken() {
+        Map<String, Object> a = student(5, 11);
+        for (int i = 0; i < 9; i++) {
+            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
+        }
         posalji(poruka(StompCommand.DISCONNECT, null, "s1", a));
-        assertEquals(0, interceptor.brojKofa());
-        assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
+    }
+
+    @Test
+    void svakiStudentovFrameSeMeri() {
+        Map<String, Object> a = student(5, 11);
+        for (int i = 0; i < 4; i++) {
+            assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+            assertNotNull(posalji(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a)));
+        }
+        SimpMessageHeaderAccessor hb = SimpMessageHeaderAccessor.create(SimpMessageType.HEARTBEAT);
+        hb.setSessionId("s1");
+        hb.setSessionAttributes(a);
+        assertNotNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
+        assertNotNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
+        assertNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+        assertNull(posalji(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a)));
+        assertNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
+        // prazna kofa ne odbacuje DISCONNECT (i sintetički, na kraju veze, mora do brokera)
+        assertNotNull(posalji(poruka(StompCommand.DISCONNECT, null, "s1", a)));
+    }
+
+    @Test
+    void krajSesijeBriseSamoPunuKofu() {
+        Map<String, Object> a = student(5, 11);
+        for (int i = 0; i < 10; i++) {
+            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
+        }
+        interceptor.onPrekid(prekid("s1", a));
+        assertEquals(1, interceptor.brojKofa(), "nepuna kofa ostaje: ponovno povezivanje ne dopunjuje");
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
+
+        sadaMs.addAndGet(2_000);
+        interceptor.onPrekid(prekid("s2", a));
+        assertEquals(0, interceptor.brojKofa(), "puna kofa je ista kao nova");
+    }
+
+    @Test
+    void ciscenjeBriseSamoPuneKofe() {
+        posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", student(5, 11)));
+        sadaMs.addAndGet(1_000);
+        for (int i = 0; i < 10; i++) {
+            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", student(5, 12)));
+        }
+        interceptor.pocisti();
+        assertEquals(1, interceptor.brojKofa());
+        assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", student(5, 12))));
+    }
+
+    static SessionDisconnectEvent prekid(String sesija, Map<String, Object> atributi) {
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        h.setSessionId(sesija);
+        h.setSessionAttributes(atributi);
+        return new SessionDisconnectEvent(new Object(), MessageBuilder.createMessage(new byte[0], h.getMessageHeaders()),
+                sesija, CloseStatus.NORMAL);
     }
 
     @Test
@@ -258,5 +333,13 @@ class UzivoChannelInterceptorTest {
         Map<String, Object> a = student(5, 11);
         a.remove("izvodjenjeId");
         odbijeno(StompCommand.SUBSCRIBE, "/topic/izvodjenja/5/javno", a);
+    }
+
+    @Test
+    void studentBezUcesnikaJeOdbijen() {
+        Map<String, Object> a = student(5, 11);
+        a.remove("ucesnikId");
+        odbijeno(StompCommand.SUBSCRIBE, "/topic/izvodjenja/5/javno", a);
+        odbijeno(StompCommand.CONNECT, null, a);
     }
 }

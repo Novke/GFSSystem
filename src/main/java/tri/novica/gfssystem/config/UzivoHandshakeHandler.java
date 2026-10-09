@@ -20,6 +20,9 @@ public class UzivoHandshakeHandler extends DefaultHandshakeHandler {
                 && attributes.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long ucesnikId) {
             return new StompPrincipal(StompPrincipal.student(ucesnikId));
         }
-        return new StompPrincipal("n-" + UUID.randomUUID());
+        if (attributes.get(UzivoHandshakeInterceptor.ATR_ULOGA) == Uloga.NASTAVNIK) {
+            return new StompPrincipal("n-" + UUID.randomUUID());
+        }
+        return null;   // bez uloge nema korisnika (interceptor kanala odbija svaku poruku bez uloge)
     }
 }

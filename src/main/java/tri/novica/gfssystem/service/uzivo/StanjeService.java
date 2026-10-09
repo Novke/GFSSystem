@@ -319,7 +319,7 @@ public class StanjeService {
                     r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), snimak,
                     RezultatBuilder.izgradi(snimak, odgovori, false, true), odgovori.size(), procenat));
         }
-        return new IzvodjenjeRezultati(info(p), pitanja, RangLista.izracunaj(p.ucesnici(), bodovniOdgovori(p)));
+        return new IzvodjenjeRezultati(info(p), p.iz().isTakmicenje(), pitanja, RangLista.izracunaj(p.ucesnici(), bodovniOdgovori(p)));
     }
 
     // ---------------------------------------------------------------- zajedničko (i za javno/lično stanje)

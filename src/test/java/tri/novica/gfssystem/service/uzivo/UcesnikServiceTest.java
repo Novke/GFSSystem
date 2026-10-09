@@ -127,7 +127,7 @@ class UcesnikServiceTest {
         assertFalse(u.isIzbacen());
         assertSame(iz, u.getIzvodjenje());
         assertEquals(T0, u.getKreirano());
-        verify(publisher).publishEvent(new IzvodjenjePromenjeno(5L));
+        verify(publisher).publishEvent(new UcesnikPrijavljen(5L));
     }
 
     @Test
@@ -137,7 +137,7 @@ class UcesnikServiceTest {
         red.verify(izvodjenjeRepository).findByIdForUpdate(5L);
         red.verify(ucesnikRepository).findAllByIzvodjenjeIdOrderByKreiranoAsc(5L);
         red.verify(ucesnikRepository).save(any());
-        red.verify(publisher).publishEvent(any(IzvodjenjePromenjeno.class));
+        red.verify(publisher).publishEvent(any(UcesnikPrijavljen.class));
         // pre zaključavanja samo id: učitan entitet ne bi video završetak do kog je došlo dok se čekalo
         verify(izvodjenjeRepository, never()).findByAktivanKod(any());
     }

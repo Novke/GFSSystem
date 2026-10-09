@@ -11,6 +11,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import tri.novica.gfssystem.service.uzivo.UcesnikService;
 
 import java.util.Arrays;
 
@@ -31,17 +32,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     static final int MAX_VREME_SLANJA_MS = 15_000;
     static final long HEARTBEAT_MS = 10_000;
 
-    private final UzivoHandshakeInterceptor handshakeInterceptor;
+    private final UcesnikService ucesnikService;
     private final UzivoHandshakeHandler handshakeHandler;
     private final UzivoChannelInterceptor channelInterceptor;
     private final TaskScheduler brokerScheduler;
     private final String frontUrl;
 
-    public WebSocketConfig(UzivoHandshakeInterceptor handshakeInterceptor, UzivoHandshakeHandler handshakeHandler,
+    public WebSocketConfig(UcesnikService ucesnikService, UzivoHandshakeHandler handshakeHandler,
                            UzivoChannelInterceptor channelInterceptor,
                            @Lazy @Qualifier("messageBrokerTaskScheduler") TaskScheduler brokerScheduler,
                            @Value("${gfs.front.url}") String frontUrl) {
-        this.handshakeInterceptor = handshakeInterceptor;
+        this.ucesnikService = ucesnikService;
         this.handshakeHandler = handshakeHandler;
         this.channelInterceptor = channelInterceptor;
         this.brokerScheduler = brokerScheduler;
@@ -55,9 +56,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws", "/public/ws")
+        // uloga je vezana za endpoint: svaki ulaz ima svoj interceptor (nikad zaključak iz teksta putanje)
+        registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(origini(frontUrl))
-                .addInterceptors(handshakeInterceptor)
+                .addInterceptors(UzivoHandshakeInterceptor.nastavnik())
+                .setHandshakeHandler(handshakeHandler);
+        registry.addEndpoint("/public/ws")
+                .setAllowedOriginPatterns(origini(frontUrl))
+                .addInterceptors(UzivoHandshakeInterceptor.student(ucesnikService))
                 .setHandshakeHandler(handshakeHandler);
     }
 

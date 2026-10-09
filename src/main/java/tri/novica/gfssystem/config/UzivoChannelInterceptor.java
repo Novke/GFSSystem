@@ -11,7 +11,10 @@ import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import tri.novica.gfssystem.service.uzivo.IzbaceniRegistar;
 
 import java.util.Map;
@@ -30,8 +33,11 @@ import java.util.regex.Pattern;
  *       SEND ništa.</li>
  * </ul>
  * Odredišta se proveravaju celim regexom ({@code matches}, nikad {@code startsWith}), pa {@code ../}, kosa crta na kraju
- * ili novi red ne prolaze. Studentove pretplate i slanja troše token bucket po sesiji (kapacitet 10, dopuna 5/s): višak
- * i poruke izbačenih učesnika se tiho odbacuju ({@code null}). ACK/NACK i transakcije nisu dozvoljeni nikome.
+ * ili novi red ne prolaze. Svaki studentov frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, DISCONNECT) troši
+ * token bucket <b>po učesniku</b> (sve njegove sesije dele jednu kofu; kapacitet 10, dopuna 5/s): višak i poruke
+ * izbačenih učesnika se tiho odbacuju ({@code null}), osim DISCONNECT-a, koji uvek prolazi (i kraj veze mora do
+ * brokera) ali ne vraća kapacitet. Kofa se briše samo kad je puna (posle kraja sesije ili periodično), jer je puna kofa
+ * ista kao nova. ACK/NACK i transakcije nisu dozvoljeni nikome; nastavnik (iza basic-auth-a) se ne meri.
  */
 @Component
 @Slf4j
@@ -50,7 +56,7 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
 
     private final IzbaceniRegistar izbaceni;
     private final LongSupplier satMs;
-    private final Map<String, Kofa> kofe = new ConcurrentHashMap<>();
+    private final Map<Long, Kofa> kofe = new ConcurrentHashMap<>();
 
     @Autowired
     public UzivoChannelInterceptor(IzbaceniRegistar izbaceni) {
@@ -67,30 +73,34 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         MessageHeaders zaglavlja = message.getHeaders();
         SimpMessageType tip = SimpMessageHeaderAccessor.getMessageType(zaglavlja);
-        String sesija = SimpMessageHeaderAccessor.getSessionId(zaglavlja);
+        Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(zaglavlja);
+        Uloga uloga = atributi != null && atributi.get(UzivoHandshakeInterceptor.ATR_ULOGA) instanceof Uloga u ? u : null;
+        Long ucesnikId = uloga == Uloga.STUDENT && atributi.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long l
+                ? l : null;
+        boolean student = ucesnikId != null;
+
         if (tip == SimpMessageType.HEARTBEAT) {
-            return message;
+            return !student || uzmiToken(ucesnikId) ? message : null;
         }
         StompCommand komanda = StompHeaderAccessor.wrap(message).getCommand();
         if (komanda == StompCommand.DISCONNECT || tip == SimpMessageType.DISCONNECT) {
-            if (sesija != null) kofe.remove(sesija);
+            // troši token, ali se nikad ne odbacuje: i sintetički DISCONNECT (kraj veze) mora do brokera;
+            // kofa ostaje (briše se tek kad je puna, posle kraja sesije), pa DISCONNECT ne vraća kapacitet
+            if (student) uzmiToken(ucesnikId);
             return message;
         }
-
-        Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(zaglavlja);
-        Uloga uloga = atributi != null && atributi.get(UzivoHandshakeInterceptor.ATR_ULOGA) instanceof Uloga u ? u : null;
-        if (uloga == null || komanda == null) {
+        if (uloga == null || komanda == null || (uloga == Uloga.STUDENT && !student)) {
             throw odbij(message, uloga, komanda, null);
         }
         String odrediste = SimpMessageHeaderAccessor.getDestination(zaglavlja);
         return switch (komanda) {
-            case CONNECT, STOMP, UNSUBSCRIBE -> message;
-            case SUBSCRIBE -> uloga == Uloga.NASTAVNIK
-                    ? nastavnikPretplata(message, odrediste)
-                    : studentPretplata(message, atributi, sesija, odrediste);
+            case CONNECT, STOMP, UNSUBSCRIBE -> !student || uzmiToken(ucesnikId) ? message : null;
+            case SUBSCRIBE -> student
+                    ? studentPretplata(message, atributi, ucesnikId, odrediste)
+                    : nastavnikPretplata(message, odrediste);
             case SEND -> {
-                if (uloga == Uloga.NASTAVNIK) throw odbij(message, uloga, komanda, odrediste);
-                yield studentSlanje(message, atributi, sesija, odrediste);
+                if (!student) throw odbij(message, uloga, komanda, odrediste);
+                yield studentSlanje(message, atributi, ucesnikId, odrediste);
             }
             default -> throw odbij(message, uloga, komanda, odrediste);
         };
@@ -103,30 +113,46 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         throw odbij(m, Uloga.NASTAVNIK, StompCommand.SUBSCRIBE, odrediste);
     }
 
-    private Message<?> studentPretplata(Message<?> m, Map<String, Object> atributi, String sesija, String odrediste) {
+    private Message<?> studentPretplata(Message<?> m, Map<String, Object> atributi, Long ucesnikId, String odrediste) {
         Long izvodjenjeId = atributi.get(UzivoHandshakeInterceptor.ATR_IZVODJENJE) instanceof Long l ? l : null;
         boolean dozvoljeno = odgovara(STUDENT_LICNO, odrediste)
                 || jeSvoje(STUDENT_JAVNO, odrediste, izvodjenjeId)
                 || jeSvoje(STUDENT_POCETNO, odrediste, izvodjenjeId);
         if (!dozvoljeno) throw odbij(m, Uloga.STUDENT, StompCommand.SUBSCRIBE, odrediste);
-        return uzmiToken(sesija) ? m : null;
+        return uzmiToken(ucesnikId) ? m : null;
     }
 
-    private Message<?> studentSlanje(Message<?> m, Map<String, Object> atributi, String sesija, String odrediste) {
+    private Message<?> studentSlanje(Message<?> m, Map<String, Object> atributi, Long ucesnikId, String odrediste) {
         Long izvodjenjeId = atributi.get(UzivoHandshakeInterceptor.ATR_IZVODJENJE) instanceof Long l ? l : null;
         if (!jeSvoje(STUDENT_ODGOVOR, odrediste, izvodjenjeId)) {
             throw odbij(m, Uloga.STUDENT, StompCommand.SEND, odrediste);
         }
-        Long ucesnikId = atributi.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long l ? l : null;
         if (izbaceni.jeIzbacen(ucesnikId)) {
             log.debug("Poruka izbačenog učesnika odbačena: ucesnik={}", ucesnikId);
             return null;
         }
-        if (!uzmiToken(sesija)) {
-            log.debug("Previše poruka, odbačena: sesija={}", sesija);
+        if (!uzmiToken(ucesnikId)) {
+            log.debug("Previše poruka, odbačena: ucesnik={}", ucesnikId);
             return null;
         }
         return m;
+    }
+
+    /** Kraj sesije: kofa učesnika se briše samo ako je puna (tada je ista kao nova), pa ponovno povezivanje ne dopunjuje. */
+    @EventListener
+    public void onPrekid(SessionDisconnectEvent e) {
+        Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(e.getMessage().getHeaders());
+        if (atributi != null && atributi.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long ucesnikId) {
+            long sada = satMs.getAsLong();
+            kofe.computeIfPresent(ucesnikId, (k, kofa) -> kofa.puna(sada) ? null : kofa);
+        }
+    }
+
+    /** Kofe koje su se u međuvremenu napunile (učesnik miruje ili je otišao) se brišu; puna kofa je ista kao nova. */
+    @Scheduled(fixedDelay = 60_000)
+    public void pocisti() {
+        long sada = satMs.getAsLong();
+        kofe.entrySet().removeIf(e -> e.getValue().puna(sada));
     }
 
     private static boolean odgovara(Pattern p, String odrediste) {
@@ -140,9 +166,8 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         return m.matches() && izvodjenjeId.equals(Long.parseLong(m.group(1)));
     }
 
-    private boolean uzmiToken(String sesija) {
-        if (sesija == null) return false;
-        return kofe.computeIfAbsent(sesija, s -> new Kofa(satMs.getAsLong())).uzmi(satMs.getAsLong());
+    private boolean uzmiToken(Long ucesnikId) {
+        return kofe.computeIfAbsent(ucesnikId, s -> new Kofa(satMs.getAsLong())).uzmi(satMs.getAsLong());
     }
 
     private static MessageDeliveryException odbij(Message<?> m, Uloga uloga, StompCommand komanda, String odrediste) {
@@ -152,7 +177,7 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         return new MessageDeliveryException(m, "Nedozvoljena poruka.");
     }
 
-    /** Broj sesija sa kofom (za test čišćenja). */
+    /** Broj učesnika sa kofom (za test čišćenja). */
     int brojKofa() {
         return kofe.size();
     }
@@ -164,6 +189,10 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
 
         Kofa(long sada) {
             this.poslednje = sada;
+        }
+
+        synchronized boolean puna(long sada) {
+            return tokeni + Math.max(0, sada - poslednje) * DOPUNA_PO_MS >= KAPACITET;
         }
 
         synchronized boolean uzmi(long sada) {

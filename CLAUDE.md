@@ -92,21 +92,25 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   student WebSocket `/public/ws`. Nothing else uzivo-related may go under `/public/**` (nginx exempts `/api/public/` from auth).
 - **WebSocket (STOMP, plain WS, no SockJS)**, `WebSocketConfig`: `/ws` teacher, `/public/ws` student; allowed origins =
   `gfs.front.url` (same list as REST CORS); message size 8 KB, heartbeat 10 s / 10 s, simple broker `/topic` + `/queue`,
-  app prefix `/app`, user prefix `/user`. `UzivoHandshakeInterceptor` sets the role per entry point: the student handshake
-  needs a valid cookie (participant exists, not kicked, run AKTIVNO), otherwise HTTP 403; principal `u-<ucesnikId>` /
-  `n-<uuid>` (`UzivoHandshakeHandler`).
+  app prefix `/app`, user prefix `/user`. The role is bound to the endpoint, never derived from the path text: `/ws` is
+  registered with `UzivoHandshakeInterceptor.nastavnik()`, `/public/ws` with `.student(...)`, which needs a valid cookie
+  (participant exists, not kicked, run AKTIVNO), otherwise HTTP 403; principal `u-<ucesnikId>` / `n-<uuid>`
+  (`UzivoHandshakeHandler`).
 - **Authorization** (`UzivoChannelInterceptor`, exact regexes, never `startsWith`): a student (run X) may SUBSCRIBE only
   `/topic/izvodjenja/X/javno`, `/user/queue/licno`, `/user/queue/greske`, `/app/izvodjenja/X/pocetno` and SEND only
   `/app/izvodjenja/X/odgovor`; a teacher may SUBSCRIBE `/topic/izvodjenja/{id}/nastavnik|javno` and
   `/app/izvodjenja/{id}/nastavnik-pocetno` and SEND nothing. Anything else -> ERROR frame and the connection closes.
-  Student SUBSCRIBE+SEND share a token bucket per session (burst 10, 5/s); excess and messages of kicked participants
-  (`IzbaceniRegistar`) are dropped silently. Do not enable `setPreserveReceiveOrder`: Spring then only logs interceptor
+  Every student frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, DISCONNECT) takes a token from one bucket per
+  participant, shared by all their sessions (burst 10, 5/s); excess and SENDs of kicked participants (`IzbaceniRegistar`)
+  are dropped silently. DISCONNECT is never dropped and never refills; a bucket is removed only when full. Do not enable `setPreserveReceiveOrder`: Spring then only logs interceptor
   exceptions (no ERROR frame, connection stays open).
-- **Publishing** (`UzivoObjavljivac`, always after commit via `@TransactionalEventListener`): a state change
-  (`IzvodjenjePromenjeno`: command, timer, join, moderation) sends public, every personal and the teacher state from one
-  read (`StanjeService.snimci`); answers and connect/disconnect only mark the run dirty and the 250 ms `flush` sends the
-  teacher state plus the personal state of the participants who answered (one read per run per flush). Personal state
-  does not bump `verzija`. `UzivoSchedulingConfig.taskScheduler` (4 threads) runs the flush, deadlines and maintenance.
+- **Publishing** (`UzivoObjavljivac`): event listeners run after commit on the request/STOMP thread and only mark the
+  run dirty (never read the DB or wait for a lock there). Reading and sending happen on the publisher thread under a
+  per-run lock, one `StanjeService.snimci` read per run: a command, timer, moderation or kick (`IzvodjenjePromenjeno`,
+  `UcesnikIzbacen`) triggers it at once on `taskScheduler`; joins (`UcesnikPrijavljen`), answers and connect/disconnect
+  wait for the 250 ms `flush` (teacher topic at most 4x/s, a 300-join burst is one read per flush). Personal state does
+  not bump `verzija`. `UzivoSchedulingConfig.taskScheduler` has 4 threads (flush, immediate publishing, deadlines,
+  maintenance).
 - Tests: `config/UzivoChannelInterceptorTest`, `service/uzivo/UzivoObjavljivacTest` (no Spring) and `UzivoWebSocketIT`
   (real STOMP client against `RANDOM_PORT` and MySQL; commits and cleans up its own data).
 

@@ -132,6 +132,11 @@ class UzivoWebSocketIT {
         // ---- 2. rukovanje: bez kolačića i sa lošim kolačićem ne, sa kolačićem da; nastavnik na /ws
         assertRukovanjeOdbijeno("/public/ws", null);
         assertRukovanjeOdbijeno("/public/ws", "gfs_uzivo=" + "x".repeat(32));
+        // uloga je vezana za endpoint: path parametar ne pravi od studentskog ulaza nastavnički
+        assertRukovanjeOdbijeno("/public/ws;x", null);
+        assertRukovanjeOdbijeno("/public/ws;jsessionid=1", null);
+        // tuđi origin ni sa važećim kolačićem
+        assertRukovanjeOdbijeno("/public/ws", ana.kolacic(), "http://zlonamerni.example");
         Klijent nastavnik = povezi("/ws", null);
         String javno = "/topic/izvodjenja/" + id + "/javno";
         String nastavnickoOdr = "/topic/izvodjenja/" + id + "/nastavnik";
@@ -253,10 +258,18 @@ class UzivoWebSocketIT {
                 CEKANJE_MS);
         assertFalse(licnoB.path("odgovor").path("primljen").asBoolean());
 
+        // ---- izbacivanje: telefon dobija izbacen=true, dalje poruke se tiho odbacuju, ponovno rukovanje odbijeno
+        rest.delete().uri("/izvodjenja/" + id + "/ucesnici/" + bojan.ucesnikId()).retrieve().toBodilessEntity();
+        b.cekaj("/user/queue/licno", n -> n.path("izbacen").asBoolean(), CEKANJE_MS);
+        b.posalji("/app/izvodjenja/" + id + "/odgovor", Map.of("rundaId", rundaId, "opcije", List.of(tacnaOpcija)));
+        assertNull(b.nadji("/user/queue/greske", n -> true), "poruka izbačenog se odbacuje pre servisa (bez odgovora)");
+        assertRukovanjeOdbijeno("/public/ws", bojan.kolacic());
+        JsonNode posleIzbacivanja = nastavnik.cekaj(nastavnickoOdr, n -> n.path("ucesnici").size() == 1, CEKANJE_MS);
+        assertEquals(ana.ucesnikId(), posleIzbacivanja.path("ucesnici").path(0).path("id").asLong());
+
         // ---- 10. ZAVRSI: javno ZAVRSENO, novo rukovanje sa kolačićem odbijeno
         komanda(id, "ZAVRSI");
         a2.cekaj(javno, n -> "ZAVRSENO".equals(n.path("status").asString()), CEKANJE_MS);
-        b.cekaj(javno, n -> "ZAVRSENO".equals(n.path("status").asString()), CEKANJE_MS);
         assertRukovanjeOdbijeno("/public/ws", ana.kolacic());
 
         // ---- "ni ranije": sa DUGMAD i bez Detalja tekst pitanja nijednom nije stigao na telefon
@@ -329,8 +342,14 @@ class UzivoWebSocketIT {
     }
 
     void assertRukovanjeOdbijeno(String ulaz, String kolacic) {
+        assertRukovanjeOdbijeno(ulaz, kolacic, ORIGIN);
+    }
+
+    void assertRukovanjeOdbijeno(String ulaz, String kolacic, String origin) {
+        WebSocketHttpHeaders h = zaglavlja(kolacic);
+        h.setOrigin(origin);
         ExecutionException e = assertThrows(ExecutionException.class, () -> stomp
-                .connectAsync("ws://localhost:" + port + ulaz, zaglavlja(kolacic), new StompHeaders(),
+                .connectAsync("ws://localhost:" + port + ulaz, h, new StompHeaders(),
                         new StompSessionHandlerAdapter() {
                         })
                 .get(5, TimeUnit.SECONDS));

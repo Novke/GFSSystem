@@ -9,7 +9,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 /**
  * Raspored za uživo: zatvaranje pitanja po roku ({@code RokPlaner}), održavanje izvođenja i {@code @Scheduled} poslovi.
  * Bean se zove {@code taskScheduler}, pa ga {@code @EnableScheduling} koristi i kad WebSocket broker doda svoj
- * ({@code messageBrokerTaskScheduler}, za heartbeat). Četiri niti: slanje zaprljanih stanja na 250 ms
+ * ({@code messageBrokerTaskScheduler}, za heartbeat). Četiri niti: objava odmah posle komande i slanje zaprljanih stanja na 250 ms
  * ({@code UzivoObjavljivac.flush}), rokovi pitanja i održavanje ne čekaju jedno drugo.
  */
 @Configuration
