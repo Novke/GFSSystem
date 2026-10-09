@@ -165,7 +165,7 @@ Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the
 - Staging: every push to `staging` is deployed automatically (about a minute) to `https://gfs.dev.trif.rs`
   (basic-auth, synthetic data only). The result shows up as commit status `staging-deploy`. Deploy details live in the
   wrapper repo `Novke/GFS-deploy` (`README.md`).
-- CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 21, service `mysql:8.0`
+- CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 21, service `mysql:8.0` (from `public.ecr.aws/docker/library/`, like the Dockerfile base images: anonymous Docker Hub pulls hit a per-IP rate limit on GitHub runners)
   (empty root password, DB `gftest`), `./mvnw -B package` (all tests, including the `*IT` classes against real MySQL
   with the Flyway schema), then `docker build`.
 - **Local tests on novica-dev** (3306 is `shared-mysql`, never use it for tests): a throwaway MySQL on 3307,
