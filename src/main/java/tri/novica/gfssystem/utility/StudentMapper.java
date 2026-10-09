@@ -48,6 +48,8 @@ public interface StudentMapper {
     @Mapping(source = "test.id", target = "testId")
     @Mapping(source = "test.datum", target = "datum")
     @Mapping(source = "test.tipTesta", target = "tipTesta")
+    @Mapping(source = "test.pragProlaza", target = "pragProlaza")
+    @Mapping(target = "polozeno", expression = "java(tri.novica.gfssystem.utility.Prolaz.polozenoIliNull(polaganje.getOstvareniPoeni(), polaganje.getTest().getPragProlaza(), polaganje.getPrepisivao()))")
     StudentPregledTestInfo toTestDetails(Polaganje polaganje);
 
     @Mapping(source = "test.id", target = "testId")

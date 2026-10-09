@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import tools.jackson.databind.annotation.JsonDeserialize;
+import tri.novica.gfssystem.utility.CeoBrojDeserializer;
 
 import java.time.LocalDate;
 
@@ -31,6 +33,7 @@ public class CreateTestCmd {
     private Integer maxPoena;
     /** Opcioni prag prolaza u poenima; null = bez praga. Gornja granica (maxPoena) se proverava u {@code TestPP}; prag se kasnije menja samo preko {@code PATCH /test/{id}/prag-prolaza}. */
     @Min(value = 0, message = "Prag prolaza mora biti između 0 i maksimalnog broja poena.")
+    @JsonDeserialize(using = CeoBrojDeserializer.class)   // 20.5 je 400, ne tiho 20 (isto kao PATCH)
     private Integer pragProlaza;
 
 }

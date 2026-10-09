@@ -14,7 +14,10 @@ public class StudentPregledTestInfo {
     private Long id;
     private Long testId;
     private Double ostvareniPoeni;
-    private Boolean polozio;
+    /** Prag prolaza testa u poenima; null = test nema prag. */
+    private Integer pragProlaza;
+    /** Prolaz po pravilu {@code Prolaz} (poeni >= prag, bez prepisivanja), računa server; null kad test nema prag ili poeni još nisu upisani (nije ocenjeno). */
+    private Boolean polozeno;
     private boolean prepisivao;
     private String napomene;
     private LocalDate datum;

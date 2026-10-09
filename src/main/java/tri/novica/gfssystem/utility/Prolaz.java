@@ -24,6 +24,14 @@ public final class Prolaz {
                 && poeni >= pragProlaza;
     }
 
+    /**
+     * Isto, ali {@code null} kad test nema prag ili poeni nisu upisani (za DTO pregleda: bez praga nema pojma prolaza,
+     * a polaganje bez poena nije ocenjeno, ni "položio" ni "pao"; isti imenilac kao statistika testa).
+     */
+    public static Boolean polozenoIliNull(Double poeni, Integer pragProlaza, Boolean prepisivao) {
+        return pragProlaza == null || poeni == null ? null : polozeno(poeni, pragProlaza, prepisivao);
+    }
+
     /** Isto za entitet, prag se uzima sa njegovog testa. */
     public static boolean polozeno(Polaganje p) {
         return polozeno(p.getOstvareniPoeni(), p.getTest() == null ? null : p.getTest().getPragProlaza(), p.getPrepisivao());

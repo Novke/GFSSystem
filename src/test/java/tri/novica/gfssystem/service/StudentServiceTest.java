@@ -13,6 +13,7 @@ import org.modelmapper.convention.MatchingStrategies;
 import tri.novica.gfssystem.dto.student.CreateStudentCmd;
 import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.entity.Grupa;
+import tri.novica.gfssystem.entity.Polaganje;
 import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
@@ -89,5 +90,44 @@ class StudentServiceTest {
         when(studentRepository.findByGrupa(grupa)).thenReturn(List.of(student("GD12"), student("GD5"), student("GD100")));
         assertEquals(List.of("GD5", "GD12", "GD100"),
                 service.findAllByGroup(5L).stream().map(StudentInfo::getIndeks).toList());
+    }
+
+    // ---- pregled studenta: prag i prolaz sa servera (pravilo Prolaz), stari sačuvani polozio se ne izlaže
+
+    private static Polaganje polaganje(long id, Integer prag, Double poeni, boolean prepisivao, Boolean polozio) {
+        var t = new tri.novica.gfssystem.entity.Test();
+        t.setId(100 + id);
+        t.setDatum(java.time.LocalDate.of(2025, 11, (int) id));
+        t.setPragProlaza(prag);
+        Polaganje p = Polaganje.defaultPolaganje(t, null);
+        p.setId(id);
+        p.setOstvareniPoeni(poeni);
+        p.setPrepisivao(prepisivao);
+        p.setPolozio(polozio);
+        return p;
+    }
+
+    @Test
+    void pregledStudentaIzlazePragIProlazSaServera() {
+        Student s = student("GD12");
+        s.setGrupa(grupa);
+        s.setAktivnosti(new java.util.HashSet<>());
+        s.setUradjeniDomaci(new java.util.HashSet<>());
+        s.setPolaganja(new java.util.HashSet<>(List.of(
+                polaganje(1, 20, 25.0, false, null),    // položio
+                polaganje(2, 20, 10.0, false, true),    // pao, iako je stari polozio = true
+                polaganje(3, 20, 40.0, true, null),     // prepisivao: pao
+                polaganje(4, null, 30.0, false, true))));   // test bez praga: nema prolaza
+        when(studentRepository.findByIdFetchDetails(9L)).thenReturn(Optional.of(s));
+
+        var po = service.findById(9L).getPolaganja().stream()
+                .collect(java.util.stream.Collectors.toMap(i -> i.getId(), i -> i));
+        assertEquals(Boolean.TRUE, po.get(1L).getPolozeno());
+        assertEquals(20, po.get(1L).getPragProlaza());
+        assertEquals(Boolean.FALSE, po.get(2L).getPolozeno());
+        assertEquals(Boolean.FALSE, po.get(3L).getPolozeno());
+        assertTrue(po.get(3L).isPrepisivao());
+        assertNull(po.get(4L).getPolozeno());
+        assertNull(po.get(4L).getPragProlaza());
     }
 }
