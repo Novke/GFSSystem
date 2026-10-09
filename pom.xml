@@ -38,6 +38,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <!-- Uživo: WebSocket + STOMP (simple broker u memoriji) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
 
         <!-- Flyway: migracije šeme (db/migration), Hibernate samo validira (ddl-auto=validate) -->
         <dependency>

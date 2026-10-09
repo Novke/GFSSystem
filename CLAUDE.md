@@ -19,7 +19,7 @@ Academic management system for Gradjevinski Fakultet Subotica (GFS).
 ```
 src/main/java/tri/novica/gfssystem/
 ├── advice/          # Exception handlers (ApiExceptionHandler)
-├── config/          # Configuration classes (JacksonConfigs)
+├── config/          # Configuration (JacksonConfigs, uživo WebSocket/STOMP and scheduling)
 ├── dto/             # Data Transfer Objects
 │   ├── aktivnost/   # Activity DTOs
 │   ├── domaci/      # Homework DTOs
@@ -80,6 +80,36 @@ the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/
   exception text goes only to the log). The client IP for the log is the first `X-Forwarded-For` element (log only).
 - Tests: `OnboardingServiceTest` (Mockito) and `rest/PublicUpisRestTest` (`@WebMvcTest`, mocked service) run without a DB.
 
+## Uživo (live interactive presentation)
+
+Kahoot-like lecture: the teacher builds a presentation (INFO and question slides), starts a run (`izvodjenje`, 6-digit
+code), students join from their phones and answer live. Code lives in `entity/uzivo`, `repository/uzivo`, `service/uzivo`,
+`rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V5__uzivo.sql` (idempotent).
+- **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
+  `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
+- **Public entry points, exactly these three:** `/public/uzivo/**` (`PublicUzivoRest`: info, `ja`, join with the
+  `gfs_uzivo` cookie, HttpOnly, 32-char token, only its SHA-256 in the DB), `/public/mediji/{uuid}` (slide images) and the
+  student WebSocket `/public/ws`. Nothing else uzivo-related may go under `/public/**` (nginx exempts `/api/public/` from auth).
+- **WebSocket (STOMP, plain WS, no SockJS)**, `WebSocketConfig`: `/ws` teacher, `/public/ws` student; allowed origins =
+  `gfs.front.url` (same list as REST CORS); message size 8 KB, heartbeat 10 s / 10 s, simple broker `/topic` + `/queue`,
+  app prefix `/app`, user prefix `/user`. `UzivoHandshakeInterceptor` sets the role per entry point: the student handshake
+  needs a valid cookie (participant exists, not kicked, run AKTIVNO), otherwise HTTP 403; principal `u-<ucesnikId>` /
+  `n-<uuid>` (`UzivoHandshakeHandler`).
+- **Authorization** (`UzivoChannelInterceptor`, exact regexes, never `startsWith`): a student (run X) may SUBSCRIBE only
+  `/topic/izvodjenja/X/javno`, `/user/queue/licno`, `/user/queue/greske`, `/app/izvodjenja/X/pocetno` and SEND only
+  `/app/izvodjenja/X/odgovor`; a teacher may SUBSCRIBE `/topic/izvodjenja/{id}/nastavnik|javno` and
+  `/app/izvodjenja/{id}/nastavnik-pocetno` and SEND nothing. Anything else -> ERROR frame and the connection closes.
+  Student SUBSCRIBE+SEND share a token bucket per session (burst 10, 5/s); excess and messages of kicked participants
+  (`IzbaceniRegistar`) are dropped silently. Do not enable `setPreserveReceiveOrder`: Spring then only logs interceptor
+  exceptions (no ERROR frame, connection stays open).
+- **Publishing** (`UzivoObjavljivac`, always after commit via `@TransactionalEventListener`): a state change
+  (`IzvodjenjePromenjeno`: command, timer, join, moderation) sends public, every personal and the teacher state from one
+  read (`StanjeService.snimci`); answers and connect/disconnect only mark the run dirty and the 250 ms `flush` sends the
+  teacher state plus the personal state of the participants who answered (one read per run per flush). Personal state
+  does not bump `verzija`. `UzivoSchedulingConfig.taskScheduler` (4 threads) runs the flush, deadlines and maintenance.
+- Tests: `config/UzivoChannelInterceptorTest`, `service/uzivo/UzivoObjavljivacTest` (no Spring) and `UzivoWebSocketIT`
+  (real STOMP client against `RANDOM_PORT` and MySQL; commits and cleans up its own data).
+
 ## Build & Run
 
 ```bash
@@ -126,8 +156,9 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
-- **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
-  `V7` = the parallel "uživo" (live) project (it renumbers to V7 and merges after this branch). **Next free version: `V8`.**
+- **Versions:** `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`). `V5` = uživo (presentations, runs, participants,
+  answers, media), idempotent; it is renumbered to `V7` before merging, after which `V5` stays a permanent gap (never reuse it).
+  **Next free version: `V8`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
   (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with V3/V4/V6 objects already applied, no history). Run

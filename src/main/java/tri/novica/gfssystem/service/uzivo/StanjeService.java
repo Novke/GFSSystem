@@ -55,7 +55,22 @@ public class StanjeService {
     // ---------------------------------------------------------------- nastavničko stanje
 
     public NastavnickoStanje nastavnicko(Long izvodjenjeId) {
+        return nastavnicko(ucitaj(izvodjenjeId));
+    }
+
+    /**
+     * Sva tri snimka (javno, lična stanja neizbačenih učesnika, nastavničko) iz jednog čitanja: objavljivanje posle
+     * promene i periodično slanje zaprljanih stanja ne čitaju izvođenje tri puta.
+     */
+    public record Snimci(JavnoStanje javno, Map<Long, LicnoStanje> licna, NastavnickoStanje nastavnicko) {
+    }
+
+    public Snimci snimci(Long izvodjenjeId) {
         Podaci p = ucitaj(izvodjenjeId);
+        return new Snimci(javno(p), licnaZaSve(p), nastavnicko(p));
+    }
+
+    NastavnickoStanje nastavnicko(Podaci p) {
         Izvodjenje iz = p.iz();
         List<Slajd> sl = p.slajdovi();
         int indeks = TokIzvodjenja.indeks(iz, sl);
@@ -108,7 +123,10 @@ public class StanjeService {
 
     /** Lična stanja svih neizbačenih učesnika (po redu prijave) iz jednog čitanja; rang se računa jednom. */
     public Map<Long, LicnoStanje> licnaZaSve(Long izvodjenjeId) {
-        Podaci p = ucitaj(izvodjenjeId);
+        return licnaZaSve(ucitaj(izvodjenjeId));
+    }
+
+    private Map<Long, LicnoStanje> licnaZaSve(Podaci p) {
         LicniPodaci lp = licniPodaci(p);
         Map<Long, LicnoStanje> sva = new LinkedHashMap<>();
         for (Ucesnik u : p.ucesnici()) {
