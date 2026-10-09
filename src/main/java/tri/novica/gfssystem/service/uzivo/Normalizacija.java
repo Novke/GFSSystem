@@ -32,20 +32,38 @@ public final class Normalizacija {
 
     /**
      * Ime za prikaz: znaci formata ({@code \\p{Cf}}: bidi preokretanje, nevidljivi znaci nulte širine) se brišu,
-     * kontrolni znaci postaju razmaci, svi Unicode razmaci postaju jedan običan, a razmaci na krajevima se uklanjaju.
+     * kontrolni znaci (C0 i C1, U+0080-U+009F: Javin {@code \\p{Cntrl}} je samo ASCII) postaju razmaci, svi Unicode
+     * razmaci postaju jedan običan, a razmaci na krajevima se uklanjaju.
      */
     public static String ime(String s) {
         if (s == null) return "";
-        return s.replaceAll("\\p{Cf}", "").replaceAll("\\p{Cntrl}", " ").replaceAll("[\\s\\p{Z}]+", " ").strip();
+        return s.replaceAll("\\p{Cf}", "").replaceAll("[\\p{Cntrl}\\x{80}-\\x{9F}]", " ")
+                .replaceAll("[\\s\\p{Z}]+", " ").strip();
     }
 
     /** Prazni znaci koji nisu razmaci po Unicode kategoriji (hangul i brajevi "prazni" znaci). */
     private static final Set<Integer> PRAZNI = Set.of(0x115F, 0x1160, 0x3164, 0xFFA0, 0x2800);
 
-    /** Da li normalizovano ime ima bar jedan vidljiv znak (ne samo razmake ili prazne znake). */
+    /**
+     * Da li ime ima bar jedan vidljiv znak: kodnu tačku kategorije slovo (L), broj (N), interpunkcija (P) ili simbol (S)
+     * van {@link #PRAZNI}. Spisak dozvoljenih, ne zabranjenih: samo razmaci, kombinujući znaci (U+034F, selektori
+     * varijanti), kontrolni i neraspoređeni znaci nisu ime.
+     */
     public static boolean imaVidljivZnak(String ime) {
-        return ime != null && ime.codePoints()
-                .anyMatch(cp -> !Character.isWhitespace(cp) && !Character.isSpaceChar(cp) && !PRAZNI.contains(cp));
+        return ime != null && ime.codePoints().anyMatch(cp -> vidljiv(cp) && !PRAZNI.contains(cp));
+    }
+
+    private static boolean vidljiv(int cp) {
+        return switch (Character.getType(cp)) {
+            case Character.UPPERCASE_LETTER, Character.LOWERCASE_LETTER, Character.TITLECASE_LETTER,
+                 Character.MODIFIER_LETTER, Character.OTHER_LETTER,
+                 Character.DECIMAL_DIGIT_NUMBER, Character.LETTER_NUMBER, Character.OTHER_NUMBER,
+                 Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION, Character.START_PUNCTUATION,
+                 Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
+                 Character.OTHER_PUNCTUATION,
+                 Character.MATH_SYMBOL, Character.CURRENCY_SYMBOL, Character.MODIFIER_SYMBOL, Character.OTHER_SYMBOL -> true;
+            default -> false;
+        };
     }
 
     /** Broj sa tačkom ili zarezom kao decimalnim znakom (razmaci su razdvajači hiljada); {@code null} ako nije broj. */
