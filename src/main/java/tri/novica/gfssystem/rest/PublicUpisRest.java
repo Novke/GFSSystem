@@ -9,6 +9,7 @@ import tri.novica.gfssystem.dto.onboarding.JavniUpisInfo;
 import tri.novica.gfssystem.dto.onboarding.PodnesiPrijavuCmd;
 import tri.novica.gfssystem.dto.onboarding.PodnetaPrijavaInfo;
 import tri.novica.gfssystem.service.OnboardingService;
+import tri.novica.gfssystem.utility.KlijentIp;
 
 /**
  * Javni (neautentifikovani) deo onboardinga. nginx izuzima /api/public/ iz basic-auth-a; ovde ništa drugo ne sme.
@@ -18,9 +19,6 @@ import tri.novica.gfssystem.service.OnboardingService;
 @RequestMapping(path = "/public/upis", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class PublicUpisRest {
-
-    /** Dovoljno za IPv6 u tekstualnom obliku; zaglavlje šalje klijent, pa u log ne ide neograničeno. */
-    private static final int MAX_IP = 64;
 
     private final OnboardingService onboardingService;
 
@@ -36,13 +34,6 @@ public class PublicUpisRest {
     @ResponseStatus(HttpStatus.CREATED)
     public PodnetaPrijavaInfo podnesi(@PathVariable String token, @RequestBody PodnesiPrijavuCmd cmd,
                                       HttpServletRequest request) {
-        return onboardingService.podnesi(token, cmd, klijentIp(request));
-    }
-
-    /** Backend je iza dva nginx-a: prvi element X-Forwarded-For je klijent. Samo za log. */
-    private static String klijentIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        String ip = xff != null && !xff.isBlank() ? xff.split(",")[0].trim() : request.getRemoteAddr();
-        return ip != null && ip.length() > MAX_IP ? ip.substring(0, MAX_IP) : ip;
+        return onboardingService.podnesi(token, cmd, KlijentIp.iz(request));
     }
 }

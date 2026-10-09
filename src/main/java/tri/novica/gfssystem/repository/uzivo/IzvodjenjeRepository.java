@@ -37,6 +37,13 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
 
     Optional<Izvodjenje> findByAktivanKod(String kod);
 
+    /**
+     * Id aktivnog izvođenja sa kodom (pre zaključavanja). Samo id: entitet učitan pre {@link #findByIdForUpdate}
+     * ostao bi u persistence context-u sa stanjem od pre čekanja na zaključavanje.
+     */
+    @Query("select i.id from Izvodjenje i where i.aktivanKod = :kod and i.status = :status")
+    Optional<Long> findIdByAktivanKodAndStatus(@Param("kod") String kod, @Param("status") StatusIzvodjenja status);
+
     boolean existsByAktivanKod(String kod);
 
     List<Izvodjenje> findAllByStatus(StatusIzvodjenja s);

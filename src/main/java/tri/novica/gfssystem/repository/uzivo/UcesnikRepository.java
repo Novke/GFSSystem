@@ -14,7 +14,9 @@ import java.util.Optional;
 @Repository
 public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
 
-    Optional<Ucesnik> findByTokenHash(String h);
+    /** Učesnik po hešu tokena iz kolačića, sa izvođenjem u istom upitu (rukovanje, "ja"). */
+    @Query("select u from Ucesnik u join fetch u.izvodjenje where u.tokenHash = :h")
+    Optional<Ucesnik> findByTokenHash(@Param("h") String h);
 
     List<Ucesnik> findAllByIzvodjenjeIdOrderByKreiranoAsc(Long id);
 
