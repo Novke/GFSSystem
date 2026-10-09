@@ -18,7 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mysql:
-        image: mysql:8.0
+        # AWS ogledalo zvanične slike: Docker Hub bez naloga ima limit po IP-u runnera (CI je padao pre build-a)
+        image: public.ecr.aws/docker/library/mysql:8.0
         env:
           MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
           MYSQL_DATABASE: gftest
