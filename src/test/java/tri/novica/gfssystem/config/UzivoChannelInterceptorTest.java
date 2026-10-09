@@ -62,7 +62,8 @@ class UzivoChannelInterceptorTest {
         h.setSessionId(sesija);
         h.setSessionAttributes(atributi);
         if (odrediste != null) h.setDestination(odrediste);
-        if (komanda == StompCommand.SUBSCRIBE) h.setSubscriptionId("sub-0");
+        // pravi klijent daje svakoj pretplati svoj id; ovde id prati odredište (isto odredište = isti id)
+        if (komanda == StompCommand.SUBSCRIBE) h.setSubscriptionId("sub-" + odrediste);
         // StompSubProtocolHandler stavlja simpHeartbeat na svaki frame klijenta (sintetički DISCONNECT ga nema)
         h.setHeader(SimpMessageHeaderAccessor.HEART_BEAT_HEADER, new long[]{0, 0});
         return MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
@@ -232,15 +233,119 @@ class UzivoChannelInterceptorTest {
     @Test
     void pretplataPrekoGraniceJeGreskaANeTihoOdbacivanje() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < KAP; i++) {
-            assertNotNull(posalji(poruka(StompCommand.SUBSCRIBE, "/app/izvodjenja/5/pocetno", "s1", a)));
-        }
+        potrosi(KAP, "s1", a);
         // ERROR frame i zatvorena veza: klijent se ponovo poveže (backoff), umesto da ostane bez početnog stanja
         odbijenoPorukom(poruka(StompCommand.SUBSCRIBE, "/app/izvodjenja/5/pocetno", "s1", a));
         odbijenoPorukom(poruka(StompCommand.CONNECT, null, "s2", a));
         odbijenoPorukom(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a));
         // odgovor se i dalje tiho odbacuje
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
+    }
+
+    // ---------------------------------------------------------------- granice pretplata i sesija
+
+    Message<byte[]> pretplata(String odrediste, String sesija, String id, Map<String, Object> a) {
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        h.setSessionId(sesija);
+        h.setSessionAttributes(a);
+        h.setDestination(odrediste);
+        h.setSubscriptionId(id);
+        h.setHeader(SimpMessageHeaderAccessor.HEART_BEAT_HEADER, new long[]{0, 0});
+        return MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
+    }
+
+    Message<byte[]> odjava(String sesija, String id, Map<String, Object> a) {
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE);
+        h.setSessionId(sesija);
+        h.setSessionAttributes(a);
+        h.setSubscriptionId(id);
+        h.setHeader(SimpMessageHeaderAccessor.HEART_BEAT_HEADER, new long[]{0, 0});
+        return MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
+    }
+
+    void nedozvoljeno(Message<byte[]> m) {
+        MessageDeliveryException e = assertThrows(MessageDeliveryException.class, () -> posalji(m));
+        assertTrue(e.getMessage().startsWith("Nedozvoljena poruka."), e.getMessage());
+    }
+
+    @Test
+    void istoOdredisteDvaputUIstojSesijiJeOdbijeno() {
+        Map<String, Object> a = student(5, 11);
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s1", "a", a)));
+        nedozvoljeno(pretplata("/topic/izvodjenja/5/javno", "s1", "b", a));
+        // isti id pretplate za drugo odredište takođe
+        nedozvoljeno(pretplata("/user/queue/licno", "s1", "a", a));
+        // u drugoj sesiji isto odredište je u redu
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s2", "a", a)));
+    }
+
+    @Test
+    void posleOdjaveIstoOdredisteOpetProlazi() {
+        Map<String, Object> a = student(5, 11);
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s1", "a", a)));
+        assertNotNull(posalji(odjava("s1", "a", a)));
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s1", "b", a)));
+    }
+
+    @Test
+    void jednaSesijaImaNajviseCetiriPretplate() {
+        // četiri dozvoljena odredišta, svako jednom: više pretplata u sesiji nema (granica od 6 je samo rezerva)
+        Map<String, Object> a = student(5, 11);
+        String[] odredista = {"/topic/izvodjenja/5/javno", "/user/queue/licno", "/user/queue/greske",
+                "/app/izvodjenja/5/pocetno"};
+        for (int i = 0; i < odredista.length; i++) {
+            assertNotNull(posalji(pretplata(odredista[i], "s1", "p" + i, a)));
+        }
+        for (int i = 0; i < odredista.length; i++) {
+            nedozvoljeno(pretplata(odredista[i], "s1", "q" + i, a));
+        }
+        assertTrue(UzivoChannelInterceptor.MAX_PRETPLATA >= odredista.length);
+    }
+
+    @Test
+    void granicaPretplataSeBrojiPoSesiji() {
+        // šest pretplata u šest sesija prolazi; granica je po sesiji, ne po učesniku
+        Map<String, Object> a = student(5, 11);
+        for (int i = 0; i < 6; i++) {
+            assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s" + i, "a", a)));
+        }
+        interceptor.onPrekid(prekid("s0", a));
+        assertEquals(5, interceptor.brojPracenihSesija(), "kraj sesije briše njene pretplate");
+    }
+
+    @Test
+    void najviseTriAktivneSesijePoUcesniku() {
+        Map<String, Object> a = student(5, 11);
+        for (int i = 1; i <= UzivoChannelInterceptor.MAX_SESIJA; i++) {
+            assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s" + i, a)));
+        }
+        assertEquals(3, interceptor.brojSesija(11L));
+        MessageDeliveryException e = assertThrows(MessageDeliveryException.class,
+                () -> posalji(poruka(StompCommand.CONNECT, null, "s4", a)));
+        assertTrue(e.getMessage().startsWith(UzivoChannelInterceptor.PREVISE_VEZA), e.getMessage());
+        // ponovljeni CONNECT iste sesije se ne broji dvaput
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+        // drugi učesnik ima svoje sesije
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "t1", student(5, 12))));
+
+        // kraj jedne veze oslobađa mesto
+        interceptor.onPrekid(prekid("s2", a));
+        assertEquals(2, interceptor.brojSesija(11L));
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s4", a)));
+        assertEquals(3, interceptor.brojSesija(11L));
+        // odbijena sesija (s5) na kraju ne dira brojač
+        assertThrows(MessageDeliveryException.class, () -> posalji(poruka(StompCommand.CONNECT, null, "s5", a)));
+        interceptor.onPrekid(prekid("s5", a));
+        assertEquals(3, interceptor.brojSesija(11L));
+        for (String s : new String[]{"s1", "s3", "s4"}) interceptor.onPrekid(prekid(s, a));
+        assertEquals(0, interceptor.brojSesija(11L));
+    }
+
+    @Test
+    void nastavnikNemaGranicuSesija() {
+        for (int i = 0; i < 10; i++) {
+            assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "n" + i, nastavnik())));
+        }
     }
 
     void odbijenoPorukom(Message<byte[]> m) {

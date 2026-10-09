@@ -18,6 +18,7 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 import tri.novica.gfssystem.service.uzivo.IzbaceniRegistar;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
@@ -41,6 +42,10 @@ import java.util.regex.Pattern;
  * povezivanje košta 5 tokena (CONNECT i četiri pretplate) i dva brza reload-a staju u kofu. Kofa se briše samo kad je
  * puna (posle kraja sesije ili periodično), jer je puna kofa ista kao nova. ACK/NACK i transakcije nisu dozvoljeni
  * nikome; nastavnik (iza basic-auth-a) se ne meri.
+ * <p>
+ * Granice po studentu (memorija i broj poruka koje server šalje ne rastu bez kraja): u jednoj sesiji isto odredište
+ * (ili isti id pretplate) najviše jednom i najviše {@value #MAX_PRETPLATA} pretplata; najviše {@value #MAX_SESIJA}
+ * aktivne sesije po učesniku (CONNECT preko toga je ERROR). Sesije se vode od CONNECT-a do {@link SessionDisconnectEvent}.
  */
 @Component
 @Slf4j
@@ -49,6 +54,9 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     static final double KAPACITET = 15;
     static final double DOPUNA_PO_MS = 5 / 1000.0;
     static final String PREVISE_PORUKA = "Previše poruka.";
+    static final int MAX_PRETPLATA = 6;
+    static final int MAX_SESIJA = 3;
+    static final String PREVISE_VEZA = "Previše otvorenih veza.";
 
     private static final String ID = "(\\d{1,18})";
     private static final Pattern STUDENT_JAVNO = Pattern.compile("/topic/izvodjenja/" + ID + "/javno");
@@ -61,6 +69,10 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     private final IzbaceniRegistar izbaceni;
     private final LongSupplier satMs;
     private final Map<Long, Kofa> kofe = new ConcurrentHashMap<>();
+    /** Pretplate studentskih sesija: id sesije -> (id pretplate -> odredište). */
+    private final Map<String, Map<String, String>> pretplate = new ConcurrentHashMap<>();
+    /** Aktivne sesije po učesniku (od CONNECT-a do kraja veze). */
+    private final Map<Long, Set<String>> sesije = new ConcurrentHashMap<>();
 
     @Autowired
     public UzivoChannelInterceptor(IzbaceniRegistar izbaceni) {
@@ -99,8 +111,18 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         }
         String odrediste = SimpMessageHeaderAccessor.getDestination(zaglavlja);
         return switch (komanda) {
-            case CONNECT, STOMP, UNSUBSCRIBE -> {
-                if (student) naplatiIliOdbij(message, ucesnikId, komanda);
+            case CONNECT, STOMP -> {
+                if (student) {
+                    naplatiIliOdbij(message, ucesnikId, komanda);
+                    prijaviSesiju(message, ucesnikId);
+                }
+                yield message;
+            }
+            case UNSUBSCRIBE -> {
+                if (student) {
+                    naplatiIliOdbij(message, ucesnikId, komanda);
+                    odjaviPretplatu(message);
+                }
                 yield message;
             }
             case SUBSCRIBE -> student
@@ -127,8 +149,51 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
                 || jeSvoje(STUDENT_JAVNO, odrediste, izvodjenjeId)
                 || jeSvoje(STUDENT_POCETNO, odrediste, izvodjenjeId);
         if (!dozvoljeno) throw odbij(m, Uloga.STUDENT, StompCommand.SUBSCRIBE, odrediste);
-        naplatiIliOdbij(m, ucesnikId, StompCommand.SUBSCRIBE);
+        String sesija = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
+        String pretplata = SimpMessageHeaderAccessor.getSubscriptionId(m.getHeaders());
+        if (sesija == null || pretplata == null) throw odbij(m, Uloga.STUDENT, StompCommand.SUBSCRIBE, odrediste);
+        Map<String, String> svoje = pretplate.computeIfAbsent(sesija, k -> new ConcurrentHashMap<>());
+        synchronized (svoje) {
+            if (svoje.containsKey(pretplata) || svoje.containsValue(odrediste) || svoje.size() >= MAX_PRETPLATA) {
+                log.info("Pretplata odbijena (dupla ili preko {}): ucesnik={}, odrediste={}", MAX_PRETPLATA, ucesnikId,
+                        odrediste);
+                throw new MessageDeliveryException(m, "Nedozvoljena poruka.");
+            }
+            naplatiIliOdbij(m, ucesnikId, StompCommand.SUBSCRIBE);
+            svoje.put(pretplata, odrediste);
+        }
         return m;
+    }
+
+    private void odjaviPretplatu(Message<?> m) {
+        String sesija = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
+        String pretplata = SimpMessageHeaderAccessor.getSubscriptionId(m.getHeaders());
+        if (sesija == null || pretplata == null) return;
+        Map<String, String> svoje = pretplate.get(sesija);
+        if (svoje != null) {
+            synchronized (svoje) {
+                svoje.remove(pretplata);
+            }
+        }
+    }
+
+    /** CONNECT studenta: nova sesija se upisuje ako učesnik nema već {@value #MAX_SESIJA} aktivne (inače ERROR). */
+    private void prijaviSesiju(Message<?> m, Long ucesnikId) {
+        String sesija = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
+        if (sesija == null) throw odbij(m, Uloga.STUDENT, StompCommand.CONNECT, null);
+        boolean[] primljena = {false};
+        sesije.compute(ucesnikId, (k, skup) -> {
+            Set<String> s = skup == null ? ConcurrentHashMap.newKeySet() : skup;
+            if (s.contains(sesija) || s.size() < MAX_SESIJA) {
+                s.add(sesija);
+                primljena[0] = true;
+            }
+            return s;
+        });
+        if (!primljena[0]) {
+            log.info("Previše otvorenih veza, CONNECT odbijen: ucesnik={}", ucesnikId);
+            throw new MessageDeliveryException(m, PREVISE_VEZA);
+        }
     }
 
     /**
@@ -161,10 +226,18 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     /** Kraj sesije: kofa učesnika se briše samo ako je puna (tada je ista kao nova), pa ponovno povezivanje ne dopunjuje. */
     @EventListener
     public void onPrekid(SessionDisconnectEvent e) {
+        String sesija = e.getSessionId();
+        if (sesija != null) pretplate.remove(sesija);
         Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(e.getMessage().getHeaders());
         if (atributi != null && atributi.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long ucesnikId) {
             long sada = satMs.getAsLong();
             kofe.computeIfPresent(ucesnikId, (k, kofa) -> kofa.puna(sada) ? null : kofa);
+            if (sesija != null) {
+                sesije.computeIfPresent(ucesnikId, (k, skup) -> {
+                    skup.remove(sesija);
+                    return skup.isEmpty() ? null : skup;
+                });
+            }
         }
     }
 
@@ -200,6 +273,16 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     /** Broj učesnika sa kofom (za test čišćenja). */
     int brojKofa() {
         return kofe.size();
+    }
+
+    /** Broj sesija sa praćenim pretplatama i aktivnih sesija učesnika (za test čišćenja). */
+    int brojPracenihSesija() {
+        return pretplate.size();
+    }
+
+    int brojSesija(Long ucesnikId) {
+        Set<String> s = sesije.get(ucesnikId);
+        return s == null ? 0 : s.size();
     }
 
     /** Token bucket jedne sesije: počinje pun, dopuna 5 tokena u sekundi, najviše 10. */
