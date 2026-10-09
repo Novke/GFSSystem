@@ -213,6 +213,38 @@ class NastavnickoStanjeTest {
     }
 
     @Test
+    void projektorDobijaJavneProjekcije() {
+        // L i Space dok je pitanje otvoreno: konzola vidi sve uživo, projektor samo ono što vide telefoni
+        NastavnickoStanje st = service.nastavnicko(IZ);
+        assertNull(st.javnaRangLista(), "rang-lista nije prikazana");
+        assertNull(st.javniRezultat(), "rezultati nisu prikazani");
+
+        iz.setRangListaPrikazana(true);
+        iz.setRezultatiPrikazani(true);
+        st = service.nastavnicko(IZ);
+        assertEquals(List.of(new RangStavka(1, 32L, "Bojan", 800), new RangStavka(2, 31L, "Ana", 0)), st.rangLista());
+        assertEquals(List.of(new RangStavka(1, null, "Ana", 0), new RangStavka(2, null, "Bojan", 0)), st.javnaRangLista(),
+                "poeni trenutne runde ne ulaze pre C");
+        assertEquals(Boolean.TRUE, st.rezultat().opcije().get(0).tacna());
+        assertEquals(List.of(new RezultatOpcija(121L, "Opcija 1", 1, null), new RezultatOpcija(122L, "Opcija 2", 0, null)),
+                st.javniRezultat().opcije());
+        JavnoStanje javno = service.javno(IZ);
+        assertEquals(javno.rangLista(), st.javnaRangLista());
+        assertEquals(javno.rezultat(), st.javniRezultat());
+
+        // zatvoreno, tačan prikazan: tek sada poeni i tačnost
+        iz.setFaza(Faza.ZATVORENO);
+        r2.setZatvoreno(T0.plusSeconds(4));
+        iz.setTacanPrikazan(true);
+        st = service.nastavnicko(IZ);
+        assertEquals(List.of(new RangStavka(1, null, "Bojan", 800), new RangStavka(2, null, "Ana", 0)), st.javnaRangLista());
+        assertEquals(Boolean.TRUE, st.javniRezultat().opcije().get(0).tacna());
+        javno = service.javno(IZ);
+        assertEquals(javno.rangLista(), st.javnaRangLista());
+        assertEquals(javno.rezultat(), st.javniRezultat());
+    }
+
+    @Test
     void posleBrisanjaSlajdaRundeOstajuGrupisanePoSnimku() {
         r1.setSlajdId(null);
         r2.setSlajdId(null);

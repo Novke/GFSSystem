@@ -34,8 +34,10 @@ import static org.mockito.Mockito.*;
 
 /**
  * Jezgro "ni ranije": {@link StanjeService#javno}, {@code licno}, {@code licnaZaSve} i {@code pocetno} nad mock
- * repozitorijumima. Svi tekstovi pitanja (tekst, opcije, oznake skale, jedinica, slika) sadrže "tajn", pa provera
- * nad JSON-om ({@link #bezTajni}) dokazuje da ih server ne šalje dok nisu dozvoljeni.
+ * repozitorijumima. Svi tekstovi pitanja (tekst, opcije, oznake skale, slika) sadrže "tajn", pa provera nad JSON-om
+ * ({@link #bezTajni}) dokazuje da ih server ne šalje dok nisu dozvoljeni. Jedinica broja nije tajna (ide uvek od
+ * otvaranja), pa je {@value #JEDINICA}. Javne projekcije u nastavničkom stanju (projektor) moraju biti iste kao javno
+ * stanje ({@link #projektorKaoJavno}).
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -45,6 +47,7 @@ class JavnoStanjeTest {
     static final LocalDateTime T0 = LocalDateTime.of(2026, 10, 8, 12, 0);
     static final Long IZ = 5L;
     static final Long RUNDA = 202L;
+    static final String JEDINICA = "m/s²";
 
     @Mock IzvodjenjeRepository izvodjenjeRepository;
     @Mock SlajdRepository slajdRepository;
@@ -138,7 +141,7 @@ class JavnoStanjeTest {
                 p.setBrojTacno(9.81);
                 p.setBrojOdstupanje(0.1);
                 p.setOdstupanjeTip(OdstupanjeTip.APSOLUTNO);
-                p.setJedinica("tajna jedinica");
+                p.setJedinica(JEDINICA);
             }
             case KRATAK_TEKST -> {
                 p.setTekstPrikaz(TekstPrikaz.OBLAK);
@@ -222,6 +225,16 @@ class JavnoStanjeTest {
     void bezTajni(Object stanje) {
         String json = jsonMapper.writeValueAsString(stanje).toLowerCase(Locale.ROOT);
         assertFalse(json.contains("tajn"), () -> "tekst pitanja procureo: " + json);
+    }
+
+    /**
+     * Projektor (nastavničko stanje) prikazuje javni rezultat i javnu rang-listu: moraju biti tačno ono što server
+     * šalje telefonima u javnom stanju, inače bi `Space` ili `L` na projektoru odali tačnost pre `C`.
+     */
+    void projektorKaoJavno(JavnoStanje st) {
+        NastavnickoStanje n = service.nastavnicko(IZ);
+        assertEquals(st.rezultat(), n.javniRezultat());
+        assertEquals(st.rangLista(), n.javnaRangLista());
     }
 
     static void samoTipIFaza(JavnoPitanje p, TipPitanja tip, Faza faza) {
@@ -415,15 +428,23 @@ class JavnoStanjeTest {
     }
 
     @Test
-    void brojJedinicaTekKadJeDozvoljeno() {
+    void brojJedinicaUvekOdOtvaranja() {
+        // jedinica nije tajna: student mora da zna u čemu upisuje broj i u režimu DUGMAD bez Detalja
+        na(TipPitanja.BROJ, Faza.CEKA);
+        assertNull(service.javno(IZ).pitanje().jedinica());
+
         na(TipPitanja.BROJ, Faza.OTVORENO);
         JavnoPitanje bez = service.javno(IZ).pitanje();
-        assertNull(bez.jedinica());
+        assertEquals(JEDINICA, bez.jedinica());
+        assertNull(bez.tekst());
         assertNull(bez.opcije());
         assertNull(bez.brojOpcija());
 
         iz.setDetaljiDozvoljeni(true);
-        assertEquals("tajna jedinica", service.javno(IZ).pitanje().jedinica());
+        assertEquals(JEDINICA, service.javno(IZ).pitanje().jedinica());
+        iz.setDetaljiDozvoljeni(false);
+        iz.setTelefonPrikaz(TelefonPrikaz.PITANJE);
+        assertEquals(JEDINICA, service.javno(IZ).pitanje().jedinica());
     }
 
     @Test
@@ -578,6 +599,8 @@ class JavnoStanjeTest {
             assertEquals(RUNDA, p.rundaId());
             assertEquals(RUNDA, l.odgovor().rundaId());
             assertTrue(l.odgovor().primljen());
+            // jedinica broja ide u svakom režimu telefona (nije tajna), ostali tipovi je nemaju
+            assertEquals(tip == TipPitanja.BROJ ? JEDINICA : null, p.jedinica());
         }
         if (!tekstDozvoljen) {
             bezTajni(p);
@@ -600,6 +623,8 @@ class JavnoStanjeTest {
         }
         if (!rezultati) assertNull(st.rezultat());
         if (!rang) assertNull(st.rangLista());
+        // projektor: isti javni rezultat i rang-lista kao telefoni, u svakoj kombinaciji
+        projektorKaoJavno(st);
 
         // poeni, mesto i rang-lista ne odaju tačnost: Anin tačan odgovor u trenutnoj rundi se računa tek posle TACAN
         boolean anaSeRacuna = faza != Faza.CEKA && tacanVidljiv;
@@ -671,9 +696,13 @@ class JavnoStanjeTest {
         assertNull(pre.uOdstupanju());
         assertEquals((9.8 + 3.0) / 2, pre.medijana());
         assertEquals(2, pre.najcesce().size());
+        // projektor isto (Space pre C), a konzola vidi broj tačnih uživo
+        assertNull(service.nastavnicko(IZ).javniRezultat().brojevi().uOdstupanju());
+        assertEquals(1, service.nastavnicko(IZ).rezultat().brojevi().uOdstupanju());
 
         iz.setTacanPrikazan(true);
         assertEquals(1, service.javno(IZ).rezultat().brojevi().uOdstupanju());
+        assertEquals(1, service.nastavnicko(IZ).javniRezultat().brojevi().uOdstupanju());
     }
 
     @Test
@@ -750,6 +779,8 @@ class JavnoStanjeTest {
         assertEquals(5, st.rangLista().size());
         assertNull(st.pitanje());
         assertNull(st.slajdTip());
+        // postolje na projektoru: ista lista
+        projektorKaoJavno(st);
     }
 
     @Test

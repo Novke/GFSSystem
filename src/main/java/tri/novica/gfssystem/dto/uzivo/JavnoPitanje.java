@@ -7,8 +7,9 @@ import java.util.List;
 
 /**
  * Pitanje u javnom stanju (spec 4.4). U fazi CEKA popunjeni su samo {@code tip} i {@code faza}. Od otvaranja: runda,
- * broj i id-jevi opcija, tajmer; tekstovi ({@code tekst}, tekstovi opcija, {@code slikaId}, {@code jedinica}, oznake
- * skale) samo kad je tekst dozvoljen (telefon u režimu PITANJE ili dozvoljeni Detalji); tačan odgovor
+ * broj i id-jevi opcija, tajmer, a za BROJ i {@code jedinica} (nije tajna, a bez nje se ne zna šta se upisuje);
+ * tekstovi ({@code tekst}, tekstovi opcija, {@code slikaId}, oznake skale) samo kad je tekst dozvoljen (telefon u
+ * režimu PITANJE ili dozvoljeni Detalji); tačan odgovor
  * ({@code tacneOpcije}, {@code tacanBroj}, {@code prihvatljiviOdgovori}) samo kad je prikazan, na zatvorenom pitanju.
  */
 public record JavnoPitanje(TipPitanja tip, Faza faza, Long rundaId, Integer brojOpcija, List<JavnaOpcija> opcije,

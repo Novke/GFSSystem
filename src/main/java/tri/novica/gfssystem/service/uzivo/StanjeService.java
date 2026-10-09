@@ -100,16 +100,18 @@ public class StanjeService {
                 iz.isQrPrikazan(), iz.getTelefonPrikaz(), iz.isDetaljiDozvoljeni(), iz.isTakmicenje(),
                 rezultat, odgovoriRunde.size(),
                 povezanost.brojPovezanih(p.ucesnici().stream().map(Ucesnik::getId).toList()),
-                ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())));
+                ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
+                javniRezultat(p), javnaRangLista(p));
     }
 
     // ---------------------------------------------------------------- javno i lično stanje (telefoni)
 
     /**
      * Javno stanje (spec 4.4), jezgro "ni ranije": pre otvaranja pitanja samo {tip, faza}; tekstovi tek kad su
-     * dozvoljeni, tačan odgovor tek kad je prikazan na zatvorenom pitanju, rezultat tek kad je prikazan, rang-lista
-     * (top 5, bez id-jeva) tek kad je prikazana ili na kraju takmičenja, i bez poena trenutne runde pre TACAN
-     * ({@link #javniBodovniOdgovori}). Izbačeni se ne računaju nigde.
+     * dozvoljeni, tačan odgovor tek kad je prikazan na zatvorenom pitanju, rezultat tek kad je prikazan
+     * ({@link #javniRezultat(Podaci)}), rang-lista tek kad je prikazana ili na kraju takmičenja
+     * ({@link #javnaRangLista}). Izbačeni se ne računaju nigde. Rezultat i rang-lista projektora (u nastavničkom
+     * stanju) grade se istim metodama.
      */
     public JavnoStanje javno(Long izvodjenjeId) {
         return javno(ucitaj(izvodjenjeId));
@@ -145,7 +147,6 @@ public class StanjeService {
         Izvodjenje iz = p.iz();
         Slajd trenutni = TokIzvodjenja.trenutni(iz, p.slajdovi());
         JavnoPitanje pitanje = null;
-        Rezultat rezultat = null;
         if (trenutni != null && trenutni.getTip() == TipSlajda.PITANJE) {
             Faza faza = iz.getFaza() == null ? Faza.CEKA : iz.getFaza();
             PitanjeRunda r = javnaRunda(p, trenutni);
@@ -154,25 +155,47 @@ public class StanjeService {
                 pitanje = trenutni.getPitanje() == null ? null
                         : JavnoPitanje.samoTip(trenutni.getPitanje().getTip(), faza);
             } else {
-                PitanjeSnimak s = snimak(r);
-                boolean tacan = tacanVidljiv(iz);
-                pitanje = javnoPitanje(iz, r, s, tacan);
-                if (iz.isRezultatiPrikazani()) {
-                    rezultat = javniRezultat(s, p.odgovoriRunde(r.getId()), tacan);
-                }
+                pitanje = javnoPitanje(iz, r, snimak(r), tacanVidljiv(iz));
             }
-        }
-        List<RangStavka> rang = null;
-        if (iz.isRangListaPrikazana() || (iz.getPrikaz() == Prikaz.KRAJ && iz.isTakmicenje())) {
-            rang = RangLista.izracunaj(p.ucesnici(), javniBodovniOdgovori(p)).stream()
-                    .limit(RANG_JAVNO)
-                    .map(st -> new RangStavka(st.mesto(), null, st.ime(), st.poeni()))
-                    .toList();
         }
         return new JavnoStanje(iz.getId(), iz.getVerzija(), clock.millis(), iz.getStatus(),
                 iz.getPrezentacija().getNaziv(), iz.getKod(), iz.getPrikaz(),
                 trenutni == null ? null : trenutni.getTip(), iz.getEkran(), iz.isTakmicenje(), iz.getTelefonPrikaz(),
-                iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, rezultat, rang);
+                iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, javniRezultat(p), javnaRangLista(p));
+    }
+
+    /**
+     * Javni rezultat trenutnog pitanja ({@code JavnoStanje.rezultat} i {@code NastavnickoStanje.javniRezultat}): samo
+     * kad su rezultati prikazani i runda je javna ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (i broj
+     * "u odstupanju", koji govori koliko je tačnih) tek kad je tačan odgovor prikazan na zatvorenom pitanju.
+     */
+    Rezultat javniRezultat(Podaci p) {
+        Izvodjenje iz = p.iz();
+        if (!iz.isRezultatiPrikazani()) return null;
+        PitanjeRunda runda = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
+        if (runda == null) return null;
+        boolean tacan = tacanVidljiv(iz);
+        Rezultat r = RezultatBuilder.izgradi(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
+        if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
+            RezultatBrojevi b = r.brojevi();
+            return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
+                    r.tekstovi(), r.skala());
+        }
+        return r;
+    }
+
+    /**
+     * Javna rang-lista ({@code JavnoStanje.rangLista} i {@code NastavnickoStanje.javnaRangLista}): top 5 bez id-jeva,
+     * samo kad je prikazana ili na kraju takmičenja, i bez poena trenutne runde pre TACAN
+     * ({@link #javniBodovniOdgovori}).
+     */
+    List<RangStavka> javnaRangLista(Podaci p) {
+        Izvodjenje iz = p.iz();
+        if (!iz.isRangListaPrikazana() && !(iz.getPrikaz() == Prikaz.KRAJ && iz.isTakmicenje())) return null;
+        return RangLista.izracunaj(p.ucesnici(), javniBodovniOdgovori(p)).stream()
+                .limit(RANG_JAVNO)
+                .map(st -> new RangStavka(st.mesto(), null, st.ime(), st.poeni()))
+                .toList();
     }
 
     /**
@@ -219,23 +242,11 @@ public class StanjeService {
                 ? List.copyOf(s.prihvatljiviOdgovori()) : null;
         RundaInfo ri = rundaInfo(iz, r);
         return new JavnoPitanje(s.tip(), iz.getFaza(), r.getId(), opcije == null ? null : opcije.size(), opcije,
-                tekst ? s.tekst() : null, tekst ? s.slikaId() : null, tekst ? s.jedinica() : null,
+                tekst ? s.tekst() : null, tekst ? s.slikaId() : null,
+                // jedinica nije tajna (samo kaže u čemu se upisuje broj), pa ide u svakom režimu telefona
+                s.tip() == TipPitanja.BROJ ? s.jedinica() : null,
                 tekst ? s.skalaMinOznaka() : null, tekst ? s.skalaMaxOznaka() : null,
                 ri.rokMs(), ri.preostaloMs(), tacneOpcije, tacanBroj, prihvatljivi);
-    }
-
-    /**
-     * Javni rezultat: bez sakrivenih tekstova, tačnost tek posle TACAN. Broj "u odstupanju" govori koliko je tačnih,
-     * pa i on čeka TACAN.
-     */
-    private static Rezultat javniRezultat(PitanjeSnimak s, List<Odgovor> odgovori, boolean tacan) {
-        Rezultat r = RezultatBuilder.izgradi(s, odgovori, true, tacan);
-        if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
-            RezultatBrojevi b = r.brojevi();
-            return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
-                    r.tekstovi(), r.skala());
-        }
-        return r;
     }
 
     /** Ono što lično stanje traži od celog izvođenja, izračunato jednom (i za {@link #licnaZaSve}). */

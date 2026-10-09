@@ -30,7 +30,8 @@ class IzvodjenjeRestTest {
     static final NastavnickoStanje STANJE = new NastavnickoStanje(INFO, 4, 1_759_831_200_000L, Prikaz.SLAJD, 0, 0, 0, 3,
             null, null, Faza.OTVORENO, new RundaInfo(101L, 1, 1_759_831_220_000L, null, true), false, false, false,
             Ekran.NORMALAN, false, TelefonPrikaz.DUGMAD, true, false, null, 1, 1,
-            List.of(new UcesnikStanje(31L, "Ana", 0, true, true)), List.of(new RangStavka(1, 31L, "Ana", 0)));
+            List.of(new UcesnikStanje(31L, "Ana", 0, true, true)), List.of(new RangStavka(1, 31L, "Ana", 0)),
+            null, null);
 
     @Autowired MockMvc mvc;
     @MockitoBean IzvodjenjeService service;
