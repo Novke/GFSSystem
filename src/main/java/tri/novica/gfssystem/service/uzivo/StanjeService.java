@@ -161,13 +161,33 @@ public class StanjeService {
         return new JavnoStanje(iz.getId(), iz.getVerzija(), clock.millis(), iz.getStatus(),
                 iz.getPrezentacija().getNaziv(), iz.getKod(), iz.getPrikaz(),
                 trenutni == null ? null : trenutni.getTip(), iz.getEkran(), iz.isTakmicenje(), iz.getTelefonPrikaz(),
-                iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, javniRezultat(p), javnaRangLista(p));
+                iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, rezultatZaTelefon(iz, javniRezultat(p)),
+                javnaRangLista(p));
     }
 
     /**
-     * Javni rezultat trenutnog pitanja ({@code JavnoStanje.rezultat} i {@code NastavnickoStanje.javniRezultat}): samo
-     * kad su rezultati prikazani i runda je javna ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (i broj
-     * "u odstupanju", koji govori koliko je tačnih) tek kad je tačan odgovor prikazan na zatvorenom pitanju.
+     * Rezultat koji ide telefonima: javni rezultat, a dok tekst nije dozvoljen (DUGMAD bez Detalja) bez tekstova opcija,
+     * jer su to tekst pitanja (spec, kriterijum 2). Projektor ({@code NastavnickoStanje.javniRezultat}) ih zadržava: sala
+     * ih ionako vidi na platnu.
+     */
+    private static Rezultat rezultatZaTelefon(Izvodjenje iz, Rezultat javni) {
+        return javni == null || tekstDozvoljen(iz) ? javni : bezTekstovaOpcija(javni);
+    }
+
+    /** Isti rezultat, sa {@code tekst = null} u svakoj opciji (brojevi, tačnost i ostalo ostaju). */
+    static Rezultat bezTekstovaOpcija(Rezultat r) {
+        if (r.opcije() == null) return r;
+        List<RezultatOpcija> opcije = r.opcije().stream()
+                .map(o -> new RezultatOpcija(o.id(), null, o.broj(), o.tacna()))
+                .toList();
+        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala());
+    }
+
+    /**
+     * Javni rezultat trenutnog pitanja ({@code NastavnickoStanje.javniRezultat} za projektor, a kroz
+     * {@link #rezultatZaTelefon} i {@code JavnoStanje.rezultat}): samo kad su rezultati prikazani i runda je javna
+     * ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (i broj "u odstupanju", koji govori koliko je tačnih)
+     * tek kad je tačan odgovor prikazan na zatvorenom pitanju. Tekstovi opcija su uvek tu (projektor).
      */
     Rezultat javniRezultat(Podaci p) {
         Izvodjenje iz = p.iz();

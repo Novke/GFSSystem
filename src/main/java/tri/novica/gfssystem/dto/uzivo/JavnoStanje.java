@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Stanje izvođenja za telefone i javni topik (spec 4.4). {@code rezultat} samo kad su rezultati prikazani (bez
- * sakrivenih tekstova, tačnost tek posle TACAN); {@code rangLista} (top 5, bez id-jeva) samo kad je prikazana ili na
+ * sakrivenih tekstova, tačnost tek posle TACAN, tekstovi opcija samo kad je tekst dozvoljen); {@code rangLista} (top 5, bez id-jeva) samo kad je prikazana ili na
  * kraju takmičenja.
  */
 public record JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,

@@ -230,7 +230,9 @@ class NastavnickoStanjeTest {
                 st.javniRezultat().opcije());
         JavnoStanje javno = service.javno(IZ);
         assertEquals(javno.rangLista(), st.javnaRangLista());
-        assertEquals(javno.rezultat(), st.javniRezultat());
+        // DUGMAD bez Detalja: telefon bez tekstova opcija, projektor sa njima (sala ih vidi na platnu)
+        assertEquals(javno.rezultat(), StanjeService.bezTekstovaOpcija(st.javniRezultat()));
+        assertNull(javno.rezultat().opcije().get(0).tekst());
 
         // zatvoreno, tačan prikazan: tek sada poeni i tačnost
         iz.setFaza(Faza.ZATVORENO);
@@ -239,9 +241,10 @@ class NastavnickoStanjeTest {
         st = service.nastavnicko(IZ);
         assertEquals(List.of(new RangStavka(1, null, "Bojan", 800), new RangStavka(2, null, "Ana", 0)), st.javnaRangLista());
         assertEquals(Boolean.TRUE, st.javniRezultat().opcije().get(0).tacna());
+        iz.setDetaljiDozvoljeni(true);
         javno = service.javno(IZ);
         assertEquals(javno.rangLista(), st.javnaRangLista());
-        assertEquals(javno.rezultat(), st.javniRezultat());
+        assertEquals(javno.rezultat(), st.javniRezultat(), "sa Detaljima telefon dobija isti rezultat kao projektor");
     }
 
     @Test

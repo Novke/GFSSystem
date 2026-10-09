@@ -11,8 +11,9 @@ import java.util.List;
  * Ceo snimak stanja izvođenja za nastavnika (konzola, prikaz za publiku). {@code indeks}: -1 prijava, n kraj;
  * {@code rezultat} uvek (i dok nije prikazan publici) sa tačnim odgovorima i sakrivenim tekstovima označenim, a
  * {@code rangLista} (top 10) uživo, sa poenima trenutne runde. Projektor prikazuje samo javne projekcije
- * {@code javniRezultat} i {@code javnaRangLista}: tačno ono što dobija {@link JavnoStanje} ({@code rezultat} i
- * {@code rangLista}), izgrađeno istim kodom, pa važe ista pravila "ni ranije".
+ * {@code javniRezultat} i {@code javnaRangLista}: ono što dobija {@link JavnoStanje} ({@code rezultat} i
+ * {@code rangLista}), izgrađeno istim kodom, pa važe ista pravila "ni ranije". Jedina razlika: {@code javniRezultat}
+ * uvek ima tekstove opcija (sala ih vidi na platnu), a telefon ih ne dobija dok tekst nije dozvoljen.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,

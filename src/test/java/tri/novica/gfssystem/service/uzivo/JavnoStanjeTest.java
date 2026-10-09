@@ -228,12 +228,19 @@ class JavnoStanjeTest {
     }
 
     /**
-     * Projektor (nastavničko stanje) prikazuje javni rezultat i javnu rang-listu: moraju biti tačno ono što server
-     * šalje telefonima u javnom stanju, inače bi `Space` ili `L` na projektoru odali tačnost pre `C`.
+     * Projektor (nastavničko stanje) prikazuje javni rezultat i javnu rang-listu: moraju biti ono što server šalje
+     * telefonima u javnom stanju, inače bi `Space` ili `L` na projektoru odali tačnost pre `C`. Jedina razlika su
+     * tekstovi opcija: projektor ih ima uvek, telefon samo kad je tekst dozvoljen.
      */
     void projektorKaoJavno(JavnoStanje st) {
         NastavnickoStanje n = service.nastavnicko(IZ);
-        assertEquals(st.rezultat(), n.javniRezultat());
+        boolean tekstDozvoljen = iz.getTelefonPrikaz() == TelefonPrikaz.PITANJE || iz.isDetaljiDozvoljeni();
+        Rezultat projektor = n.javniRezultat();
+        assertEquals(st.rezultat(), projektor == null || tekstDozvoljen ? projektor
+                : StanjeService.bezTekstovaOpcija(projektor));
+        if (projektor != null && projektor.opcije() != null) {
+            projektor.opcije().forEach(o -> assertNotNull(o.tekst(), "projektor uvek ima tekstove opcija"));
+        }
         assertEquals(st.rangLista(), n.javnaRangLista());
     }
 
@@ -603,8 +610,10 @@ class JavnoStanjeTest {
             assertEquals(tip == TipPitanja.BROJ ? JEDINICA : null, p.jedinica());
         }
         if (!tekstDozvoljen) {
-            bezTajni(p);
-            if (st.rezultat() == null) bezTajni(st);
+            // ceo snimak, i sa prikazanim rezultatom (tekstovi opcija u rezultatu su tekst pitanja)
+            bezTajni(st);
+        } else if (faza != Faza.CEKA && st.rezultat() != null && st.rezultat().opcije() != null) {
+            st.rezultat().opcije().forEach(o -> assertTrue(o.tekst().startsWith("Tajna opcija"), o.toString()));
         }
         if (!tacanVidljiv) {
             assertNull(p.tacneOpcije());
@@ -651,9 +660,21 @@ class JavnoStanjeTest {
         iz.setRezultatiPrikazani(true);
         Rezultat r = service.javno(IZ).rezultat();
         assertEquals(1, r.ukupno());
+        // DUGMAD bez Detalja: telefon dobija brojeve, ali ne i tekstove opcija (tekst pitanja)
+        assertEquals(List.of(new RezultatOpcija(121L, null, 1, null), new RezultatOpcija(122L, null, 0, null),
+                new RezultatOpcija(123L, null, 0, null)), r.opcije());
+        bezTajni(service.javno(IZ));
+        // projektor ih ima
+        assertEquals("Tajna opcija 1", service.nastavnicko(IZ).javniRezultat().opcije().get(0).tekst());
+
+        iz.setDetaljiDozvoljeni(true);
         assertEquals(List.of(new RezultatOpcija(121L, "Tajna opcija 1", 1, null),
                 new RezultatOpcija(122L, "Tajna opcija 2", 0, null),
-                new RezultatOpcija(123L, "Tajna opcija 3", 0, null)), r.opcije());
+                new RezultatOpcija(123L, "Tajna opcija 3", 0, null)), service.javno(IZ).rezultat().opcije());
+        iz.setDetaljiDozvoljeni(false);
+        iz.setTelefonPrikaz(TelefonPrikaz.PITANJE);
+        assertEquals("Tajna opcija 2", service.javno(IZ).rezultat().opcije().get(1).tekst());
+        iz.setTelefonPrikaz(TelefonPrikaz.DUGMAD);
 
         iz.setTacanPrikazan(true);
         assertEquals(List.of(true, false, false),

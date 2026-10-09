@@ -216,6 +216,23 @@ class UzivoWebSocketIT {
         // greška ide samo pošiljaocu
         assertNull(b.nadji("/user/queue/greske", n -> true));
 
+        // ---- 5b. REZULTATI dok je otvoreno (DUGMAD, bez Detalja): telefon dobija brojeve, ne tekstove opcija;
+        // projektor (nastavničko javniRezultat) ih ima
+        JsonNode nRez = komanda(id, "REZULTATI");
+        assertEquals("Četiri", nRez.path("javniRezultat").path("opcije").path(0).path("tekst").asString());
+        for (Klijent k : List.of(a, b)) {
+            JsonNode s = k.cekaj(javno, n -> n.path("rezultat").path("ukupno").asInt() == 1, CEKANJE_MS);
+            JsonNode opcije = s.path("rezultat").path("opcije");
+            assertEquals(2, opcije.size());
+            int glasova = 0;
+            for (JsonNode o : opcije) {
+                assertPrazno(o.path("tekst"));
+                assertPrazno(o.path("tacna"));
+                glasova += o.path("broj").asInt();
+            }
+            assertEquals(1, glasova);
+        }
+
         // ---- 6. B ne sme na nastavnički topik ni na tuđe izvođenje (posebne veze; ERROR zatvara vezu)
         Klijent b2 = povezi("/public/ws", bojan.kolacic());
         b2.pretplati(nastavnickoOdr);
@@ -277,6 +294,7 @@ class UzivoWebSocketIT {
             for (String json : k.sirovo()) {
                 assertFalse(json.contains(PITANJE_TEKST), "tekst pitanja je stigao na telefon: " + json);
                 assertFalse(json.contains("Četiri"), "tekst opcije je stigao na telefon: " + json);
+                assertFalse(json.contains("\"Pet\""), "tekst opcije je stigao na telefon: " + json);
             }
         }
     }
