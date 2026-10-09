@@ -46,6 +46,12 @@ import java.util.regex.Pattern;
  * Granice po studentu (memorija i broj poruka koje server šalje ne rastu bez kraja): u jednoj sesiji isto odredište
  * (ili isti id pretplate) najviše jednom i najviše {@value #MAX_PRETPLATA} pretplata; najviše {@value #MAX_SESIJA}
  * aktivne sesije po učesniku (CONNECT preko toga je ERROR). Sesije se vode od CONNECT-a do {@link SessionDisconnectEvent}.
+ * <p>
+ * Dolazni frame-ovi se obrađuju na pool-u (bez {@code preserveReceiveOrder}), a {@link SessionDisconnectEvent} stiže
+ * sinhrono sa WebSocket niti: kad je pool zatrpan (talas prijava), kraj kratke veze može da stigne <b>pre</b> njenog
+ * CONNECT-a ili SUBSCRIBE-a. Zato se završene sesije pamte {@value #ZAVRSENE_MS} ms ({@code zavrsene}); CONNECT i SUBSCRIBE
+ * za završenu sesiju ne zauzimaju mesto (odbijaju se), upis se posle dodavanja još jednom proverava (trka sa krajem), a
+ * {@link #pocisti()} uklanja iz {@code sesije}/{@code pretplate} sve što pripada završenim sesijama (rezerva).
  */
 @Component
 @Slf4j
@@ -57,6 +63,8 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     static final int MAX_PRETPLATA = 6;
     static final int MAX_SESIJA = 3;
     static final String PREVISE_VEZA = "Previše otvorenih veza.";
+    /** Koliko dugo se pamti završena sesija (zakasneli CONNECT/SUBSCRIBE sa pool-a stižu za nekoliko sekundi). */
+    static final long ZAVRSENE_MS = 5 * 60_000;
 
     private static final String ID = "(\\d{1,18})";
     private static final Pattern STUDENT_JAVNO = Pattern.compile("/topic/izvodjenja/" + ID + "/javno");
@@ -73,6 +81,8 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     private final Map<String, Map<String, String>> pretplate = new ConcurrentHashMap<>();
     /** Aktivne sesije po učesniku (od CONNECT-a do kraja veze). */
     private final Map<Long, Set<String>> sesije = new ConcurrentHashMap<>();
+    /** Završene sesije (id -> trenutak kraja, monotoni ms), da zakasneli frame ne zauzme mesto posle kraja veze. */
+    private final Map<String, Long> zavrsene = new ConcurrentHashMap<>();
 
     @Autowired
     public UzivoChannelInterceptor(IzbaceniRegistar izbaceni) {
@@ -152,6 +162,7 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         String sesija = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
         String pretplata = SimpMessageHeaderAccessor.getSubscriptionId(m.getHeaders());
         if (sesija == null || pretplata == null) throw odbij(m, Uloga.STUDENT, StompCommand.SUBSCRIBE, odrediste);
+        if (zavrsene.containsKey(sesija)) throw zakasneli(m, ucesnikId, StompCommand.SUBSCRIBE);
         Map<String, String> svoje = pretplate.computeIfAbsent(sesija, k -> new ConcurrentHashMap<>());
         synchronized (svoje) {
             if (svoje.containsKey(pretplata) || svoje.containsValue(odrediste) || svoje.size() >= MAX_PRETPLATA) {
@@ -162,7 +173,18 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
             naplatiIliOdbij(m, ucesnikId, StompCommand.SUBSCRIBE);
             svoje.put(pretplata, odrediste);
         }
+        // trka sa krajem veze: onPrekid upisuje kraj pre brisanja, pa ako je kraj stigao u međuvremenu, vidi se ovde
+        if (zavrsene.containsKey(sesija)) {
+            pretplate.remove(sesija);
+            throw zakasneli(m, ucesnikId, StompCommand.SUBSCRIBE);
+        }
         return m;
+    }
+
+    /** Frame sesije koja je već završena (stigao sa pool-a posle {@link SessionDisconnectEvent}): ne zauzima mesto. */
+    private static MessageDeliveryException zakasneli(Message<?> m, Long ucesnikId, StompCommand komanda) {
+        log.debug("Frame završene sesije odbijen: ucesnik={}, komanda={}", ucesnikId, komanda);
+        return new MessageDeliveryException(m, "Veza je završena.");
     }
 
     private void odjaviPretplatu(Message<?> m) {
@@ -181,6 +203,7 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     private void prijaviSesiju(Message<?> m, Long ucesnikId) {
         String sesija = SimpMessageHeaderAccessor.getSessionId(m.getHeaders());
         if (sesija == null) throw odbij(m, Uloga.STUDENT, StompCommand.CONNECT, null);
+        if (zavrsene.containsKey(sesija)) throw zakasneli(m, ucesnikId, StompCommand.CONNECT);
         boolean[] primljena = {false};
         sesije.compute(ucesnikId, (k, skup) -> {
             Set<String> s = skup == null ? ConcurrentHashMap.newKeySet() : skup;
@@ -194,6 +217,18 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
             log.info("Previše otvorenih veza, CONNECT odbijen: ucesnik={}", ucesnikId);
             throw new MessageDeliveryException(m, PREVISE_VEZA);
         }
+        // trka sa krajem veze (vidi gore): kraj upisan u međuvremenu -> mesto se odmah vraća
+        if (zavrsene.containsKey(sesija)) {
+            odjaviSesiju(ucesnikId, sesija);
+            throw zakasneli(m, ucesnikId, StompCommand.CONNECT);
+        }
+    }
+
+    private void odjaviSesiju(Long ucesnikId, String sesija) {
+        sesije.computeIfPresent(ucesnikId, (k, skup) -> {
+            skup.remove(sesija);
+            return skup.isEmpty() ? null : skup;
+        });
     }
 
     /**
@@ -227,17 +262,16 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     @EventListener
     public void onPrekid(SessionDisconnectEvent e) {
         String sesija = e.getSessionId();
-        if (sesija != null) pretplate.remove(sesija);
+        long sada = satMs.getAsLong();
+        // kraj se upisuje PRE brisanja: zakasneli CONNECT/SUBSCRIBE ga posle svog upisa vidi i sam se povuče
+        if (sesija != null) {
+            zavrsene.put(sesija, sada);
+            pretplate.remove(sesija);
+        }
         Map<String, Object> atributi = SimpMessageHeaderAccessor.getSessionAttributes(e.getMessage().getHeaders());
         if (atributi != null && atributi.get(UzivoHandshakeInterceptor.ATR_UCESNIK) instanceof Long ucesnikId) {
-            long sada = satMs.getAsLong();
             kofe.computeIfPresent(ucesnikId, (k, kofa) -> kofa.puna(sada) ? null : kofa);
-            if (sesija != null) {
-                sesije.computeIfPresent(ucesnikId, (k, skup) -> {
-                    skup.remove(sesija);
-                    return skup.isEmpty() ? null : skup;
-                });
-            }
+            if (sesija != null) odjaviSesiju(ucesnikId, sesija);
         }
     }
 
@@ -246,6 +280,15 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     public void pocisti() {
         long sada = satMs.getAsLong();
         kofe.entrySet().removeIf(e -> e.getValue().puna(sada));
+        // rezerva: ništa što pripada završenoj sesiji ne ostaje upisano
+        pretplate.keySet().removeIf(zavrsene::containsKey);
+        for (Long ucesnik : sesije.keySet()) {
+            sesije.computeIfPresent(ucesnik, (k, skup) -> {
+                skup.removeIf(zavrsene::containsKey);
+                return skup.isEmpty() ? null : skup;
+            });
+        }
+        zavrsene.values().removeIf(kraj -> sada - kraj > ZAVRSENE_MS);
     }
 
     private static boolean odgovara(Pattern p, String odrediste) {
@@ -278,6 +321,10 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
     /** Broj sesija sa praćenim pretplatama i aktivnih sesija učesnika (za test čišćenja). */
     int brojPracenihSesija() {
         return pretplate.size();
+    }
+
+    int brojZavrsenih() {
+        return zavrsene.size();
     }
 
     int brojSesija(Long ucesnikId) {

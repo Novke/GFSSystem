@@ -110,7 +110,10 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - **Student caps** (same interceptor, tracked from CONNECT until `SessionDisconnectEvent`): per session each destination
   (and each subscription id) at most once and at most 6 subscriptions (the four allowed destinations fit; a duplicate is
   an ERROR); per participant at most 3 active sessions (tabs/phones; a 4th CONNECT gets ERROR `Previše otvorenih veza.`,
-  a stale session frees its slot once the server notices the dead socket via heartbeat).
+  a stale session frees its slot once the server notices the dead socket via heartbeat). Inbound frames run on a pool,
+  so a `SessionDisconnectEvent` can arrive before that session's CONNECT/SUBSCRIBE: ended session ids are remembered for
+  5 minutes, late frames of an ended session are rejected and reserve nothing, and `pocisti()` (every 60 s) drops any
+  slot or subscription still held by an ended session.
 - **Lock order (invariant):** presentation row -> izvodjenje row(s) -> slides/rounds. `PrezentacijaService` locks the
   presentation and, through `PrezentacijaPromene.zakljucaj` (implemented by `UzivoPrezentacijaPromene` ->
   `IzvodjenjeService.zakljucajAktivna`), the active runs in ascending id **before** any slide write, so a slide edit

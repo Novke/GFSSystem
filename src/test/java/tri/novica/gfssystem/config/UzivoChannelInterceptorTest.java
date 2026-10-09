@@ -341,6 +341,72 @@ class UzivoChannelInterceptorTest {
         assertEquals(0, interceptor.brojSesija(11L));
     }
 
+    // ---------------------------------------------------------------- kraj veze pre zakasnelih frame-ova (pool)
+
+    void zakasneloOdbijeno(Message<byte[]> m) {
+        MessageDeliveryException e = assertThrows(MessageDeliveryException.class, () -> posalji(m));
+        assertTrue(e.getMessage().startsWith("Veza je završena."), e.getMessage());
+    }
+
+    @Test
+    void krajPreConnectaNeZauzimaMesto() {
+        // pool je zatrpan: SessionDisconnectEvent (WebSocket nit) stiže pre CONNECT-a iste sesije
+        Map<String, Object> a = student(5, 11);
+        interceptor.onPrekid(prekid("s1", a));
+        zakasneloOdbijeno(poruka(StompCommand.CONNECT, null, "s1", a));
+        assertEquals(0, interceptor.brojSesija(11L));
+    }
+
+    @Test
+    void krajPrePretplateNeOstavljaUpis() {
+        Map<String, Object> a = student(5, 11);
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+        interceptor.onPrekid(prekid("s1", a));
+        zakasneloOdbijeno(pretplata("/topic/izvodjenja/5/javno", "s1", "a", a));
+        zakasneloOdbijeno(pretplata("/user/queue/licno", "s1", "b", a));
+        assertEquals(0, interceptor.brojPracenihSesija());
+        assertEquals(0, interceptor.brojSesija(11L));
+    }
+
+    @Test
+    void triZakasnelaKrajaNeBlokirajuCetvrtuVezu() {
+        Map<String, Object> a = student(5, 11);
+        for (String s : new String[]{"k1", "k2", "k3"}) {
+            interceptor.onPrekid(prekid(s, a));
+            zakasneloOdbijeno(poruka(StompCommand.CONNECT, null, s, a));
+            zakasneloOdbijeno(pretplata("/topic/izvodjenja/5/javno", s, "a", a));
+        }
+        assertEquals(0, interceptor.brojSesija(11L));
+        // prava veza (i još dve) prolaze
+        for (String s : new String[]{"s1", "s2", "s3"}) {
+            assertNotNull(posalji(poruka(StompCommand.CONNECT, null, s, a)), s);
+        }
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s1", "a", a)));
+        assertEquals(3, interceptor.brojSesija(11L));
+    }
+
+    @Test
+    void ciscenjeUklanjaUpiseZavrsenihSesijaIZaboravljaStareKrajeve() {
+        Map<String, Object> a = student(5, 11);
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+        assertNotNull(posalji(pretplata("/topic/izvodjenja/5/javno", "s1", "a", a)));
+        // kraj bez atributa sesije (učesnik nepoznat): mesto u `sesije` ostaje do čišćenja
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        h.setSessionId("s1");
+        interceptor.onPrekid(new SessionDisconnectEvent(new Object(),
+                MessageBuilder.createMessage(new byte[0], h.getMessageHeaders()), "s1", CloseStatus.NORMAL));
+        assertEquals(0, interceptor.brojPracenihSesija());
+        assertEquals(1, interceptor.brojSesija(11L));
+
+        interceptor.pocisti();
+        assertEquals(0, interceptor.brojSesija(11L), "rezerva: mesto završene sesije se vraća");
+        assertEquals(1, interceptor.brojZavrsenih());
+
+        sadaMs.addAndGet(UzivoChannelInterceptor.ZAVRSENE_MS + 1);
+        interceptor.pocisti();
+        assertEquals(0, interceptor.brojZavrsenih(), "stari krajevi se zaboravljaju");
+    }
+
     @Test
     void nastavnikNemaGranicuSesija() {
         for (int i = 0; i < 10; i++) {
