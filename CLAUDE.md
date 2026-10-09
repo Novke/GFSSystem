@@ -100,10 +100,13 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   `/topic/izvodjenja/X/javno`, `/user/queue/licno`, `/user/queue/greske`, `/app/izvodjenja/X/pocetno` and SEND only
   `/app/izvodjenja/X/odgovor`; a teacher may SUBSCRIBE `/topic/izvodjenja/{id}/nastavnik|javno` and
   `/app/izvodjenja/{id}/nastavnik-pocetno` and SEND nothing. Anything else -> ERROR frame and the connection closes.
-  Every student frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, DISCONNECT) takes a token from one bucket per
-  participant, shared by all their sessions (burst 10, 5/s); excess and SENDs of kicked participants (`IzbaceniRegistar`)
-  are dropped silently. DISCONNECT is never dropped and never refills; a bucket is removed only when full. Do not enable `setPreserveReceiveOrder`: Spring then only logs interceptor
-  exceptions (no ERROR frame, connection stays open).
+  Every student frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, client DISCONNECT) takes a token from one
+  bucket per participant, shared by all their sessions (burst 15, 5/s). Over the limit, SEND and heartbeats are dropped
+  silently (as are SENDs of kicked participants, `IzbaceniRegistar`), while CONNECT/SUBSCRIBE/UNSUBSCRIBE get an ERROR
+  frame and the connection closes, so the client reconnects instead of sitting without its initial state. DISCONNECT is
+  never dropped and never refills; Spring's synthetic DISCONNECT at the end of a connection (no `simpHeartbeat` header)
+  is free, so a reconnect costs 5 tokens. A bucket is removed only when full. Do not enable `setPreserveReceiveOrder`:
+  Spring then only logs interceptor exceptions (no ERROR frame, connection stays open).
 - **Publishing** (`UzivoObjavljivac`): event listeners run after commit on the request/STOMP thread and only mark the
   run dirty (never read the DB or wait for a lock there). Reading and sending happen on the publisher thread under a
   per-run lock, one `StanjeService.snimci` read per run: a command, timer, moderation or kick (`IzvodjenjePromenjeno`,

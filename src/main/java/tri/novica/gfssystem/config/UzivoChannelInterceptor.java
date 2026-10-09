@@ -33,18 +33,22 @@ import java.util.regex.Pattern;
  *       SEND ništa.</li>
  * </ul>
  * Odredišta se proveravaju celim regexom ({@code matches}, nikad {@code startsWith}), pa {@code ../}, kosa crta na kraju
- * ili novi red ne prolaze. Svaki studentov frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, DISCONNECT) troši
- * token bucket <b>po učesniku</b> (sve njegove sesije dele jednu kofu; kapacitet 10, dopuna 5/s): višak i poruke
- * izbačenih učesnika se tiho odbacuju ({@code null}), osim DISCONNECT-a, koji uvek prolazi (i kraj veze mora do
- * brokera) ali ne vraća kapacitet. Kofa se briše samo kad je puna (posle kraja sesije ili periodično), jer je puna kofa
- * ista kao nova. ACK/NACK i transakcije nisu dozvoljeni nikome; nastavnik (iza basic-auth-a) se ne meri.
+ * ili novi red ne prolaze. Svaki studentov frame (CONNECT, SUBSCRIBE, UNSUBSCRIBE, SEND, heartbeat, DISCONNECT klijenta) troši
+ * token bucket <b>po učesniku</b> (sve njegove sesije dele jednu kofu; kapacitet 15, dopuna 5/s). Višak
+ * tokena: SEND (odgovor) i heartbeat preko granice se tiho odbacuju ({@code null}), kao i SEND izbačenih učesnika;
+ * CONNECT, SUBSCRIBE i UNSUBSCRIBE preko granice su greška (ERROR frame, veza se zatvara, klijent se ponovo poveže).
+ * DISCONNECT uvek prolazi i ne vraća kapacitet; sintetički DISCONNECT na kraju veze se ne naplaćuje, pa ponovno
+ * povezivanje košta 5 tokena (CONNECT i četiri pretplate) i dva brza reload-a staju u kofu. Kofa se briše samo kad je
+ * puna (posle kraja sesije ili periodično), jer je puna kofa ista kao nova. ACK/NACK i transakcije nisu dozvoljeni
+ * nikome; nastavnik (iza basic-auth-a) se ne meri.
  */
 @Component
 @Slf4j
 public class UzivoChannelInterceptor implements ChannelInterceptor {
 
-    static final double KAPACITET = 10;
+    static final double KAPACITET = 15;
     static final double DOPUNA_PO_MS = 5 / 1000.0;
+    static final String PREVISE_PORUKA = "Previše poruka.";
 
     private static final String ID = "(\\d{1,18})";
     private static final Pattern STUDENT_JAVNO = Pattern.compile("/topic/izvodjenja/" + ID + "/javno");
@@ -84,9 +88,10 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         }
         StompCommand komanda = StompHeaderAccessor.wrap(message).getCommand();
         if (komanda == StompCommand.DISCONNECT || tip == SimpMessageType.DISCONNECT) {
-            // troši token, ali se nikad ne odbacuje: i sintetički DISCONNECT (kraj veze) mora do brokera;
-            // kofa ostaje (briše se tek kad je puna, posle kraja sesije), pa DISCONNECT ne vraća kapacitet
-            if (student) uzmiToken(ucesnikId);
+            // nikad se ne odbacuje (kraj veze mora do brokera) i ne vraća kapacitet (kofa se briše tek kad je puna).
+            // Token troši samo DISCONNECT klijenta: StompSubProtocolHandler svakom frame-u klijenta stavi simpHeartbeat,
+            // a sintetički DISCONNECT (afterSessionEnded, zatvoren tab ili reload) ga nema i ne naplaćuje se
+            if (student && zaglavlja.containsKey(SimpMessageHeaderAccessor.HEART_BEAT_HEADER)) uzmiToken(ucesnikId);
             return message;
         }
         if (uloga == null || komanda == null || (uloga == Uloga.STUDENT && !student)) {
@@ -94,7 +99,10 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
         }
         String odrediste = SimpMessageHeaderAccessor.getDestination(zaglavlja);
         return switch (komanda) {
-            case CONNECT, STOMP, UNSUBSCRIBE -> !student || uzmiToken(ucesnikId) ? message : null;
+            case CONNECT, STOMP, UNSUBSCRIBE -> {
+                if (student) naplatiIliOdbij(message, ucesnikId, komanda);
+                yield message;
+            }
             case SUBSCRIBE -> student
                     ? studentPretplata(message, atributi, ucesnikId, odrediste)
                     : nastavnikPretplata(message, odrediste);
@@ -119,7 +127,19 @@ public class UzivoChannelInterceptor implements ChannelInterceptor {
                 || jeSvoje(STUDENT_JAVNO, odrediste, izvodjenjeId)
                 || jeSvoje(STUDENT_POCETNO, odrediste, izvodjenjeId);
         if (!dozvoljeno) throw odbij(m, Uloga.STUDENT, StompCommand.SUBSCRIBE, odrediste);
-        return uzmiToken(ucesnikId) ? m : null;
+        naplatiIliOdbij(m, ucesnikId, StompCommand.SUBSCRIBE);
+        return m;
+    }
+
+    /**
+     * CONNECT i pretplate preko granice se ne odbacuju tiho (veza bi ostala bez početnog stanja ili bez CONNECTED):
+     * izuzetak -> ERROR frame i zatvorena veza, pa se klijent ponovo poveže uz svoj backoff.
+     */
+    private void naplatiIliOdbij(Message<?> m, Long ucesnikId, StompCommand komanda) {
+        if (!uzmiToken(ucesnikId)) {
+            log.info("Previše poruka, veza se zatvara: ucesnik={}, komanda={}", ucesnikId, komanda);
+            throw new MessageDeliveryException(m, PREVISE_PORUKA);
+        }
     }
 
     private Message<?> studentSlanje(Message<?> m, Map<String, Object> atributi, Long ucesnikId, String odrediste) {

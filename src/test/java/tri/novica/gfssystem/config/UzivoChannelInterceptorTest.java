@@ -26,7 +26,7 @@ import static org.mockito.Mockito.mock;
 
 /**
  * Autorizacija STOMP poruka po ulozi (bez Springa): tačna odredišta po regexu, student samo svoje izvođenje, nastavnik
- * ne šalje ništa, token bucket po učesniku (kapacitet 10, dopuna 5/s) i tiho odbacivanje poruka izbačenih učesnika.
+ * ne šalje ništa, token bucket po učesniku (kapacitet 15, dopuna 5/s) i tiho odbacivanje poruka izbačenih učesnika.
  */
 class UzivoChannelInterceptorTest {
 
@@ -63,7 +63,36 @@ class UzivoChannelInterceptorTest {
         h.setSessionAttributes(atributi);
         if (odrediste != null) h.setDestination(odrediste);
         if (komanda == StompCommand.SUBSCRIBE) h.setSubscriptionId("sub-0");
+        // StompSubProtocolHandler stavlja simpHeartbeat na svaki frame klijenta (sintetički DISCONNECT ga nema)
+        h.setHeader(SimpMessageHeaderAccessor.HEART_BEAT_HEADER, new long[]{0, 0});
         return MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
+    }
+
+    /** DISCONNECT koji Spring sam pravi na kraju veze (afterSessionEnded): bez simpHeartbeat zaglavlja. */
+    static Message<byte[]> sintetickiDisconnect(String sesija, Map<String, Object> atributi) {
+        StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        h.setSessionId(sesija);
+        h.setSessionAttributes(atributi);
+        return MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
+    }
+
+    static final int KAP = 15;
+
+    void potrosi(int n, String sesija, Map<String, Object> a) {
+        for (int i = 0; i < n; i++) {
+            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", sesija, a)), "poruka " + (i + 1));
+        }
+    }
+
+    /** Ponovno povezivanje kao u pravom telefonu: kraj stare veze, CONNECT i četiri pretplate. */
+    void ponovoPovezi(String stara, String nova, Map<String, Object> a) {
+        assertNotNull(posalji(sintetickiDisconnect(stara, a)));
+        interceptor.onPrekid(prekid(stara, a));
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, nova, a)), "CONNECT");
+        for (String o : new String[]{"/topic/izvodjenja/5/javno", "/user/queue/licno", "/user/queue/greske",
+                "/app/izvodjenja/5/pocetno"}) {
+            assertNotNull(posalji(poruka(StompCommand.SUBSCRIBE, o, nova, a)), o);
+        }
     }
 
     Message<?> posalji(Message<?> m) {
@@ -141,18 +170,13 @@ class UzivoChannelInterceptorTest {
     // ---------------------------------------------------------------- ograničenje brzine
 
     @Test
-    void jedanaestaPorukaUIstojSekundiSeTihoOdbacuje() {
+    void sesnaestaPorukaUIstojSekundiSeTihoOdbacuje() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 10; i++) {
-            Message<byte[]> m = poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a);
-            assertSame(m, posalji(m), "poruka " + (i + 1));
-        }
+        potrosi(KAP, "s1", a);
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
         sadaMs.addAndGet(999);
         // posle 999 ms: dopunjeno 4,995 tokena -> 4 poruke, peta ne
-        for (int i = 0; i < 4; i++) {
-            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
-        }
+        potrosi(4, "s1", a);
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
         sadaMs.addAndGet(1000);
         Message<byte[]> m = poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a);
@@ -160,12 +184,35 @@ class UzivoChannelInterceptorTest {
     }
 
     @Test
+    void dvaPonovnaPovezivanjaZaRedomUnutarSekundeProlaze() {
+        Map<String, Object> a = student(5, 11);
+        // prvo povezivanje + odgovor
+        assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
+        for (String o : new String[]{"/topic/izvodjenja/5/javno", "/user/queue/licno", "/user/queue/greske",
+                "/app/izvodjenja/5/pocetno"}) {
+            assertNotNull(posalji(poruka(StompCommand.SUBSCRIBE, o, "s1", a)));
+        }
+        sadaMs.addAndGet(400);
+        ponovoPovezi("s1", "s2", a);
+        sadaMs.addAndGet(400);
+        ponovoPovezi("s2", "s3", a);
+        // i odgovor posle toga
+        assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s3", a)));
+    }
+
+    @Test
+    void sintetickiDisconnectNeTrosiToken() {
+        Map<String, Object> a = student(5, 11);
+        potrosi(KAP - 1, "s1", a);
+        assertNotNull(posalji(sintetickiDisconnect("s1", a)));
+        assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)), "poslednji token ostao");
+    }
+
+    @Test
     void kofaJePoUcesnikuIDeleJeSveNjegoveSesije() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 5; i++) {
-            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
-            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
-        }
+        potrosi(8, "s1", a);
+        potrosi(7, "s2", a);
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s3", a)), "nova sesija, ista kofa");
         // drugi učesnik ima svoju kofu
@@ -178,32 +225,38 @@ class UzivoChannelInterceptorTest {
         Map<String, Object> a = student(5, 11);
         posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
         sadaMs.addAndGet(60_000);
-        for (int i = 0; i < 10; i++) {
-            assertNotNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
-        }
+        potrosi(KAP, "s1", a);
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
     }
 
     @Test
-    void pretplateSeBrojeUIstuKofu() {
+    void pretplataPrekoGraniceJeGreskaANeTihoOdbacivanje() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < KAP; i++) {
             assertNotNull(posalji(poruka(StompCommand.SUBSCRIBE, "/app/izvodjenja/5/pocetno", "s1", a)));
         }
-        assertNull(posalji(poruka(StompCommand.SUBSCRIBE, "/app/izvodjenja/5/pocetno", "s1", a)));
+        // ERROR frame i zatvorena veza: klijent se ponovo poveže (backoff), umesto da ostane bez početnog stanja
+        odbijenoPorukom(poruka(StompCommand.SUBSCRIBE, "/app/izvodjenja/5/pocetno", "s1", a));
+        odbijenoPorukom(poruka(StompCommand.CONNECT, null, "s2", a));
+        odbijenoPorukom(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a));
+        // odgovor se i dalje tiho odbacuje
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
+    }
+
+    void odbijenoPorukom(Message<byte[]> m) {
+        MessageDeliveryException e = assertThrows(MessageDeliveryException.class, () -> posalji(m));
+        assertTrue(e.getMessage().startsWith("Previše poruka."), e.getMessage());
     }
 
     @Test
     void disconnectSaPotvrdomNeVracaKapacitet() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 10; i++) {
-            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
-        }
+        potrosi(KAP, "s1", a);
         StompHeaderAccessor h = StompHeaderAccessor.create(StompCommand.DISCONNECT);
         h.setSessionId("s1");
         h.setSessionAttributes(a);
         h.setReceipt("77");   // Spring odgovori RECEIPT-om i veza ostaje otvorena
+        h.setHeader(SimpMessageHeaderAccessor.HEART_BEAT_HEADER, new long[]{0, 0});
         Message<byte[]> disconnect = MessageBuilder.createMessage(new byte[0], h.getMessageHeaders());
         assertSame(disconnect, posalji(disconnect), "DISCONNECT se nikad ne odbacuje");
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
@@ -211,11 +264,9 @@ class UzivoChannelInterceptorTest {
     }
 
     @Test
-    void disconnectTrosiToken() {
+    void disconnectKlijentaTrosiToken() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 9; i++) {
-            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
-        }
+        potrosi(KAP - 1, "s1", a);
         posalji(poruka(StompCommand.DISCONNECT, null, "s1", a));
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
     }
@@ -223,34 +274,32 @@ class UzivoChannelInterceptorTest {
     @Test
     void svakiStudentovFrameSeMeri() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 6; i++) {
             assertNotNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
             assertNotNull(posalji(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a)));
         }
         SimpMessageHeaderAccessor hb = SimpMessageHeaderAccessor.create(SimpMessageType.HEARTBEAT);
         hb.setSessionId("s1");
         hb.setSessionAttributes(a);
-        assertNotNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
-        assertNotNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
-        assertNull(posalji(poruka(StompCommand.CONNECT, null, "s1", a)));
-        assertNull(posalji(poruka(StompCommand.UNSUBSCRIBE, null, "s1", a)));
+        for (int i = 0; i < 3; i++) {
+            assertNotNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
+        }
         assertNull(posalji(MessageBuilder.createMessage(new byte[0], hb.getMessageHeaders())));
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a)));
-        // prazna kofa ne odbacuje DISCONNECT (i sintetički, na kraju veze, mora do brokera)
+        // prazna kofa ne odbacuje DISCONNECT (ni klijentov ni sintetički)
         assertNotNull(posalji(poruka(StompCommand.DISCONNECT, null, "s1", a)));
+        assertNotNull(posalji(sintetickiDisconnect("s1", a)));
     }
 
     @Test
     void krajSesijeBriseSamoPunuKofu() {
         Map<String, Object> a = student(5, 11);
-        for (int i = 0; i < 10; i++) {
-            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", a));
-        }
+        potrosi(KAP, "s1", a);
         interceptor.onPrekid(prekid("s1", a));
         assertEquals(1, interceptor.brojKofa(), "nepuna kofa ostaje: ponovno povezivanje ne dopunjuje");
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", a)));
 
-        sadaMs.addAndGet(2_000);
+        sadaMs.addAndGet(3_000);
         interceptor.onPrekid(prekid("s2", a));
         assertEquals(0, interceptor.brojKofa(), "puna kofa je ista kao nova");
     }
@@ -259,9 +308,7 @@ class UzivoChannelInterceptorTest {
     void ciscenjeBriseSamoPuneKofe() {
         posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s1", student(5, 11)));
         sadaMs.addAndGet(1_000);
-        for (int i = 0; i < 10; i++) {
-            posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", student(5, 12)));
-        }
+        potrosi(KAP, "s2", student(5, 12));
         interceptor.pocisti();
         assertEquals(1, interceptor.brojKofa());
         assertNull(posalji(poruka(StompCommand.SEND, "/app/izvodjenja/5/odgovor", "s2", student(5, 12))));

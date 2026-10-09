@@ -213,4 +213,62 @@ class UzivoObjavljivacTest {
         verify(poruke, never()).convertAndSendToUser(eq("u-4"), anyString(), any());
         verify(poruke).convertAndSend("/topic/izvodjenja/7/nastavnik", s.nastavnicko());
     }
+
+    @Test
+    void brzeKomandeZakazujuNajviseJedanZadatakPoIzvodjenju() {
+        StanjeService.Snimci s = snimci(1);
+        when(stanje.snimci(7L)).thenReturn(s);
+        when(stanje.snimci(8L)).thenReturn(snimci(2));
+
+        for (int i = 0; i < 20; i++) {
+            objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+            objavljivac.onIzbacen(new UcesnikIzbacen(7L, 100L + i));
+        }
+        objavljivac.onPromena(new IzvodjenjePromenjeno(8L));
+        assertEquals(2, zakazano.size(), "jedan zadatak po izvođenju");
+        assertEquals(2, objavljivac.brojZakazanih());
+
+        pokreniZakazano();
+
+        // poslednje stanje je objavljeno, jednim čitanjem
+        verify(stanje, times(1)).snimci(7L);
+        verify(poruke).convertAndSend("/topic/izvodjenja/7/javno", s.javno());
+        verify(stanje, times(20)).licno(eq(7L), anyLong());
+        assertEquals(0, objavljivac.brojZakazanih());
+
+        // posle obrade nova komanda opet zakazuje
+        objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+        assertEquals(1, zakazano.size());
+    }
+
+    @Test
+    void okidacTokomObradeNijeIzgubljen() {
+        StanjeService.Snimci s = snimci(1);
+        // dok zakazani zadatak čita stanje, stiže nova komanda
+        when(stanje.snimci(7L)).thenAnswer(inv -> {
+            if (zakazano.isEmpty()) objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+            return s;
+        }).thenReturn(s);
+
+        objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+        pokreniZakazano();
+        assertEquals(1, zakazano.size(), "komanda tokom obrade zakazuje novi zadatak");
+        pokreniZakazano();
+
+        verify(stanje, times(2)).snimci(7L);
+        assertTrue(objavljivac.zaprljana().isEmpty());
+        assertEquals(0, objavljivac.brojZakazanih());
+    }
+
+    @Test
+    void flushNeSkidaOznakuZakazanogZadatka() {
+        when(stanje.snimci(7L)).thenReturn(snimci(1));
+        objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+        objavljivac.flush();
+        objavljivac.onPromena(new IzvodjenjePromenjeno(7L));
+        assertEquals(1, zakazano.size(), "zadatak je još na čekanju i pokupiće novu komandu");
+        pokreniZakazano();
+        verify(stanje, times(2)).snimci(7L);
+        assertTrue(objavljivac.zaprljana().isEmpty());
+    }
 }

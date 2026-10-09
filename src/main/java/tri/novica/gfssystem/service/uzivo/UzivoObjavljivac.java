@@ -60,6 +60,8 @@ public class UzivoObjavljivac {
 
     /** Zaprljana izvođenja i šta im treba poslati; menja se samo kroz {@code compute}, skida se atomično. */
     private final Map<Long, Zahtev> prljavi = new ConcurrentHashMap<>();
+    /** Izvođenja koja već imaju zakazan (još neobrađen) zadatak objave. */
+    private final Set<Long> zakazani = ConcurrentHashMap.newKeySet();
     private final Object[] brave = napraviBrave();
 
     public UzivoObjavljivac(SimpMessageSendingOperations poruke, StanjeService stanjeService,
@@ -132,16 +134,18 @@ public class UzivoObjavljivac {
     @Scheduled(fixedRate = FLUSH_MS)
     public void flush() {
         for (Long id : List.copyOf(prljavi.keySet())) {
-            obradi(id);
+            obradi(id, false);
         }
     }
 
     /**
      * Pod bravom izvođenja: skine zahtev (ono što stigne posle čeka sledeću obradu), jednom pročita stanje i pošalje
-     * šta zahtev traži. Nikad ne baca izuzetak.
+     * šta zahtev traži. Nikad ne baca izuzetak. Zakazani zadatak ({@code odmah}) prvo skine oznaku "zakazano", pa tek
+     * onda zahtev: okidač koji stigne posle skidanja oznake zakaže novi zadatak, a onaj pre nje je već u zahtevu.
      */
-    void obradi(Long id) {
+    void obradi(Long id, boolean zakazan) {
         synchronized (brava(id)) {
+            if (zakazan) zakazani.remove(id);
             Zahtev z = prljavi.remove(id);
             if (z == null) return;
             try {
@@ -188,11 +192,20 @@ public class UzivoObjavljivac {
 
     /** Obrada odmah na niti objavljivača; ako zakazivanje ne uspe, zahtev ostaje za flush. */
     private void odmah(Long id) {
+        // najviše jedan zakazan zadatak po izvođenju: brze komande (→ → →) ne zauzimaju sve niti taskScheduler-a
+        // (deli ih sa RokPlaner-om) čekajući istu bravu; zakazan zadatak pokupi i sve što stigne do njegove obrade
+        if (!zakazani.add(id)) return;
         try {
-            izvrsilac.execute(() -> obradi(id));
+            izvrsilac.execute(() -> obradi(id, true));
         } catch (Exception ex) {
+            zakazani.remove(id);
             log.warn("Objava nije zakazana, ide u sledeći flush: izvodjenje={}", id, ex);
         }
+    }
+
+    /** Za test: broj izvođenja sa zakazanim zadatkom. */
+    int brojZakazanih() {
+        return zakazani.size();
     }
 
     private void licnoUcesniku(Long ucesnikId, LicnoStanje licno) {
