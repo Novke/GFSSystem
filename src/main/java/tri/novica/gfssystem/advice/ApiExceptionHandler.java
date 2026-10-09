@@ -2,6 +2,7 @@ package tri.novica.gfssystem.advice;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
+import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -73,6 +74,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ApiException> handlePogresanParametar(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity.badRequest().body(new ApiException("Neispravan parametar: " + ex.getName() + ".", LocalDateTime.now()));
+    }
+
+    /**
+     * Sort po polju koje entitet nema. Liste ga odbijaju ranije ({@code PageableUtil.proveri}, ista poruka); ovo je
+     * mreža da tekst izuzetka (imena klasa i polja) ne ode klijentu kao 500.
+     */
+    @ExceptionHandler(PropertyReferenceException.class)
+    ResponseEntity<ApiException> handleNepoznatoPolje(PropertyReferenceException ex) {
+        log.info("Nepoznato polje za sort: {}", ex.getPropertyName());
+        return ResponseEntity.badRequest().body(new ApiException("Neispravan parametar: sort.", LocalDateTime.now()));
     }
 
     /** Spring izuzeci sa sopstvenim statusom (nepostojeća putanja 404, pogrešna metoda 405, ...), umesto 500. */

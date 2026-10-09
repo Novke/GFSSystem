@@ -52,10 +52,16 @@ public class PredmetService {
     }
 
     public List<TipTestaInfo> findTipovePredmeta(Long id) {
+        return findTipovePredmeta(id, false);
+    }
+
+    /** Tipovi testa predmeta; {@code svi = false} samo aktivni (staro ponašanje), {@code true} i neaktivni (da se mogu ponovo uključiti). */
+    public List<TipTestaInfo> findTipovePredmeta(Long id, boolean svi) {
         Predmet predmet = predmetRepository.findById(id)
                 .orElseThrow(() -> new SystemException("Predmet ne postoji! ID = " + id, 404));
 
-        return tipTestaRepository.findAllByPredmetAndAktivanTrue(predmet)
+        return (svi ? tipTestaRepository.findAllByPredmetOrderById(predmet)
+                : tipTestaRepository.findAllByPredmetAndAktivanTrue(predmet))
                 .stream().map(tip -> mapper.map(tip, TipTestaInfo.class)).toList();
     }
 

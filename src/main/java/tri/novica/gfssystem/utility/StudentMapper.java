@@ -20,6 +20,7 @@ public interface StudentMapper {
     StudentMapper INSTANCE = Mappers.getMapper(StudentMapper.class);
 
     @Mapping(source = "grupa.naziv", target = "grupa")
+    @Mapping(source = "grupa.id", target = "grupaId")
     @Mapping(target = "aktivnosti", ignore = true)
     @Mapping(target = "polaganja", ignore = true)
     @Mapping(target = "uradjeniDomaci", ignore = true)

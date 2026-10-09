@@ -19,6 +19,8 @@ public interface PrijavaRepository extends JpaRepository<Prijava, Long> {
 
     long countBySesijaId(Long sesijaId);
 
+    long countByStatus(StatusPrijave status);
+
     long countBySesijaIdAndStatus(Long sesijaId, StatusPrijave status);
 
     boolean existsBySesijaIdAndIndeksAndGodinaAndStatus(Long sesijaId, String indeks, int godina, StatusPrijave status);

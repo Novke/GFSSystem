@@ -3,14 +3,27 @@ package tri.novica.gfssystem.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
+import tri.novica.gfssystem.dto.test.tip.UpdateTipTestaCmd;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.spec.TestSpecs;
+import tri.novica.gfssystem.utility.Brojaci;
+import tri.novica.gfssystem.utility.SkolskaGodina;
+import tri.novica.gfssystem.utility.Prolaz;
+import tri.novica.gfssystem.utility.Utility;
 import tri.novica.gfssystem.validation.TestPP;
 
 import java.util.*;
@@ -20,6 +33,10 @@ import java.util.stream.Collectors;
 @Transactional
 @RequiredArgsConstructor
 public class TestService {
+
+    /** Polja po kojima lista testova sme da se sortira ({@code PageableUtil.proveri}). */
+    public static final Set<String> SORT_POLJA = Set.of("datum", "maxPoena");
+    public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.desc("datum"));
 
     private final TestRepository testRepository;
     private final TipTestaRepository tipTestaRepository;
@@ -39,6 +56,15 @@ public class TestService {
         tipTesta.setAktivan(true);
 
         return mapper.map(tipTestaRepository.save(tipTesta), TipTestaInfo.class);
+    }
+
+    /** Preimenovanje i (de)aktivacija tipa testa; predmet tipa se ne menja. */
+    public TipTestaInfo updateTipTesta(Long id, UpdateTipTestaCmd cmd) {
+        TipTesta tip = tipTestaRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + id, 404));
+        tip.setNaziv(cmd.getNaziv().trim());
+        tip.setAktivan(cmd.getAktivan());
+        return mapper.map(tipTestaRepository.save(tip), TipTestaInfo.class);
     }
 
     public TestDetails findById(Long id) {
@@ -93,13 +119,13 @@ public class TestService {
         stat.setStandardnaDevijacija(Math.round(Math.sqrt(variance) * 100.0) / 100.0);
 
         // Prolaznost
-        int polozenih = (int) evidentirana.stream()
-                .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
-                .count();
-        int palih = evidentirana.size() - polozenih;
-        stat.setBrojPolozenih(polozenih);
-        stat.setBrojPalih(palih);
-        stat.setProcenatProlaznosti(Math.round((polozenih * 100.0 / evidentirana.size()) * 100.0) / 100.0);
+        boolean saPragom = test.getPragProlaza() != null;   // bez praga nema pojma prolaza: sve prolaznosti ostaju null
+        if (saPragom) {
+            int polozenih = (int) evidentirana.stream().filter(Prolaz::polozeno).count();
+            stat.setBrojPolozenih(polozenih);
+            stat.setBrojPalih(evidentirana.size() - polozenih);
+            stat.setProcenatProlaznosti(Math.round((polozenih * 100.0 / evidentirana.size()) * 100.0) / 100.0);
+        }
 
         // Statistika po test grupi (A, B, C, D)
         Map<TestGrupa, List<Polaganje>> poGrupi = evidentirana.stream()
@@ -120,10 +146,10 @@ public class TestService {
                         .orElse(0);
                 grupaStat.setProsecniPoeni(Math.round(grupaProsek * 100.0) / 100.0);
 
-                int grupaPolozenih = (int) grupaPolaganja.stream()
-                        .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
-                        .count();
-                grupaStat.setProcenatProlaznosti(Math.round((grupaPolozenih * 100.0 / grupaPolaganja.size()) * 100.0) / 100.0);
+                if (saPragom) {
+                    int grupaPolozenih = (int) grupaPolaganja.stream().filter(Prolaz::polozeno).count();
+                    grupaStat.setProcenatProlaznosti(Math.round((grupaPolozenih * 100.0 / grupaPolaganja.size()) * 100.0) / 100.0);
+                }
 
                 statistikaPoGrupi.add(grupaStat);
             }
@@ -150,6 +176,7 @@ public class TestService {
         test.setPredmet(predmet);
         test.setGrupa(grupa);
         test.setTipTesta(tipTesta);
+        test.setPragProlaza(cmd.getPragProlaza());
         test.setPregledan(false);
         test.generisiGrupe(cmd.getBrojGrupa());
 
@@ -162,7 +189,7 @@ public class TestService {
         Test test = testRepository.findByIdFetchPolaganja(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
 
-        mapper.map(cmd, test);
+        mapper.map(cmd, test);   // prag prolaza se ovde ne menja (PUT ga ne poznaje), vidi postaviPragProlaza
 
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
                         .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
@@ -171,6 +198,20 @@ public class TestService {
         testPP.checkUpdateTest(test);
 
         return mapper.map(testRepository.save(test), TestDetails.class);
+    }
+
+    /**
+     * Postavlja ili uklanja ({@code null}) prag prolaza. Za razliku od {@link #updateTest}, dozvoljeno je i na
+     * pregledanom (završenom) testu, jer prolaznost zavisi samo od praga i poena koji već postoje.
+     */
+    public TestDetails postaviPragProlaza(Long testId, PragProlazaCmd cmd) {
+        Test test = testRepository.findByIdFetchPolaganja(testId)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
+        test.setPragProlaza(cmd.getPragProlaza());
+        testPP.checkPragProlaza(test);
+        TestDetails details = mapper.map(testRepository.save(test), TestDetails.class);
+        details.setStatistika(izracunajStatistiku(test));   // prolaznost se menja zajedno sa pragom
+        return details;
     }
 
     public TestDetails evidentirajIspitanika(EvidentirajPolaganjeCmd cmd, Long testId) {
@@ -197,11 +238,21 @@ public class TestService {
         return mapper.map(testRepository.save(test), TestDetails.class);
     }
 
+    /** Briše test zajedno sa polaganjima (kaskada); studenti i tip testa ostaju. */
+    public void obrisi(Long id) {
+        Test test = testRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404));
+        testRepository.delete(test);
+    }
+
     public TestDetails dodajIspitanika(Long testId, Long studentId) {
         Test test = testRepository.findById(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
+
+        if (!Utility.smeNaNastavuGrupe(student, test.getGrupa()))
+            throw new SystemException("Student " + student.getIndeks() + " ne pripada grupi " + test.getGrupa().getNaziv(), 400);
 
         Polaganje polaganje = Polaganje.defaultPolaganje(test, student);
 
@@ -254,5 +305,60 @@ public class TestService {
                     return testInfo;
                 }
         ).toList();
+    }
+
+    /**
+     * Lista testova sa filterima i stranicom. {@code pageable} je već prošao {@code PageableUtil.proveri}
+     * (REST sloj). Predmet, grupa i tip dolaze u istom upitu, statistika polaganja jednim agregatnim upitom po stranici.
+     */
+    public PagedModel<TestListItem> pretraga(TestFilter f, Pageable pageable) {
+        SkolskaGodina.proveri(f.godina());
+        Specification<Test> spec = Specification.allOf(
+                TestSpecs.zaPrikaz(),
+                TestSpecs.predmet(f.predmetId()),
+                TestSpecs.grupa(f.grupaId()),
+                TestSpecs.tipTesta(f.tipTestaId()),
+                TestSpecs.godina(f.godina()),
+                TestSpecs.pregledan(f.pregledan()),
+                TestSpecs.q(f.q()),
+                TestSpecs.od(f.od()),
+                TestSpecs.doDatuma(f.doDatuma()));
+        Page<Test> strana = testRepository.findAll(spec, pageable);
+
+        List<Long> ids = strana.map(Test::getId).toList();
+        Set<Long> grupaIds = strana.stream().map(t -> t.getGrupa().getId()).collect(Collectors.toSet());
+        Map<Long, Object[]> statistika = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (Object[] red : polaganjeRepository.statistikaPoTestu(ids)) {
+                statistika.put(((Number) red[0]).longValue(), red);
+            }
+        }
+        Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+
+        return new PagedModel<>(strana.map(t -> uListItem(t, statistika.get(t.getId()), studenti)));
+    }
+
+    /** Ručno mapiranje; {@code statistika} je red {@code [testId, brojPolaganja, brojSaPoenima, prosek, brojPolozenih]} ili null. */
+    private static TestListItem uListItem(Test t, Object[] statistika, Map<Long, Long> studenti) {
+        long brojPolaganja = 0;
+        Double prosek = null;
+        Double procenatProlaznosti = null;
+        if (statistika != null) {
+            brojPolaganja = ((Number) statistika[1]).longValue();
+            long saPoenima = ((Number) statistika[2]).longValue();
+            if (saPoenima > 0) {
+                prosek = ((Number) statistika[3]).doubleValue();
+                if (t.getPragProlaza() != null) {
+                    double procenat = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
+                    procenatProlaznosti = Math.round(procenat * 100.0) / 100.0;   // 2 decimale kao u detaljima testa
+                }
+            }
+        }
+        Grupa g = t.getGrupa();
+        GrupaInfo grupa = new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), studenti.getOrDefault(g.getId(), 0L));
+        PredmetInfo predmet = new PredmetInfo(t.getPredmet().getId(), t.getPredmet().getNaziv());
+        TipTesta tip = t.getTipTesta();
+        return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv(), tip.getAktivan()), t.getMaxPoena(),
+                t.getPragProlaza(), t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
     }
 }

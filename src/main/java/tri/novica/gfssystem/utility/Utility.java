@@ -1,6 +1,8 @@
 package tri.novica.gfssystem.utility;
 
 import lombok.extern.slf4j.Slf4j;
+import tri.novica.gfssystem.entity.Grupa;
+import tri.novica.gfssystem.entity.Student;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,5 +27,18 @@ public class Utility {
             log.error("No number found in index: " + index);
             return Integer.MAX_VALUE;
         }
+    }
+
+    /**
+     * Sme li student na nastavu (test, predavanje) grupe: iz te grupe, ili iz starije generacije (ponavlja predmet,
+     * manja godina upisa). Student bez grupe nikad; grupa bez godine upisa samo svoje studente.
+     */
+    public static boolean smeNaNastavuGrupe(Student student, Grupa grupa) {
+        if (student == null || grupa == null) return false;
+        Grupa svoja = student.getGrupa();
+        if (svoja == null) return false;
+        if (svoja.getId() != null && svoja.getId().equals(grupa.getId())) return true;
+        return svoja.getGodinaUpisa() != null && grupa.getGodinaUpisa() != null
+                && svoja.getGodinaUpisa() < grupa.getGodinaUpisa();
     }
 }
