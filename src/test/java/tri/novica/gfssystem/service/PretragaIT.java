@@ -352,6 +352,24 @@ class PretragaIT {
     }
 
     @Test
+    void tipoviPredmetaSviOpcionoPrikazujeNeaktivne() throws Exception {
+        em.find(TipTesta.class, ispit.getId()).setAktivan(false);
+        em.flush();
+        em.clear();
+        String url = "/predmeti/" + mat.getId() + "/tipovi";
+        mvc.perform(get(url)).andExpect(status().isOk())                       // podrazumevano samo aktivni
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].naziv").value("Kolokvijum"))
+                .andExpect(jsonPath("$[0].aktivan").value(true));
+        mvc.perform(get(url).param("svi", "false")).andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(get(url).param("svi", "true")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.naziv == 'Ispit')].aktivan").value(false))
+                .andExpect(jsonPath("$[?(@.naziv == 'Kolokvijum')].aktivan").value(true));
+        mvc.perform(get("/predmeti/999999999/tipovi").param("svi", "true")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void testPutNeMenjaPrag() throws Exception {
         var t = em.find(tri.novica.gfssystem.entity.Test.class, t2.getId());   // t2 je odvojen posle seed-a
         t.setPragProlaza(30);   // max 100, nepregledan (TestPP ne dozvoljava PUT sa pregledan = null)
