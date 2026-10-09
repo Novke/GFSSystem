@@ -30,7 +30,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@link PrezentacijaService} nad pravom MySQL bazom (Flyway V1..V5, kao CI): ono što Mockito ne vidi. Brisanje kroz
+ * {@link PrezentacijaService} nad pravom MySQL bazom (Flyway V1..V7, kao CI): ono što Mockito ne vidi. Brisanje kroz
  * JPA ne sme ostaviti siročad u {@code pitanja}/{@code pitanje_opcije} (FK slajdovi -> pitanja nema kaskadu), zamena
  * opcija i INFO <-> PITANJE rade kroz {@code orphanRemoval}, fetch join slajdova ne duplira redove, a upit predavanja
  * za pokretanje filtrira i sortira kako treba. Bez {@code @Transactional}: svaki poziv servisa se zaista commit-uje.

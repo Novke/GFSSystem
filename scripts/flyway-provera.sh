@@ -3,7 +3,7 @@
 #   prazna         - prazna baza (kao CI gftest): očekivano sve od V1 izvršeno
 #   gf             - šema produkcione baze pre onboardinga: očekivano baseline 1 + sve migracije posle V1
 #   gf_staging     - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op) + ostale
-#   vec_migrirana  - gf_staging šema kojoj su objekti svih migracija od V3 nadalje (V3, V4, V5 uživo, V6, ...) već ručno
+#   vec_migrirana  - gf_staging šema kojoj su objekti svih migracija od V3 nadalje (V3, V4, V6, V7 uživo, ...) već ručno
 #                    primenjeni, a Flyway istorije nema (kao reset staging baze iz dump-a posle migracije):
 #                    baseline 1 + V2 i sve sledeće moraju da prođu kao no-op
 # Za svaki scenario pravi bazu fw_<scenario> u test MySQL-u, učita dump šeme (bez podataka), pokrene jar

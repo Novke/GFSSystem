@@ -55,7 +55,7 @@ public class IzvodjenjeService {
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
     static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
-    /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V5). */
+    /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V7). */
     static final String UK_AKTIVAN_KOD = "uk_izvodjenja_aktivan_kod";
 
     /** Odgovori se primaju i pitanje se zatvara tek 1 s posle roka (mreža). */

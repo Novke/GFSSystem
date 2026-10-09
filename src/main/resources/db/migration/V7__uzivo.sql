@@ -1,7 +1,8 @@
--- V5: interaktivna prezentacija uživo (cilj 4, prva celina): mediji, prezentacije, slajdovi, pitanja i opcije,
+-- V7: interaktivna prezentacija uživo (cilj 4, prva celina): mediji, prezentacije, slajdovi, pitanja i opcije,
 -- izvođenja, učesnici, runde pitanja i odgovori. Samo nove tabele (aditivno; stara slika radi nad ovom šemom).
 -- Enum kolone su varchar(20) (entiteti: @Enumerated(STRING) + @JdbcTypeCode(SqlTypes.VARCHAR)).
--- Idempotentno kao V2-V4: reset staging baze (reset-db.sh) gradi šemu iz dump-a bez flyway_schema_history, pa
+-- Prvobitno V5, prenumerisana u V7 jer se redizajn (V6 prag_prolaza) spaja pre; V5 ostaje trajna rupa.
+-- Idempotentno kao V2-V4 i V6: reset staging baze (reset-db.sh) gradi šemu iz dump-a bez flyway_schema_history, pa
 -- Flyway radi baseline 1 i ponovo izvršava V2 i dalje. Baza koja ove tabele već ima ne sme da pukne, zato je svaka
 -- tabela CREATE TABLE IF NOT EXISTS (DDL inače isti; redosled poštuje strane ključeve).
 

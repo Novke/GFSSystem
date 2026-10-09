@@ -84,7 +84,7 @@ the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/
 
 Kahoot-like lecture: the teacher builds a presentation (INFO and question slides), starts a run (`izvodjenje`, 6-digit
 code), students join from their phones and answer live. Code lives in `entity/uzivo`, `repository/uzivo`, `service/uzivo`,
-`rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V5__uzivo.sql` (idempotent).
+`rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V7__uzivo.sql` (idempotent; originally V5, renumbered after the redesign's V6).
 - **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
   `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
 - **Public entry points, exactly these three:** `/public/uzivo/**` (`PublicUzivoRest`: info, `ja`, join with the
@@ -159,16 +159,15 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4 and V6 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4, V6 and V7 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
-- **Versions:** `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`). `V5` = uživo (presentations, runs, participants,
-  answers, media), idempotent; it is renumbered to `V7` before merging, after which `V5` stays a permanent gap (never reuse it).
-  **Next free version: `V8`.**
+- **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
+  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. **Next free version: `V8`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
-  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with V3/V4/V6 objects already applied, no history). Run
+  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history). Run
   `./mvnw -B -DskipTests package` first; it uses the test MySQL on 3307.
 
 ## List and overview API conventions
