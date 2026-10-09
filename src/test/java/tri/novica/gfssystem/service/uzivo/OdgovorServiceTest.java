@@ -297,15 +297,28 @@ class OdgovorServiceTest {
     }
 
     @Test
-    void ponovoOtvorenaRundaDajeNajmanjePoena() {
-        // O na zatvorenu rundu: rok i preostalo obrisani, trajanje ostaje -> kasni odgovor = najmanje poena
+    void ponovoOtvorenaRundaBezBrzine() {
+        // O na zatvorenu rundu briše rok, preostalo i trajanje: poeni ne zavise od brzine, vreme od otvaranja (rang)
         runda.setRok(null);
         runda.setPreostaloMs(null);
+        runda.setTrajanjeMs(null);
         clock.pomeri(Duration.ofSeconds(120));
         service.odgovori(IZ, ANA, opcije(11L));
         Odgovor o = sacuvan();
-        assertEquals(20_000, o.getVremeMs());
-        assertEquals(500, o.getPoeni());
+        assertEquals(130_000, o.getVremeMs());
+        assertEquals(1000, o.getPoeni());
+    }
+
+    @Test
+    void ponovoOtvorenaRundaPaTajmerBezBrzine() {
+        // ponovo otvorena (bez trajanja), pa T u T0+60 s (rok T0+90 s); odgovor u T0+85 s i dalje 1000
+        runda.setRok(T0.plusSeconds(90));
+        runda.setTrajanjeMs(null);
+        clock.pomeri(Duration.ofSeconds(75));
+        service.odgovori(IZ, ANA, opcije(11L));
+        Odgovor o = sacuvan();
+        assertEquals(1000, o.getPoeni());
+        assertEquals(85_000, o.getVremeMs());
     }
 
     @Test

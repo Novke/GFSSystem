@@ -326,10 +326,12 @@ public class IzvodjenjeService {
                     otvori(iz, s);
                     return;
                 }
-                // ponovo otvara istu rundu, bez tajmera; tačan odgovor se ne sme videti dok se odgovara
+                // ponovo otvara istu rundu, bez tajmera i bez trajanja (poeni više ne zavise od brzine, ni kad se
+                // posle pokrene T); tačan odgovor se ne sme videti dok se odgovara
                 r.setZatvoreno(null);
                 r.setRok(null);
                 r.setPreostaloMs(null);
+                r.setTrajanjeMs(null);
                 iz.setFaza(Faza.OTVORENO);
                 iz.setRezultatiPrikazani(false);
                 iz.setTacanPrikazan(false);

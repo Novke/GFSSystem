@@ -547,6 +547,10 @@ class JavnoStanjeTest {
         iz.setTacanPrikazan(tacan);
         iz.setRangListaPrikazana(rang);
         Ucesnik ana = ucesnik(31L, "Ana");
+        // Bojan ima 300 sa ranijeg slajda: to se uvek računa
+        Ucesnik bojan = ucesnik(32L, "Bojan");
+        Slajd raniji = pitanja.get(tip == TipPitanja.JEDAN_TACAN ? TipPitanja.ANKETA : TipPitanja.JEDAN_TACAN);
+        odgovor(runda(201L, raniji, 1), bojan, 300, true);
         if (faza != Faza.CEKA) {
             Odgovor o = odgovor(trenutna(), ana, 750, true);
             switch (tip) {
@@ -596,6 +600,18 @@ class JavnoStanjeTest {
         }
         if (!rezultati) assertNull(st.rezultat());
         if (!rang) assertNull(st.rangLista());
+
+        // poeni, mesto i rang-lista ne odaju tačnost: Anin tačan odgovor u trenutnoj rundi se računa tek posle TACAN
+        boolean anaSeRacuna = faza != Faza.CEKA && tacanVidljiv;
+        assertEquals(anaSeRacuna ? 750 : 0, l.poeni());
+        assertEquals(anaSeRacuna ? 1 : 2, l.mesto());
+        assertEquals(300, service.licno(IZ, 32L).poeni());
+        assertEquals(service.licnaZaSve(IZ).get(31L), l);
+        if (rang) {
+            assertEquals(anaSeRacuna
+                    ? List.of(new RangStavka(1, null, "Ana", 750), new RangStavka(2, null, "Bojan", 300))
+                    : List.of(new RangStavka(1, null, "Bojan", 300), new RangStavka(2, null, "Ana", 0)), st.rangLista());
+        }
     }
 
     // ---------------------------------------------------------------- rezultat
@@ -711,6 +727,7 @@ class JavnoStanjeTest {
     void rangListaTop5BezIdJeva() {
         sedamUcesnika();
         iz.setRangListaPrikazana(true);
+        iz.setTacanPrikazan(true);   // poeni trenutne runde se vide tek posle TACAN
 
         List<RangStavka> rang = service.javno(IZ).rangLista();
 
@@ -728,6 +745,8 @@ class JavnoStanjeTest {
         iz.setFaza(null);
         iz.setTrenutnaRundaId(null);
         JavnoStanje st = service.javno(IZ);
+        // na kraju nema trenutne runde: računa se sve, i poslednje pitanje bez TACAN
+        assertEquals(new RangStavka(1, null, "Ana", 700), st.rangLista().get(0));
         assertEquals(5, st.rangLista().size());
         assertNull(st.pitanje());
         assertNull(st.slajdTip());
@@ -745,6 +764,10 @@ class JavnoStanjeTest {
         odgovor(trenutna(), ana, 100, true);
         iz.setRangListaPrikazana(true);
 
+        // pre TACAN: stara runda više ne važi, a nova se još ne vidi
+        assertEquals(List.of(new RangStavka(1, null, "Ana", 0), new RangStavka(2, null, "Bojan", 0)),
+                service.javno(IZ).rangLista());
+        iz.setTacanPrikazan(true);
         assertEquals(List.of(new RangStavka(1, null, "Ana", 100), new RangStavka(2, null, "Bojan", 0)),
                 service.javno(IZ).rangLista());
         assertEquals(0, service.licno(IZ, 32L).poeni());
@@ -758,11 +781,12 @@ class JavnoStanjeTest {
         // Ceca je odgovorila u trenutnoj rundi tačno (500), Hana nije odgovarala
         ucesnik(40L, "Hana");
 
+        // pre TACAN poeni trenutne runde se ne vide (skok poena bi odao tačnost): svi 0, mesto po prijavi
         LicnoStanje ceca = service.licno(IZ, 33L);
         assertEquals(17, ceca.verzija());
         assertEquals(33L, ceca.ucesnikId());
         assertEquals("Ceca", ceca.ime());
-        assertEquals(500, ceca.poeni());
+        assertEquals(0, ceca.poeni());
         assertEquals(3, ceca.mesto());
         assertEquals(8, ceca.brojUcesnika());
         assertFalse(ceca.izbacen());
@@ -774,7 +798,11 @@ class JavnoStanjeTest {
         assertEquals(new LicniOdgovor(RUNDA, false, null, null), hana.odgovor());
 
         iz.setTacanPrikazan(true);
-        assertEquals(new LicniOdgovor(RUNDA, true, true, 500), service.licno(IZ, 33L).odgovor());
+        ceca = service.licno(IZ, 33L);
+        assertEquals(500, ceca.poeni());
+        assertEquals(3, ceca.mesto());
+        assertEquals(new LicniOdgovor(RUNDA, true, true, 500), ceca.odgovor());
+        assertEquals(0, service.licno(IZ, 40L).poeni());
         assertEquals(new LicniOdgovor(RUNDA, false, null, null), service.licno(IZ, 40L).odgovor());
     }
 

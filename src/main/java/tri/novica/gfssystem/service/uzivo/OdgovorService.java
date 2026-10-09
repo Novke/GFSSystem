@@ -29,10 +29,10 @@ import java.util.stream.Collectors;
  *
  * <p><b>Vreme odgovora</b> ({@code vremeMs}, za poene i rang) ne računa pauze tajmera. Kad runda ima trajanje (tajmer
  * od otvaranja), {@code trajanjeMs - preostalo} je vreme koje je tajmer zaista radio: preostalo je {@code rok - sada}
- * dok tajmer radi, {@code preostaloMs} dok je pauziran, a 0 kad tajmer više ne radi (runda ponovo otvorena posle
- * zatvaranja: najmanje poena); ±10 s menja trajanje i preostalo za isto, pa razlika ostaje tačna. Rezultat je u
- * {@code [0, trajanjeMs]}. Bez trajanja (pitanje bez ograničenja, i kad je tajmer pokrenut naknadno) vreme je
- * {@code sada - otvoreno}; tada poeni ne zavise od brzine (1000), a vreme služi samo za rang pri jednakim poenima.
+ * dok tajmer radi, a {@code preostaloMs} dok je pauziran; ±10 s menja trajanje i preostalo za isto, pa razlika ostaje
+ * tačna. Rezultat je u {@code [0, trajanjeMs]}. Bez trajanja (pitanje bez ograničenja, tajmer pokrenut naknadno, i
+ * ponovo otvorena runda, kojoj O briše trajanje) vreme je {@code sada - otvoreno}; tada poeni ne zavise od brzine
+ * (1000), a vreme služi samo za rang pri jednakim poenima.
  */
 @Service
 @RequiredArgsConstructor
@@ -137,7 +137,7 @@ public class OdgovorService {
         } else if (r.getPreostaloMs() != null) {
             preostalo = r.getPreostaloMs();
         } else {
-            preostalo = 0;
+            preostalo = 0;   // trajanje bez roka i bez pauze se ne dešava (O briše trajanje); odbrambeno: najmanje poena
         }
         return Math.min(Math.max(trajanje - preostalo, 0), trajanje);
     }

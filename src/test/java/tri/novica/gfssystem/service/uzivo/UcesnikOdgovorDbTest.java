@@ -219,6 +219,41 @@ class UcesnikOdgovorDbTest {
         assertEquals(0, jdbc.queryForObject("select count(*) from ucesnici where izvodjenje_id = ?", Long.class, id));
     }
 
+    /**
+     * Ponovo otvoreno pitanje sa ograničenjem (O, O, O), pa T: poeni ne zavise od brzine ni pre ni posle tajmera
+     * (ponovo otvorena runda nema trajanje), i ne mogu biti bolji od ranog odgovora pre zatvaranja.
+     */
+    @Test
+    void ponovoOtvorenoPitanjePaTajmer() {
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Tajmer", null));
+        prezentacije.add(p.id());
+        prezentacijaService.izmeni(p.id(), new UpdatePrezentacijaCmd("Tajmer", null, true, TelefonPrikaz.DUGMAD, true));
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
+                new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koja sila?", null, 20,
+                        List.of(new OpcijaCmd("Gravitacija", true), new OpcijaCmd("Trenje", false)),
+                        null, null, null, null, null, null, null, null)), null);
+        Long tacna = prezentacijaService.detalji(p.id()).slajdovi().get(0).pitanje().opcije().get(0).id();
+        IzvodjenjeInfo info = izvodjenjeService.pokreni(p.id(), new PokreniCmd(false, null, null));
+        Long id = info.id();
+        Long ana = ucesnikService.prijavi(info.kod(), "Ana").info().ucesnikId();
+        Long bojan = ucesnikService.prijavi(info.kod(), "Bojan").info().ucesnikId();
+
+        k(id, TipKomande.SLEDECI);
+        k(id, TipKomande.OTVORI_ZATVORI);
+        Long rundaId = stanjeService.javno(id).pitanje().rundaId();
+        k(id, TipKomande.OTVORI_ZATVORI);
+        k(id, TipKomande.OTVORI_ZATVORI);
+        assertNull(jdbc.queryForObject("select trajanje_ms from pitanje_runde where id = ?", Long.class, rundaId));
+        odgovorService.odgovori(id, ana, new OdgovorCmd(rundaId, List.of(tacna), null, null, null));
+
+        k(id, TipKomande.TAJMER);
+        assertNull(jdbc.queryForObject("select trajanje_ms from pitanje_runde where id = ?", Long.class, rundaId));
+        odgovorService.odgovori(id, bojan, new OdgovorCmd(rundaId, List.of(tacna), null, null, null));
+
+        assertEquals(List.of(1000, 1000), jdbc.queryForList(
+                "select poeni from odgovori where runda_id = ? order by ucesnik_id", Integer.class, rundaId));
+    }
+
     /** Čeka dok neka transakcija ne čeka na zaključan red (InnoDB), najviše 20 s. */
     void cekajNaZakljucavanje() throws InterruptedException {
         long kraj = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);

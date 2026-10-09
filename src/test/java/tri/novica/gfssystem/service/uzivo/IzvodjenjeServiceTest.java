@@ -834,6 +834,27 @@ class IzvodjenjeServiceTest {
         assertEquals(1, runde.size());
     }
 
+    @Test
+    void ponovoOtvorenaRundaJeBezTrajanjaIPosleTajmera() {
+        // ponovo otvorena runda nema trajanje (poeni ne zavise od brzine), ni kad se posle pokrene tajmer: inače bi
+        // novi rok od 30 s sa starim trajanjem od 20 s dao ranim odgovorima pun broj poena po brzini
+        idiNa(1);
+        k(TipKomande.OTVORI_ZATVORI);
+        PitanjeRunda r = runda();
+        assertEquals(20_000L, r.getTrajanjeMs());
+        clock.pomeri(Duration.ofSeconds(5));
+        k(TipKomande.OTVORI_ZATVORI);
+        k(TipKomande.OTVORI_ZATVORI);
+        assertEquals(Faza.OTVORENO, iz.getFaza());
+        assertNull(r.getTrajanjeMs());
+
+        k(TipKomande.TAJMER);
+        assertEquals(sada().plusSeconds(30), r.getRok());
+        assertNull(r.getTrajanjeMs());
+        k(TipKomande.TAJMER_PLUS);
+        assertNull(r.getTrajanjeMs());
+    }
+
     // ---------------------------------------------------------------- 9. završetak
 
     @Test

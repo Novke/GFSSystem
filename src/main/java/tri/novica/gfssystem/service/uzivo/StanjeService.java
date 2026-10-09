@@ -93,7 +93,8 @@ public class StanjeService {
     /**
      * Javno stanje (spec 4.4), jezgro "ni ranije": pre otvaranja pitanja samo {tip, faza}; tekstovi tek kad su
      * dozvoljeni, tačan odgovor tek kad je prikazan na zatvorenom pitanju, rezultat tek kad je prikazan, rang-lista
-     * (top 5, bez id-jeva) tek kad je prikazana ili na kraju takmičenja. Izbačeni se ne računaju nigde.
+     * (top 5, bez id-jeva) tek kad je prikazana ili na kraju takmičenja, i bez poena trenutne runde pre TACAN
+     * ({@link #javniBodovniOdgovori}). Izbačeni se ne računaju nigde.
      */
     public JavnoStanje javno(Long izvodjenjeId) {
         return javno(ucitaj(izvodjenjeId));
@@ -145,7 +146,7 @@ public class StanjeService {
         }
         List<RangStavka> rang = null;
         if (iz.isRangListaPrikazana() || (iz.getPrikaz() == Prikaz.KRAJ && iz.isTakmicenje())) {
-            rang = RangLista.izracunaj(p.ucesnici(), bodovniOdgovori(p)).stream()
+            rang = RangLista.izracunaj(p.ucesnici(), javniBodovniOdgovori(p)).stream()
                     .limit(RANG_JAVNO)
                     .map(st -> new RangStavka(st.mesto(), null, st.ime(), st.poeni()))
                     .toList();
@@ -226,7 +227,7 @@ public class StanjeService {
 
     private LicniPodaci licniPodaci(Podaci p) {
         Izvodjenje iz = p.iz();
-        List<Odgovor> bodovni = bodovniOdgovori(p);
+        List<Odgovor> bodovni = javniBodovniOdgovori(p);
         Map<Long, Integer> mesto = new HashMap<>();
         if (iz.isTakmicenje()) {
             RangLista.izracunaj(p.ucesnici(), bodovni).forEach(st -> mesto.put(st.ucesnikId(), st.mesto()));
@@ -327,6 +328,18 @@ public class StanjeService {
         Set<Long> vazece = new HashSet<>();
         poslednja.values().forEach(r -> vazece.add(r.getId()));
         return p.odgovori().stream().filter(o -> vazece.contains(o.getRunda().getId())).toList();
+    }
+
+    /**
+     * Bodovni odgovori za ono što vide telefoni i projektor (lični poeni i mesto, javna rang-lista): odgovori trenutne
+     * runde ulaze tek kad je tačan odgovor prikazan, inače bi skok poena odmah posle odgovora odao tačnost. Ranije
+     * runde i slajdovi se računaju uvek; nastavničko stanje koristi {@link #bodovniOdgovori} (vidi sve uživo).
+     */
+    List<Odgovor> javniBodovniOdgovori(Podaci p) {
+        List<Odgovor> bodovni = bodovniOdgovori(p);
+        Long trenutna = p.iz().getTrenutnaRundaId();
+        if (trenutna == null || tacanVidljiv(p.iz())) return bodovni;
+        return bodovni.stream().filter(o -> !trenutna.equals(o.getRunda().getId())).toList();
     }
 
     /** Slajd runde; posle brisanja slajda ({@code slajdId = null}) slajd iz snimka, pa runde istog slajda ostaju zajedno. */
