@@ -3,8 +3,8 @@
 #   prazna         - prazna baza (kao CI gftest): očekivano sve od V1 izvršeno
 #   gf             - šema produkcione baze pre onboardinga: očekivano baseline 1 + sve migracije posle V1
 #   gf_staging     - šema staging baze (onboarding već postoji): očekivano baseline 1 + V2 (no-op) + ostale
-#   vec_migrirana  - gf_staging šema kojoj su V3/V4 objekti već ručno primenjeni, a Flyway istorije nema (kao reset
-#                    staging baze iz dump-a posle migracije): baseline 1 + V2..V4 moraju da prođu kao no-op
+#   vec_migrirana  - gf_staging šema kojoj su V3/V4/V6 objekti već ručno primenjeni, a Flyway istorije nema (kao reset
+#                    staging baze iz dump-a posle migracije): baseline 1 + V2..V6 moraju da prođu kao no-op
 # Za svaki scenario pravi bazu fw_<scenario> u test MySQL-u, učita dump šeme (bez podataka), pokrene jar
 # (ddl-auto=validate) i ispiše flyway_schema_history. Izlaz != 0 ako bilo koji scenario ne startuje.
 #
@@ -68,8 +68,8 @@ for s in "${SCENARIJI[@]}"; do
     mysql_exec "$db" < "$dump"
   fi
   if [[ "$s" == "vec_migrirana" ]]; then
-    # objekti iz V3 i V4 već postoje, ali bez flyway_schema_history
-    for m in V3 V4; do
+    # objekti iz V3, V4 i V6 već postoje, ali bez flyway_schema_history
+    for m in V3 V4 V6; do
       mysql_exec "$db" < "$MIGRATIONS"/${m}__*.sql
     done
   fi

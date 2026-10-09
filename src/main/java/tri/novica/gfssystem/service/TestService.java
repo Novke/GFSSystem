@@ -22,6 +22,7 @@ import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.repository.spec.TestSpecs;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.SkolskaGodina;
+import tri.novica.gfssystem.utility.Prolaz;
 import tri.novica.gfssystem.utility.Utility;
 import tri.novica.gfssystem.validation.TestPP;
 
@@ -118,13 +119,13 @@ public class TestService {
         stat.setStandardnaDevijacija(Math.round(Math.sqrt(variance) * 100.0) / 100.0);
 
         // Prolaznost
-        int polozenih = (int) evidentirana.stream()
-                .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
-                .count();
-        int palih = evidentirana.size() - polozenih;
-        stat.setBrojPolozenih(polozenih);
-        stat.setBrojPalih(palih);
-        stat.setProcenatProlaznosti(Math.round((polozenih * 100.0 / evidentirana.size()) * 100.0) / 100.0);
+        boolean saPragom = test.getPragProlaza() != null;   // bez praga nema pojma prolaza: sve prolaznosti ostaju null
+        if (saPragom) {
+            int polozenih = (int) evidentirana.stream().filter(Prolaz::polozeno).count();
+            stat.setBrojPolozenih(polozenih);
+            stat.setBrojPalih(evidentirana.size() - polozenih);
+            stat.setProcenatProlaznosti(Math.round((polozenih * 100.0 / evidentirana.size()) * 100.0) / 100.0);
+        }
 
         // Statistika po test grupi (A, B, C, D)
         Map<TestGrupa, List<Polaganje>> poGrupi = evidentirana.stream()
@@ -145,10 +146,10 @@ public class TestService {
                         .orElse(0);
                 grupaStat.setProsecniPoeni(Math.round(grupaProsek * 100.0) / 100.0);
 
-                int grupaPolozenih = (int) grupaPolaganja.stream()
-                        .filter(p -> Boolean.TRUE.equals(p.getPolozio()))
-                        .count();
-                grupaStat.setProcenatProlaznosti(Math.round((grupaPolozenih * 100.0 / grupaPolaganja.size()) * 100.0) / 100.0);
+                if (saPragom) {
+                    int grupaPolozenih = (int) grupaPolaganja.stream().filter(Prolaz::polozeno).count();
+                    grupaStat.setProcenatProlaznosti(Math.round((grupaPolozenih * 100.0 / grupaPolaganja.size()) * 100.0) / 100.0);
+                }
 
                 statistikaPoGrupi.add(grupaStat);
             }
@@ -175,6 +176,7 @@ public class TestService {
         test.setPredmet(predmet);
         test.setGrupa(grupa);
         test.setTipTesta(tipTesta);
+        test.setPragProlaza(cmd.getPragProlaza());
         test.setPregledan(false);
         test.generisiGrupe(cmd.getBrojGrupa());
 
@@ -188,6 +190,8 @@ public class TestService {
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
 
         mapper.map(cmd, test);
+        // ModelMapper preskače null, pa bi se prag nikad ne mogao ukloniti: PUT zaglavlja uvek postavlja prag (null = bez praga)
+        test.setPragProlaza(cmd.getPragProlaza());
 
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
                         .orElseThrow(() -> new SystemException("Tip testa ne postoji! ID = " + cmd.getTipTestaId(), 404));
@@ -332,7 +336,7 @@ public class TestService {
             long saPoenima = ((Number) statistika[2]).longValue();
             if (saPoenima > 0) {
                 prosek = ((Number) statistika[3]).doubleValue();
-                procenatProlaznosti = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
+                if (t.getPragProlaza() != null) procenatProlaznosti = 100.0 * ((Number) statistika[4]).longValue() / saPoenima;
             }
         }
         Grupa g = t.getGrupa();
@@ -340,6 +344,6 @@ public class TestService {
         PredmetInfo predmet = new PredmetInfo(t.getPredmet().getId(), t.getPredmet().getNaziv());
         TipTesta tip = t.getTipTesta();
         return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv(), tip.getAktivan()), t.getMaxPoena(),
-                t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
+                t.getPragProlaza(), t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
     }
 }

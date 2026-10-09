@@ -45,12 +45,16 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
     /**
      * Statistika polaganja po testu, za stranicu liste. Redovi: {@code [testId, brojPolaganja, brojSaPoenima,
      * prosekPoena, brojPolozenih]}; prosek i položeni računaju samo polaganja sa {@code ostvareniPoeni != null}
-     * (prolaz je {@code polozio = true}), a testovi bez polaganja se ne vraćaju.
+     * (prolaz po {@link tri.novica.gfssystem.utility.Prolaz}: test sa pragom, poeni >= prag, bez prepisivanja; {@code polozio}
+     * se ignoriše), a testovi bez polaganja se ne vraćaju.
      */
     @Query("""
-            select p.test.id, count(p), count(p.ostvareniPoeni), avg(p.ostvareniPoeni),
-                   coalesce(sum(case when p.ostvareniPoeni is not null and p.polozio = true then 1 else 0 end), 0)
-            from Polaganje p where p.test.id in :ids group by p.test.id""")
+            select t.id, count(p), count(p.ostvareniPoeni), avg(p.ostvareniPoeni),
+                   coalesce(sum(case when p.ostvareniPoeni is not null and t.pragProlaza is not null
+                                      and p.ostvareniPoeni >= t.pragProlaza
+                                      and (p.prepisivao is null or p.prepisivao = false)
+                                     then 1 else 0 end), 0)
+            from Polaganje p join p.test t where t.id in :ids group by t.id""")
     List<Object[]> statistikaPoTestu(@Param("ids") Collection<Long> ids);
 
     /**

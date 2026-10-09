@@ -17,6 +17,9 @@ public class UpdateTestCmd {
     @NotNull(message = "Nije postavljen maksimalan broj poena")
     @Min(value = 1, message = "Maksimalan broj poena mora biti veci od 0")
     private Integer maxPoena;
+    /** Opcioni prag prolaza u poenima; null = bez praga. Gornja granica (maxPoena) se proverava u {@code TestPP}. */
+    @Min(value = 0, message = "Prag prolaza mora biti između 0 i maksimalnog broja poena.")
+    private Integer pragProlaza;
     @NotNull(message = "Nije postavljen tip testa")
     private Long tipTestaId;
 }

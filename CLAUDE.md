@@ -122,14 +122,15 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4 and V6 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
-- **Next free version: `V6`.** `V5` is reserved by the parallel "uživo" (live) branch; do not take it.
+- **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
+  `V7` = the parallel "uživo" (live) project (it renumbers to V7 and merges after this branch). **Next free version: `V8`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
-  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with V3/V4 objects already applied, no history). Run
+  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with V3/V4/V6 objects already applied, no history). Run
   `./mvnw -B -DskipTests package` first; it uses the test MySQL on 3307.
 
 ## List and overview API conventions
@@ -159,6 +160,9 @@ New list endpoints follow one pattern (see `PredavanjeService.pretraga` as the r
 - Students: `GET /studenti/{id}/predmeti` and `/studenti/{studentId}/predmet/{predmetId}` (per-subject student card);
   notes `GET|POST /studenti/{studentId}/beleske`, `PUT|DELETE /beleske/{id}` (Flyway `V4`).
 - Homework: `POST /domaci/evidentiraj`, `POST /domaci/{id}/oslobodi`.
+- Pass rate: optional per-test `pragProlaza` (points, `testovi.prag_prolaza`; set via `POST /test` and `PUT /test/{id}`, validated 0..maxPoena).
+  No threshold = no pass concept (`procenatProlaznosti`, `brojPolozenih`, `brojPalih` are null). Rule in `utility/Prolaz` (poeni >= prag, not
+  `prepisivao`; stored `polozio` is ignored); `PolaganjeRepository.statistikaPoTestu` mirrors it in JPQL, keep them in sync.
 
 ## Frontend
 

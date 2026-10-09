@@ -220,7 +220,7 @@ class PretragaRestTest {
 
     @Test
     void testOblikOdgovora() throws Exception {
-        TestListItem bez = new TestListItem(7L, LocalDate.of(2025, 10, 14), new TipTestaInfo(4L, "Kolokvijum"), 50, false,
+        TestListItem bez = new TestListItem(7L, LocalDate.of(2025, 10, 14), new TipTestaInfo(4L, "Kolokvijum"), 50, null, false,
                 new PredmetInfo(1L, "Matematika"), new GrupaInfo(2L, "GD-2025", 2025, 30L), 0, null, null);
         when(testovi.pretraga(any(), any())).thenReturn(new PagedModel<>(
                 new PageImpl<>(List.of(bez), PageRequest.of(0, 25), 1)));

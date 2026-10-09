@@ -90,6 +90,7 @@ class PretragaIT {
         ispit = tip("Ispit", mat);
         fizTip = tip("Fizika kolokvijum", fiz);
         t1 = test(kolokvijum, mat, ga, LocalDate.of(2024, 11, 20), 50, true);
+        t1.setPragProlaza(25);   // jedini test iz seed-a sa pragom; t2-t4 nemaju pa nemaju ni prolaznost
         t2 = test(ispit, mat, gb, LocalDate.of(2025, 10, 15), 100, null);
         t3 = test(fizTip, fiz, ga, LocalDate.of(2025, 9, 15), 30, false);
         t4 = test(kolokvijum, mat, gc, LocalDate.of(2025, 12, 1), 20, false);
@@ -212,10 +213,71 @@ class PretragaIT {
         assertNull(i3.getProsek());
         assertNull(i3.getProcenatProlaznosti());
 
-        TestListItem i4 = nadjiT(r, t4);                         // poeni, polozio = null: nije položio
+        TestListItem i4 = nadjiT(r, t4);                         // poeni, ali bez praga prolaza: nema prolaznosti
         assertEquals(1, i4.getBrojPolaganja());
         assertEquals(10.0, i4.getProsek(), 1e-9);
-        assertEquals(0.0, i4.getProcenatProlaznosti(), 1e-9);
+        assertNull(i4.getPragProlaza());
+        assertNull(i4.getProcenatProlaznosti());
+        assertEquals(25, i1.getPragProlaza());
+    }
+
+    @Test
+    void testProlazPoPragu() {
+        tri.novica.gfssystem.entity.Test t = test(em.find(TipTesta.class, kolokvijum.getId()), mat, gb, LocalDate.of(2025, 12, 5), 40, false);
+        t.setPragProlaza(20);
+        Student s6 = student("Fedja", "Fedić", "GD61", 2024, gb, null, null);
+        Student s7 = student("Gaga", "Gagić", "GD62", 2024, gb, null, null);
+        Student s8 = student("Hana", "Hanić", "GD63", 2024, gb, null, null);
+        polaganje(t, s1, 20.0, null);                        // tačno na pragu: prolazi (polozio = null)
+        polaganje(t, s2, 19.5, true);                        // ispod praga: pada iako je polozio = true
+        polaganje(t, s3, 40.0, true).setPrepisivao(true);    // prepisivao: pada uprkos poenima
+        polaganje(t, s6, null, true);                        // bez poena: ne ulazi ni u imenilac
+        polaganje(t, s7, 30.0, false);                       // iznad praga: prolazi iako je polozio = false
+        polaganje(t, s8, 0.0, true);                         // nula poena: pada
+        em.flush();
+        em.clear();
+        TestListItem i = nadjiT(test(tf(null, null, null, null, null, null, null), 100).getContent(), t);
+        assertEquals(6, i.getBrojPolaganja());
+        assertEquals(20, i.getPragProlaza());
+        assertEquals(40.0, i.getProcenatProlaznosti(), 1e-9);   // 2 od 5 sa poenima
+    }
+
+    @Test
+    void testPragNulaSvimaSaPoenimaProlaze() {
+        tri.novica.gfssystem.entity.Test t = test(em.find(TipTesta.class, kolokvijum.getId()), mat, gb, LocalDate.of(2025, 12, 6), 40, false);
+        t.setPragProlaza(0);
+        polaganje(t, s1, 0.0, null);
+        polaganje(t, s2, null, null);
+        em.flush();
+        em.clear();
+        TestListItem i = nadjiT(test(tf(null, null, null, null, null, null, null), 100).getContent(), t);
+        assertEquals(100.0, i.getProcenatProlaznosti(), 1e-9);
+    }
+
+    @Test
+    void testPragSamoPrepisivaciIliBezPoenaDajeNulaOdsto() {
+        tri.novica.gfssystem.entity.Test t = test(em.find(TipTesta.class, kolokvijum.getId()), mat, gb, LocalDate.of(2025, 12, 7), 40, false);
+        t.setPragProlaza(10);
+        polaganje(t, s1, 30.0, true).setPrepisivao(true);
+        em.flush();
+        em.clear();
+        TestListItem i = nadjiT(test(tf(null, null, null, null, null, null, null), 100).getContent(), t);
+        assertEquals(0.0, i.getProcenatProlaznosti(), 1e-9);
+    }
+
+    @Test
+    void testDetaljiProlaznostPoPragu() {
+        var d = testService.findById(t1.getId());
+        assertEquals(25, d.getPragProlaza());
+        assertEquals(1, d.getStatistika().getBrojPolozenih());
+        assertEquals(1, d.getStatistika().getBrojPalih());
+        assertEquals(50.0, d.getStatistika().getProcenatProlaznosti(), 1e-9);
+
+        var bez = testService.findById(t4.getId());
+        assertNull(bez.getPragProlaza());
+        assertNull(bez.getStatistika().getBrojPolozenih());
+        assertNull(bez.getStatistika().getBrojPalih());
+        assertNull(bez.getStatistika().getProcenatProlaznosti());
     }
 
     @Test
@@ -491,10 +553,11 @@ class PretragaIT {
         return t;
     }
 
-    private void polaganje(tri.novica.gfssystem.entity.Test t, Student s, Double poeni, Boolean polozio) {
+    private Polaganje polaganje(tri.novica.gfssystem.entity.Test t, Student s, Double poeni, Boolean polozio) {
         Polaganje p = Polaganje.defaultPolaganje(t, s);
         p.setOstvareniPoeni(poeni);
         p.setPolozio(polozio);
         em.persist(p);
+        return p;
     }
 }

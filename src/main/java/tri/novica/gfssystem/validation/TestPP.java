@@ -16,6 +16,8 @@ public class TestPP {
             throw new SystemException("Tip testa ne pripada odabranom predmetu!", BAD_REQUEST);
         if (test.getMaxPoena()<=0)
             throw new SystemException("Max poena mora biti veci od 0!", BAD_REQUEST);
+        if (test.getPragProlaza() != null && (test.getPragProlaza() < 0 || test.getPragProlaza() > test.getMaxPoena()))
+            throw new SystemException("Prag prolaza mora biti između 0 i maksimalnog broja poena.", BAD_REQUEST);
         if (test.getGrupe() == null || test.getGrupe().isEmpty())
             throw new SystemException("Ne moze biti 0 grupa!", BAD_REQUEST);
         if (!test.getTipTesta().getAktivan()){

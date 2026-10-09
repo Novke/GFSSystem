@@ -31,6 +31,8 @@ public class Test {
 
     private LocalDate datum;
     private Integer maxPoena;
+    /** Opcioni prag prolaza u poenima (kolona {@code prag_prolaza}); null = test nema pojam prolaza, vidi {@code Prolaz}. */
+    private Integer pragProlaza;
     private Boolean pregledan;
 
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "test")
