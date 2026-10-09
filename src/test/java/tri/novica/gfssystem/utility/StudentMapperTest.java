@@ -63,7 +63,9 @@ class StudentMapperTest {
     }
 
     @Test
-    void bezPoenaSaPragomNijePolozio() {
-        assertEquals(Boolean.FALSE, map(polaganje(20, null, false, null)).getPolozeno());
+    void bezPoenaSaPragomNijeOcenjeno() {
+        // nije upisano, pa ni "položio" ni "pao" (isti imenilac kao statistika testa: samo polaganja sa poenima)
+        assertNull(map(polaganje(20, null, false, null)).getPolozeno());
+        assertNull(map(polaganje(20, null, true, true)).getPolozeno());
     }
 }

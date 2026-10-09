@@ -2,7 +2,6 @@ package tri.novica.gfssystem.dto.test;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Min;
 import lombok.Data;
@@ -15,7 +14,6 @@ import tri.novica.gfssystem.utility.CeoBrojDeserializer;
  * obrisala prag. Gornja granica (maxPoena) se proverava u {@code TestPP}.
  */
 @Data
-@JsonIgnoreProperties(ignoreUnknown = false)
 public class PragProlazaCmd {
     @Min(value = 0, message = "Prag prolaza mora biti između 0 i maksimalnog broja poena.")
     private final Integer pragProlaza;
@@ -27,8 +25,8 @@ public class PragProlazaCmd {
     }
 
     /**
-     * Svako drugo polje je greška. {@code @JsonIgnoreProperties(ignoreUnknown = false)} samo potvrđuje podrazumevano
-     * ponašanje mappera, a ovaj je podešen ({@code use-jackson2-defaults}) da nepoznata polja preskače.
+     * Svako drugo polje je greška. Ne može {@code @JsonIgnoreProperties(ignoreUnknown = false)}: to je samo
+     * podrazumevana vrednost, a mapper je podešen ({@code use-jackson2-defaults}) da nepoznata polja preskače.
      */
     @JsonAnySetter
     void nepoznatoPolje(String ime, Object vrednost) {

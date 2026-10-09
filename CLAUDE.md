@@ -224,11 +224,11 @@ New list endpoints follow one pattern (see `PredavanjeService.pretraga` as the r
   **required**: `{}`, a mistyped key, any extra field, a decimal (`20.5`, `20.0`) or a string is 400 `Neispravan format podataka.`
   (`PragProlazaCmd`: `@JsonCreator` with `required = true`, `@JsonAnySetter` that throws because the mapper skips unknown fields under
   `use-jackson2-defaults`, and `utility/CeoBrojDeserializer`, since the default `Integer` deserializer silently truncates decimals).
-  `PUT /test/{id}` ignores it (it rejects finished tests and must not erase a threshold).
+  `POST /test` takes `pragProlaza` through the same strict integer (`CreateTestCmd`, 20.5 is 400). `PUT /test/{id}` ignores it (it rejects finished tests and must not erase a threshold).
   No threshold = no pass concept (`procenatProlaznosti`, `brojPolozenih`, `brojPalih` are null). Rule in `utility/Prolaz` (poeni >= prag, not
   `prepisivao`; stored `polozio` is ignored); `PolaganjeRepository.statistikaPoTestu` mirrors it in JPQL, keep them in sync.
   The student overview (`StudentPregledTestInfo`, used by `GET /studenti/{id}`, `/studenti/{id}/predmet/{predmetId}`) carries `pragProlaza`
-  (Integer, null = no threshold) and `polozeno` (Boolean from `Prolaz.polozenoIliNull`, null when the test has no threshold); the stored
+  (Integer, null = no threshold) and `polozeno` (Boolean from `Prolaz.polozenoIliNull`, null when the test has no threshold **or** `ostvareniPoeni` is null: an ungraded row is neither passed nor failed, same denominator as the test statistics); the stored
   `polozio` is no longer exposed by any DTO (`TestPolaganjeInfo` and `StudentPregledTestInfo` dropped it; the entity column stays).
 
 ## Frontend

@@ -16,7 +16,7 @@ public class StudentPregledTestInfo {
     private Double ostvareniPoeni;
     /** Prag prolaza testa u poenima; null = test nema prag. */
     private Integer pragProlaza;
-    /** Prolaz po pravilu {@code Prolaz} (poeni >= prag, bez prepisivanja), računa server; null kad test nema prag. */
+    /** Prolaz po pravilu {@code Prolaz} (poeni >= prag, bez prepisivanja), računa server; null kad test nema prag ili poeni još nisu upisani (nije ocenjeno). */
     private Boolean polozeno;
     private boolean prepisivao;
     private String napomene;

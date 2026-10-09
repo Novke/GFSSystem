@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** PATCH /test/{id}/prag-prolaza: ključ je obavezan (nema tihog brisanja praga zbog {} ili greške u kucanju), decimalni broj nije ceo. */
@@ -68,6 +69,21 @@ class PragProlazaRestTest {
         patchJson("{\"pragProlaza\": -1}").andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.reason").value("Prag prolaza mora biti između 0 i maksimalnog broja poena."));
         verify(testovi, never()).postaviPragProlaza(any(), any());
+    }
+
+    @Test
+    void kreiranjeTestaOdbijaDecimalniPrag() throws Exception {
+        String telo = "{\"tipTestaId\":4,\"predmetId\":1,\"grupaId\":2,\"datum\":\"2025-11-01\",\"brojGrupa\":2,\"maxPoena\":40,\"pragProlaza\":%s}";
+        mvc.perform(post("/test").contentType(MediaType.APPLICATION_JSON).content(telo.formatted("20.5")))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.reason").value(NEISPRAVAN));
+        mvc.perform(post("/test").contentType(MediaType.APPLICATION_JSON).content(telo.formatted("\"20\"")))
+                .andExpect(status().isBadRequest());
+        verify(testovi, never()).createTest(any());
+        mvc.perform(post("/test").contentType(MediaType.APPLICATION_JSON).content(telo.formatted("20")))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/test").contentType(MediaType.APPLICATION_JSON).content(telo.formatted("null")))
+                .andExpect(status().isCreated());
+        verify(testovi, times(2)).createTest(any());
     }
 
     @Test
