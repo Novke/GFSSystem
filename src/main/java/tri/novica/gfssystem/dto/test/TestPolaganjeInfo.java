@@ -16,6 +16,5 @@ public class TestPolaganjeInfo {
     private TestGrupa grupa;
     private Double ostvareniPoeni;
     private Boolean prepisivao;
-    private Boolean polozio;
     private String napomene;
 }

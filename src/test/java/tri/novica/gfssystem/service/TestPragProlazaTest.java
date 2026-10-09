@@ -30,7 +30,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Opcioni prag prolaza po testu: bean validacija komandi, provera praga prema maksimumu (TestPP), upis pri kreiranju
- * i PUT-u zaglavlja (prag se može i ukloniti) i prolaznost u detaljima testa po pragu, ne po polju polozio.
+ * (ModelMapper ga sam kopira iz komande), PATCH praga (postavlja i uklanja, i na pregledanom testu; PUT zaglavlja prag
+ * ne menja) i prolaznost u detaljima testa po pragu, ne po polju polozio. Oblik tela PATCH-a: {@code PragProlazaRestTest}.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)

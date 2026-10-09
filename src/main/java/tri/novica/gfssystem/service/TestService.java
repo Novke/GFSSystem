@@ -176,7 +176,6 @@ public class TestService {
         test.setPredmet(predmet);
         test.setGrupa(grupa);
         test.setTipTesta(tipTesta);
-        test.setPragProlaza(cmd.getPragProlaza());
         test.setPregledan(false);
         test.generisiGrupe(cmd.getBrojGrupa());
 

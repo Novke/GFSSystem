@@ -220,10 +220,16 @@ New list endpoints follow one pattern (see `PredavanjeService.pretraga` as the r
   notes `GET|POST /studenti/{studentId}/beleske`, `PUT|DELETE /beleske/{id}` (Flyway `V4`).
 - Homework: `POST /domaci/evidentiraj`, `POST /domaci/{id}/oslobodi`.
 - Pass rate: optional per-test `pragProlaza` (points, `testovi.prag_prolaza`, validated 0..maxPoena): set on create (`POST /test`) and changed
-  afterwards only by `PATCH /test/{id}/prag-prolaza` with `{"pragProlaza": n|null}` (null clears; works on finished tests too). `PUT /test/{id}`
-  ignores it (it rejects finished tests and must not erase a threshold).
+  afterwards only by `PATCH /test/{id}/prag-prolaza` with `{"pragProlaza": n|null}` (null clears; works on finished tests too). The key is
+  **required**: `{}`, a mistyped key, any extra field, a decimal (`20.5`, `20.0`) or a string is 400 `Neispravan format podataka.`
+  (`PragProlazaCmd`: `@JsonCreator` with `required = true`, `@JsonAnySetter` that throws because the mapper skips unknown fields under
+  `use-jackson2-defaults`, and `utility/CeoBrojDeserializer`, since the default `Integer` deserializer silently truncates decimals).
+  `PUT /test/{id}` ignores it (it rejects finished tests and must not erase a threshold).
   No threshold = no pass concept (`procenatProlaznosti`, `brojPolozenih`, `brojPalih` are null). Rule in `utility/Prolaz` (poeni >= prag, not
   `prepisivao`; stored `polozio` is ignored); `PolaganjeRepository.statistikaPoTestu` mirrors it in JPQL, keep them in sync.
+  The student overview (`StudentPregledTestInfo`, used by `GET /studenti/{id}`, `/studenti/{id}/predmet/{predmetId}`) carries `pragProlaza`
+  (Integer, null = no threshold) and `polozeno` (Boolean from `Prolaz.polozenoIliNull`, null when the test has no threshold); the stored
+  `polozio` is no longer exposed by any DTO (`TestPolaganjeInfo` and `StudentPregledTestInfo` dropped it; the entity column stays).
 
 ## Frontend
 
