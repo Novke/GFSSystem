@@ -3,22 +3,40 @@ package tri.novica.gfssystem.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
+import tri.novica.gfssystem.dto.grupa.GrupaInfo;
 import tri.novica.gfssystem.dto.predavanje.*;
+import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
+import tri.novica.gfssystem.utility.Brojaci;
+import tri.novica.gfssystem.utility.SkolskaGodina;
+import tri.novica.gfssystem.utility.Utility;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class PredavanjeService {
+
+    /** Polja po kojima lista predavanja sme da se sortira ({@code PageableUtil.proveri}). */
+    public static final Set<String> SORT_POLJA = Set.of("datum", "rb", "tema");
+    public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.desc("datum"), Sort.Order.desc("rb"));
 
     private final PredavanjeRepository predavanjeRepository;
     private final PredmetRepository predmetRepository;
@@ -32,6 +50,19 @@ public class PredavanjeService {
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND)),
                 PredavanjeDetails.class);
     }
+    /**
+     * Briše predavanje i njegove aktivnosti (kaskada). Domaći vezani za predavanje ostaju, samo im se
+     * {@code predavanje} postavlja na null (FK {@code domaci.predavanje_id}).
+     */
+    public void obrisi(Long id) {
+        Predavanje predavanje = predavanjeRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
+        predavanje.getDomaci().forEach(d -> d.setPredavanje(null));
+        predavanje.getDomaci().clear();
+        predavanjeRepository.flush();
+        predavanjeRepository.delete(predavanje);
+    }
+
     public PredavanjeDetails startPredavanje(StartPredavanjeCmd startPredavanjeCmd) {
 
         Long predmetId = startPredavanjeCmd.getPredmetId();
@@ -82,7 +113,10 @@ public class PredavanjeService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
 
-
+        // predavanje bez grupe (grupa_id je nullable) prima svakoga; inace samo grupu i starije generacije
+        Grupa grupa = predavanje.getGrupa();
+        if (grupa != null && !Utility.smeNaNastavuGrupe(student, grupa))
+            throw new SystemException("Student " + student.getIndeks() + " ne pripada grupi " + grupa.getNaziv(), HttpStatus.BAD_REQUEST);
 
         Aktivnost aktivnost = new Aktivnost(predavanje, student, TipAktivnosti.PRISUSTVO);
         Set<Aktivnost> aktivnosti = predavanje.getAktivnosti();
@@ -209,5 +243,44 @@ public class PredavanjeService {
         return predavanja.stream().map(
                 p -> mapper.map(p, PredavanjeInfo.class)
         ).toList();
+    }
+
+    /**
+     * Lista predavanja sa filterima i stranicom. {@code pageable} je već prošao {@code PageableUtil.proveri}
+     * (REST sloj). Predmet i grupa dolaze u istom upitu, brojači jednim agregatnim upitom po stranici.
+     */
+    public PagedModel<PredavanjeListItem> pretraga(PredavanjeFilter f, Pageable pageable) {
+        SkolskaGodina.proveri(f.godina());
+        Specification<Predavanje> spec = Specification.allOf(
+                PredavanjeSpecs.zaPrikaz(),
+                PredavanjeSpecs.predmet(f.predmetId()),
+                PredavanjeSpecs.grupa(f.grupaId()),
+                PredavanjeSpecs.godina(f.godina()),
+                PredavanjeSpecs.zavrseno(f.zavrseno()),
+                PredavanjeSpecs.tema(f.q()),
+                PredavanjeSpecs.od(f.od()),
+                PredavanjeSpecs.doDatuma(f.doDatuma()));
+        Page<Predavanje> strana = predavanjeRepository.findAll(spec, pageable);
+
+        List<Long> ids = strana.map(Predavanje::getId).toList();
+        Set<Long> grupaIds = strana.stream().map(Predavanje::getGrupa).filter(Objects::nonNull)
+                .map(Grupa::getId).collect(Collectors.toSet());
+        List<Object[]> prisutniRedovi = ids.isEmpty() ? List.of() : aktivnostRepository.brojPrisutnihPoPredavanju(ids);
+        Map<Long, Long> prisutni = Brojaci.mapa(prisutniRedovi, 1);
+        Map<Long, Long> stariji = Brojaci.mapa(prisutniRedovi, 2);
+        Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+
+        return new PagedModel<>(strana.map(p -> uListItem(p, prisutni, stariji, studenti)));
+    }
+
+    /** Ručno mapiranje (ModelMapper je STRICT, a brojači nisu polja entiteta). */
+    private static PredavanjeListItem uListItem(Predavanje p, Map<Long, Long> prisutni, Map<Long, Long> stariji,
+                                              Map<Long, Long> studenti) {
+        Grupa g = p.getGrupa();
+        long brojStudenata = g == null ? 0 : studenti.getOrDefault(g.getId(), 0L);
+        GrupaInfo grupa = g == null ? null : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata);
+        PredmetInfo predmet = new PredmetInfo(p.getPredmet().getId(), p.getPredmet().getNaziv());
+        return new PredavanjeListItem(p.getId(), p.getRb(), p.getDatum(), p.getTema(), p.getZavrseno(), predmet, grupa,
+                prisutni.getOrDefault(p.getId(), 0L), stariji.getOrDefault(p.getId(), 0L), brojStudenata);
     }
 }

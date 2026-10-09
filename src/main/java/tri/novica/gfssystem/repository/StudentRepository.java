@@ -1,17 +1,20 @@
 package tri.novica.gfssystem.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface StudentRepository extends JpaRepository<Student, Long> {
+public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpecificationExecutor<Student> {
 
     @Query("""
         SELECT s from Student s 
@@ -31,5 +34,31 @@ public interface StudentRepository extends JpaRepository<Student, Long> {
         WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina""")
     boolean postojiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina);
 
+    /** Isto što {@link #postojiStudent}, ali bez studenta koji se menja (izmena na sopstveni indeks i godinu je dozvoljena). */
+    @Query("""
+        SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Student s
+        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina AND s.id <> :izuzetId""")
+    boolean postojiDrugiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina,
+                                @Param("izuzetId") Long izuzetId);
+
     long countByGrupaId(Long grupaId);
+
+    /** Broj studenata po grupi, za stranicu liste ({@code Brojaci.poId}). Redovi: {@code [grupaId, broj]}. */
+    @Query("select s.grupa.id, count(s) from Student s where s.grupa.id in :ids group by s.grupa.id")
+    List<Object[]> brojStudenataPoGrupi(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Studenti iz grupa sa godinom upisa manjom od {@code godinaUpisa} koji imaju bar jednu aktivnost (predavanje sa
+     * datumom u [{@code od}, {@code doDatuma}]) ili bar jedno polaganje (test sa datumom u tom opsegu) na predmetu:
+     * ponovci koji dolaze na nastavu (kontrolna tabla daje opseg tekuće školske godine). Studenti bez grupe se ne broje.
+     */
+    @Query("""
+        select count(s) from Student s
+        where s.grupa.godinaUpisa < :godinaUpisa
+          and (exists (select a.id from Aktivnost a where a.student = s and a.predavanje.predmet.id = :predmetId
+                         and a.predavanje.datum between :od and :doDatuma)
+            or exists (select p.id from Polaganje p where p.student = s and p.test.predmet.id = :predmetId
+                         and p.test.datum between :od and :doDatuma))""")
+    long brojStarijihNaPredmetu(@Param("predmetId") Long predmetId, @Param("godinaUpisa") int godinaUpisa,
+                                @Param("od") LocalDate od, @Param("doDatuma") LocalDate doDatuma);
 }

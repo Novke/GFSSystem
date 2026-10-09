@@ -3,6 +3,7 @@ package tri.novica.gfssystem.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +76,22 @@ public class OnboardingService {
     @Transactional(readOnly = true)
     public List<OnboardingSesijaInfo> sesijeGrupe(Long grupaId) {
         return sesijaRepository.findAllByGrupaIdOrderByKreiranoDesc(grupaId).stream().map(this::info).toList();
+    }
+
+    /**
+     * Sesije sa bar jednom prijavom na čekanju (i istekle ili zatvorene, jer prijave i dalje čekaju obradu), najviše
+     * {@code najvise}, prvo one kojima rok ističe najranije. Za kontrolnu tablu.
+     */
+    @Transactional(readOnly = true)
+    public List<OnboardingSesijaInfo> saPrijavamaNaCekanju(int najvise) {
+        return sesijaRepository.saPrijavamaUStatusu(StatusPrijave.NA_CEKANJU, PageRequest.of(0, najvise)).stream()
+                .map(this::info).toList();
+    }
+
+    /** Ukupan broj prijava na čekanju u svim sesijama (zbir {@code brojNaCekanju} svih sesija iz {@link #saPrijavamaNaCekanju}). */
+    @Transactional(readOnly = true)
+    public long brojPrijavaNaCekanju() {
+        return prijavaRepository.countByStatus(StatusPrijave.NA_CEKANJU);
     }
 
     @Transactional(readOnly = true)

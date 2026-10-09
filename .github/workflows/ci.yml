@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
           cache: maven
       - name: Build i testovi (contextLoads protiv MySQL servisa)
         run: chmod +x mvnw && ./mvnw -B package

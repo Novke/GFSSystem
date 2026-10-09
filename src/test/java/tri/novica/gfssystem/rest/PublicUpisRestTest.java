@@ -2,8 +2,8 @@ package tri.novica.gfssystem.rest;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,7 +27,7 @@ class PublicUpisRestTest {
         {"ime":"Ana","prezime":"Anić","indeks":"GD12","godina":2026,"email":"ana@example.com","brojTelefona":"064123456"}""";
 
     @Autowired MockMvc mvc;
-    @MockBean OnboardingService service;
+    @MockitoBean OnboardingService service;
 
     @Test
     void validacijaVraca400SaSrpskomPorukom() throws Exception {

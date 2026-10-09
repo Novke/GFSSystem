@@ -1,3 +1,8 @@
+-- ISTORIJSKI FAJL, ne izvršavati ručno. Šemom (i view-om) sada upravlja Flyway:
+-- izvor istine za `domacievidentiranjeview` je src/main/resources/db/migration/V1__pocetna_sema.sql
+-- (telo identično onom u produkcionoj bazi gf). Izmena view-a ide u novu idempotentnu migraciju (sledeća slobodna verzija je V6).
+-- `domacipredavanjastudentiview` ne postoji u gf i nijedan entitet ga ne koristi.
+
 CREATE VIEW domacipredavanjastudentiview AS
 SELECT s.id       AS id,
        d.id       AS domaci_id,

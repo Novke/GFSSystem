@@ -22,6 +22,8 @@ public class TestDetails {
     private GrupaInfo grupa;
     private LocalDate datum;
     private Integer maxPoena;
+    /** Prag prolaza u poenima; null = nastavnik ga nije odredio, pa test nema prolaznost. */
+    private Integer pragProlaza;
     private Boolean pregledan;
     private Set<TestGrupa> grupe;
     private Set<TestPolaganjeInfo> polaganja;

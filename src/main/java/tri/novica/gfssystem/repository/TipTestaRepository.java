@@ -10,4 +10,6 @@ import java.util.List;
 @Repository
 public interface TipTestaRepository extends JpaRepository<TipTesta, Long> {
     List<TipTesta> findAllByPredmetAndAktivanTrue(Predmet predmet);
+
+    List<TipTesta> findAllByPredmetOrderById(Predmet predmet);
 }

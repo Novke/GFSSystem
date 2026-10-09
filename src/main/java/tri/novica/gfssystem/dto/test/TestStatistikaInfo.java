@@ -18,10 +18,10 @@ public class TestStatistikaInfo {
     private double maxPoeni;
     private double standardnaDevijacija;
 
-    // Prolaznost
-    private int brojPolozenih;
-    private int brojPalih;
-    private double procenatProlaznosti;
+    // Prolaznost (pravilo u utility/Prolaz): null kad test nema prag prolaza ili nema polaganja sa poenima
+    private Integer brojPolozenih;
+    private Integer brojPalih;
+    private Double procenatProlaznosti;
 
     // Statistika po test grupi (A, B, C, D)
     private List<TestStatistikaPoGrupiInfo> statistikaPoGrupi = new ArrayList<>();

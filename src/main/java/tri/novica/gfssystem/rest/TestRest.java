@@ -2,14 +2,20 @@ package tri.novica.gfssystem.rest;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.IdCmd;
 import tri.novica.gfssystem.dto.test.*;
 import tri.novica.gfssystem.dto.test.tip.CreateTipTestaCmd;
 import tri.novica.gfssystem.dto.test.tip.TipTestaInfo;
+import tri.novica.gfssystem.dto.test.tip.UpdateTipTestaCmd;
 import tri.novica.gfssystem.service.TestService;
+import tri.novica.gfssystem.utility.PageableUtil;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -19,11 +25,35 @@ public class TestRest {
 
     private final TestService testService;
 
+    /**
+     * Lista testova za UI: filteri su opcioni, {@code page}/{@code size} (podrazumevano 25, najviše 100) i
+     * {@code sort} po {@code datum} ili {@code maxPoena} (podrazumevano {@code datum,desc}).
+     * Literal {@code /pretraga} ima prednost nad {@code /{id}}.
+     */
+    @GetMapping("/pretraga")
+    @ResponseStatus(HttpStatus.OK)
+    public PagedModel<TestListItem> pretraga(@RequestParam(required = false) Long predmetId,
+            @RequestParam(required = false) Long grupaId, @RequestParam(required = false) Integer godina,
+            @RequestParam(required = false) Boolean pregledan, @RequestParam(required = false) Long tipTestaId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate od,
+            @RequestParam(name = "do", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate doDatuma,
+            Pageable pageable) {
+        return testService.pretraga(new TestFilter(predmetId, grupaId, godina, pregledan, tipTestaId, od, doDatuma),
+                PageableUtil.proveri(pageable, TestService.SORT_POLJA, TestService.PODRAZUMEVANI_SORT));
+    }
+
     @PostMapping("/tip")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
     public TipTestaInfo createTipTesta(@RequestBody @Valid CreateTipTestaCmd cmd){
         return testService.createTipTesta(cmd);
+    }
+
+    @PutMapping("/tip/{id}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TipTestaInfo updateTipTesta(@PathVariable Long id, @RequestBody @Valid UpdateTipTestaCmd cmd){
+        return testService.updateTipTesta(id, cmd);
     }
 
     @GetMapping("/{id}")
@@ -45,6 +75,23 @@ public class TestRest {
     @ResponseStatus(HttpStatus.OK)
     public TestDetails updateTest(@PathVariable(name = "id") Long testId, @RequestBody @Valid UpdateTestCmd cmd){
         return testService.updateTest(testId, cmd);
+    }
+
+    /**
+     * Prag prolaza testa: telo {@code {"pragProlaza": <broj>|null}}, null uklanja prag. Radi i na pregledanom testu
+     * (za razliku od {@code PUT /test/{id}}), vraća {@code TestDetails} sa preračunatom prolaznošću.
+     */
+    @PatchMapping("/{id}/prag-prolaza")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.OK)
+    public TestDetails postaviPragProlaza(@PathVariable(name = "id") Long testId, @RequestBody @Valid PragProlazaCmd cmd){
+        return testService.postaviPragProlaza(testId, cmd);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void obrisi(@PathVariable(name = "id") Long testId) {
+        testService.obrisi(testId);
     }
 
     @PostMapping("/{id}/polaganje")
