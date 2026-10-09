@@ -691,6 +691,40 @@ class IzvodjenjeServiceTest {
     }
 
     @Test
+    void tajmerPosleRokaZatvaraANePauzira() {
+        // u sekundi tolerancije posle roka (pre zatvaranja po roku) T ne sme da pauzira u otvorenu rundu bez roka
+        idiNa(1);
+        k(TipKomande.SLEDECI);
+        PitanjeRunda r = runda();
+        clock.pomeri(Duration.ofMillis(20_500));
+        k(TipKomande.TAJMER);
+        assertEquals(Faza.ZATVORENO, iz.getFaza());
+        assertEquals(T0.plusNanos(20_500_000_000L), r.getZatvoreno());
+        assertNull(r.getPreostaloMs());
+        verify(rokPlaner).otkazi(r.getId());
+    }
+
+    @Test
+    void tajmerTacnoNaRokuZatvara() {
+        idiNa(1);
+        k(TipKomande.SLEDECI);
+        PitanjeRunda r = runda();
+        clock.pomeri(Duration.ofSeconds(20));
+        k(TipKomande.TAJMER);
+        assertEquals(Faza.ZATVORENO, iz.getFaza());
+        assertNull(r.getPreostaloMs());
+
+        // milisekundu pre roka je i dalje pauza
+        idiNa(1);
+        k(TipKomande.PONOVI);
+        PitanjeRunda nova = runda();
+        nova.setRok(sada().plusNanos(1_000_000));
+        k(TipKomande.TAJMER);
+        assertEquals(Faza.OTVORENO, iz.getFaza());
+        assertEquals(1L, nova.getPreostaloMs());
+    }
+
+    @Test
     void tajmerPlusMinusDokJePauziran() {
         idiNa(1);
         k(TipKomande.SLEDECI);
@@ -1151,6 +1185,7 @@ class IzvodjenjeServiceTest {
 
     @Test
     void obrisiAktivno409() {
+        when(izvodjenjeRepository.findPrezentacijaIdById(IZ)).thenReturn(Optional.of(1L));
         SystemException e = assertThrows(SystemException.class, () -> service.obrisi(IZ));
         assertEquals(409, e.getCode());
         assertEquals("Izvođenje je u toku.", e.getMessage());
@@ -1160,7 +1195,19 @@ class IzvodjenjeServiceTest {
     @Test
     void obrisiZavrseno() {
         iz.setStatus(StatusIzvodjenja.ZAVRSENO);
+        when(izvodjenjeRepository.findPrezentacijaIdById(IZ)).thenReturn(Optional.of(1L));
         service.obrisi(IZ);
         verify(izvodjenjeRepository).delete(iz);
+        // redosled zaključavanja kao kod izmena prezentacije: prezentacija, pa izvođenje
+        InOrder red = inOrder(prezentacijaRepository, izvodjenjeRepository);
+        red.verify(prezentacijaRepository).findByIdForUpdate(1L);
+        red.verify(izvodjenjeRepository).findByIdForUpdate(IZ);
+    }
+
+    @Test
+    void obrisiNepostojece404() {
+        SystemException e = assertThrows(SystemException.class, () -> service.obrisi(99L));
+        assertEquals(404, e.getCode());
+        verify(izvodjenjeRepository, never()).delete(any());
     }
 }

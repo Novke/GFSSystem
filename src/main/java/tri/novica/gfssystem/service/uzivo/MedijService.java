@@ -56,6 +56,16 @@ public class MedijService {
         } catch (IOException e) {
             throw new UncheckedIOException("Direktorijum za slike nije dostupan: " + putanja, e);
         }
+        if (jePodrazumevani(putanja)) {
+            log.warn("Slike se čuvaju u privremenom direktorijumu {} (podrazumevano): brišu se sa njim. Postavi "
+                    + "GFS_MEDIJI_DIR (gfs.mediji.dir) na trajni direktorijum (u kontejneru: volume).", putanja);
+        }
+    }
+
+    /** Da li je direktorijum podrazumevani {@code ${java.io.tmpdir}/gfs-mediji} (nije postavljen GFS_MEDIJI_DIR). */
+    static boolean jePodrazumevani(Path putanja) {
+        String tmp = System.getProperty("java.io.tmpdir");
+        return tmp != null && putanja.equals(Path.of(tmp, "gfs-mediji").toAbsolutePath().normalize());
     }
 
     public MedijInfo sacuvaj(MultipartFile fajl) {

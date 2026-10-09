@@ -158,8 +158,14 @@ public class IzvodjenjeService {
         return stanjeService.rezultati(id);
     }
 
-    /** Briše završeno izvođenje (runde, odgovori i učesnici kaskadom u bazi); aktivno -> 409. */
+    /**
+     * Briše završeno izvođenje (runde, odgovori i učesnici kaskadom u bazi); aktivno -> 409. Zaključava istim redom kao
+     * izmene prezentacije (prezentacija, pa izvođenje), pa ne može u deadlock sa brisanjem te prezentacije.
+     */
     public void obrisi(Long id) {
+        Long prezentacijaId = izvodjenjeRepository.findPrezentacijaIdById(id)
+                .orElseThrow(() -> new SystemException(NIJE_PRONADJENO, HttpStatus.NOT_FOUND));
+        prezentacijaRepository.findByIdForUpdate(prezentacijaId);
         Izvodjenje iz = nadjiZaIzmenu(id);
         if (iz.getStatus() == StatusIzvodjenja.AKTIVNO) {
             throw new SystemException(U_TOKU, HttpStatus.CONFLICT);
@@ -417,11 +423,17 @@ public class IzvodjenjeService {
         otvori(iz, s);
     }
 
-    /** Pauza (pamti preostalo), nastavak, ili 30 s kad pitanje nema ograničenje. */
+    /**
+     * Pauza (pamti preostalo), nastavak, ili 30 s kad pitanje nema ograničenje. Posle roka (u sekundi tolerancije, pre
+     * nego što ga {@link RokPlaner} zatvori) pauza bi ostavila rundu otvorenu bez roka, pa bi se odgovori primali bez
+     * kraja: tada T zatvara pitanje.
+     */
     private void tajmer(Izvodjenje iz) {
         PitanjeRunda r = otvorenaRunda(iz);
         LocalDateTime sada = sada();
-        if (r.getRok() != null) {
+        if (r.getRok() != null && !sada.isBefore(r.getRok())) {
+            zatvori(iz);
+        } else if (r.getRok() != null) {
             r.setPreostaloMs(Math.max(0, Duration.between(sada, r.getRok()).toMillis()));
             r.setRok(null);
             rokPlaner.otkazi(r.getId());

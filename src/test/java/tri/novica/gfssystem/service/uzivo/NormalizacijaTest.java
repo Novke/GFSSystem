@@ -3,7 +3,9 @@ package tri.novica.gfssystem.service.uzivo;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NormalizacijaTest {
 
@@ -30,6 +32,14 @@ class NormalizacijaTest {
     }
 
     @Test void ime() { assertEquals("Ana Marić", Normalizacija.ime(" Ana \t Marić\u0007 ")); }
+
+    @Test void imeBezZnakovaFormata() {
+        assertEquals("Ana Marić", Normalizacija.ime("\u202EAna\u200B\u00A0Marić\u2066"));
+        assertEquals("", Normalizacija.ime("\u200B\u200D\uFEFF"));
+        assertTrue(Normalizacija.imaVidljivZnak("Ana"));
+        assertFalse(Normalizacija.imaVidljivZnak("\u3164"));
+        assertFalse(Normalizacija.imaVidljivZnak(""));
+    }
 
     @Test void nullVrednosti() {
         assertEquals("", Normalizacija.tekst(null));

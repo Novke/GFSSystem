@@ -44,6 +44,10 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
     @Query("select i.id from Izvodjenje i where i.aktivanKod = :kod and i.status = :status")
     Optional<Long> findIdByAktivanKodAndStatus(@Param("kod") String kod, @Param("status") StatusIzvodjenja status);
 
+    /** Id prezentacije izvođenja (bez učitavanja entiteta, iz istog razloga kao gore): za redosled zaključavanja. */
+    @Query("select i.prezentacija.id from Izvodjenje i where i.id = :id")
+    Optional<Long> findPrezentacijaIdById(@Param("id") Long id);
+
     boolean existsByAktivanKod(String kod);
 
     List<Izvodjenje> findAllByStatus(StatusIzvodjenja s);

@@ -51,6 +51,13 @@ class MedijServiceTest {
     }
 
     @Test
+    void podrazumevaniDirektorijumJePrivremeni() {
+        // na podrazumevanom ${java.io.tmpdir}/gfs-mediji se pri pokretanju loguje WARN (slike nestaju sa tmp-om)
+        assertTrue(MedijService.jePodrazumevani(Path.of(System.getProperty("java.io.tmpdir"), "gfs-mediji")));
+        assertFalse(MedijService.jePodrazumevani(dir));
+    }
+
+    @Test
     void direktorijumSePraviPriStartu() {
         assertTrue(Files.isDirectory(dir));
     }

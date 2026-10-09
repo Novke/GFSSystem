@@ -30,12 +30,22 @@ class ImenaUcesnikaTest {
     }
 
     @Test
+    void nevidljiviZnaciSeBrisuIzImena() {
+        // bidi preokret bi okrenuo tuđa imena na projektoru; nulta širina pravi "isto" ime koje nije duplikat
+        assertEquals("Ana", imena.validiraj("A\u200Bn\u200Da"));
+        assertEquals("Ana evil", imena.validiraj("\u202EAna\u202C evil"));
+        assertEquals("Ana Anić", imena.validiraj("Ana\u00A0\u2003Anić\uFEFF"));
+    }
+
+    @Test
     void validirajNormalizujeIProveravaDuzinu() {
         assertEquals("Ana Anić", imena.validiraj("  Ana \u0007  Anić "));
         assertEquals("x".repeat(40), imena.validiraj("x".repeat(40)));
         // 40 kodnih tačaka van BMP-a je i dalje 40 znakova
         assertEquals("😀".repeat(40), imena.validiraj("😀".repeat(40)));
-        for (String lose : new String[]{null, "", "   ", "\u0007", "x".repeat(41)}) {
+        for (String lose : new String[]{null, "", "   ", "\u0007", "x".repeat(41),
+                // samo nevidljivi: nulta širina, bidi, BOM, NBSP, ideografski razmak, hangul i brajev prazan znak
+                "\u200B", "\u200B\u200C\u200D\u2060", "\u202E\u202D", "\uFEFF", "\u00A0\u3000", "\u3164", "\u2800 \u115F"}) {
             SystemException e = assertThrows(SystemException.class, () -> imena.validiraj(lose));
             assertEquals(400, e.getCode());
             assertEquals("Ime mora imati od 1 do 40 znakova.", e.getMessage());

@@ -107,6 +107,22 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   never dropped and never refills; Spring's synthetic DISCONNECT at the end of a connection (no `simpHeartbeat` header)
   is free, so a reconnect costs 5 tokens. A bucket is removed only when full. Do not enable `setPreserveReceiveOrder`:
   Spring then only logs interceptor exceptions (no ERROR frame, connection stays open).
+- **Student caps** (same interceptor, tracked from CONNECT until `SessionDisconnectEvent`): per session each destination
+  (and each subscription id) at most once and at most 6 subscriptions (the four allowed destinations fit; a duplicate is
+  an ERROR); per participant at most 3 active sessions (tabs/phones; a 4th CONNECT gets ERROR `Previše otvorenih veza.`,
+  a stale session frees its slot once the server notices the dead socket via heartbeat).
+- **Lock order (invariant):** presentation row -> izvodjenje row(s) -> slides/rounds. `PrezentacijaService` locks the
+  presentation and, through `PrezentacijaPromene.zakljucaj` (implemented by `UzivoPrezentacijaPromene` ->
+  `IzvodjenjeService.zakljucajAktivna`), the active runs in ascending id **before** any slide write, so a slide edit
+  and a teacher command (which locks only the run) never take the two rows in opposite order. `IzvodjenjeService.obrisi`
+  also locks the presentation first. Anything new that touches both must follow the same order.
+- **Runs without saving** (`cuvanje=false`): `ZAVRSI` (and the 12 h auto-end) deletes the run's answers, rounds and
+  participants; only the `izvodjenja` row stays (no results view). With saving nothing is deleted.
+- **Media**: files under `gfs.mediji.dir` (env `GFS_MEDIJI_DIR`; in the container a volume), metadata in `mediji`. The
+  default `${java.io.tmpdir}/gfs-mediji` only suits dev; `MedijService` logs a WARN at startup when it is in use.
+- **"Ni ranije"** (`StanjeService`): phones get `JavnoStanje`; the projector renders `NastavnickoStanje.javniRezultat`
+  and `javnaRangLista`, built by the same methods. The only difference: phones get option texts in the result only when
+  text is allowed (PITANJE mode or Detalji); the projector always has them.
 - **Publishing** (`UzivoObjavljivac`): event listeners run after commit on the request/STOMP thread and only mark the
   run dirty (never read the DB or wait for a lock there). Reading and sending happen on the publisher thread under a
   per-run lock, one `StanjeService.snimci` read per run: a command, timer, moderation or kick (`IzvodjenjePromenjeno`,
@@ -115,7 +131,10 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   not bump `verzija`. `UzivoSchedulingConfig.taskScheduler` has 4 threads (flush, immediate publishing, deadlines,
   maintenance).
 - Tests: `config/UzivoChannelInterceptorTest`, `service/uzivo/UzivoObjavljivacTest` (no Spring) and `UzivoWebSocketIT`
-  (real STOMP client against `RANDOM_PORT` and MySQL; commits and cleans up its own data).
+  (real STOMP client against `RANDOM_PORT` and MySQL; commits and cleans up its own data). The uživo `*DbTest` classes
+  (`IzvodjenjeServiceDbTest`, `PrezentacijaServiceDbTest`, `UcesnikOdgovorDbTest`: locking, cascades, constraints) and the
+  IT need a real MySQL (`SPRING_DATASOURCE_URL`, e.g. `jdbc:mysql://localhost:3308/gftest` on novica-dev); the rest are
+  plain unit tests.
 
 ## Build & Run
 

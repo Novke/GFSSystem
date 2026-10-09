@@ -28,11 +28,14 @@ public class ImenaUcesnika {
         this.ucesnikRepository = ucesnikRepository;
     }
 
-    /** Normalizovano ime ({@link Normalizacija#ime}); 400 kad nije od 1 do 40 znakova (kodnih tačaka). */
+    /**
+     * Normalizovano ime ({@link Normalizacija#ime}); 400 kad nije od 1 do 40 znakova (kodnih tačaka) ili nema nijedan
+     * vidljiv znak (npr. samo znaci nulte širine ili prazni znaci).
+     */
     public String validiraj(String sirovo) {
         String ime = Normalizacija.ime(sirovo);
         int duzina = ime.codePointCount(0, ime.length());
-        if (duzina < 1 || duzina > MAX) {
+        if (duzina < 1 || duzina > MAX || !Normalizacija.imaVidljivZnak(ime)) {
             throw new SystemException(NEISPRAVNO_IME, HttpStatus.BAD_REQUEST);
         }
         return ime;

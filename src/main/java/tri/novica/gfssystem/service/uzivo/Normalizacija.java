@@ -2,6 +2,7 @@ package tri.novica.gfssystem.service.uzivo;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Normalizacija teksta i brojeva iz odgovora učesnika. Čiste funkcije. */
@@ -29,10 +30,22 @@ public final class Normalizacija {
         return b.toString().trim().replaceAll("\\s+", " ");
     }
 
-    /** Ime za prikaz: kontrolni znaci postaju razmaci, razmaci na krajevima i višestruki razmaci uklonjeni. */
+    /**
+     * Ime za prikaz: znaci formata ({@code \\p{Cf}}: bidi preokretanje, nevidljivi znaci nulte širine) se brišu,
+     * kontrolni znaci postaju razmaci, svi Unicode razmaci postaju jedan običan, a razmaci na krajevima se uklanjaju.
+     */
     public static String ime(String s) {
         if (s == null) return "";
-        return s.replaceAll("\\p{Cntrl}", " ").trim().replaceAll("\\s+", " ");
+        return s.replaceAll("\\p{Cf}", "").replaceAll("\\p{Cntrl}", " ").replaceAll("[\\s\\p{Z}]+", " ").strip();
+    }
+
+    /** Prazni znaci koji nisu razmaci po Unicode kategoriji (hangul i brajevi "prazni" znaci). */
+    private static final Set<Integer> PRAZNI = Set.of(0x115F, 0x1160, 0x3164, 0xFFA0, 0x2800);
+
+    /** Da li normalizovano ime ima bar jedan vidljiv znak (ne samo razmake ili prazne znake). */
+    public static boolean imaVidljivZnak(String ime) {
+        return ime != null && ime.codePoints()
+                .anyMatch(cp -> !Character.isWhitespace(cp) && !Character.isSpaceChar(cp) && !PRAZNI.contains(cp));
     }
 
     /** Broj sa tačkom ili zarezom kao decimalnim znakom (razmaci su razdvajači hiljada); {@code null} ako nije broj. */
