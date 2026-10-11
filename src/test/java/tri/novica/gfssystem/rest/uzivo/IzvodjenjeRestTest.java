@@ -31,7 +31,7 @@ class IzvodjenjeRestTest {
             null, null, Faza.OTVORENO, new RundaInfo(101L, 1, 1_759_831_220_000L, null, true), false, false, false,
             Ekran.NORMALAN, false, TelefonPrikaz.DUGMAD, true, false, null, 1, 1,
             List.of(new UcesnikStanje(31L, "Ana", 0, true, true)), List.of(new RangStavka(1, 31L, "Ana", 0)),
-            null, null, Tema.NACRT);
+            null, null, Tema.NACRT, 1_759_830_000_000L);
 
     @Autowired MockMvc mvc;
     @MockitoBean IzvodjenjeService service;
@@ -90,7 +90,8 @@ class IzvodjenjeRestTest {
         when(stanjeService.nastavnicko(5L)).thenReturn(STANJE);
         mvc.perform(get("/izvodjenja/5/stanje"))
            .andExpect(status().isOk())
-           .andExpect(jsonPath("$.prikaz").value("SLAJD"));
+           .andExpect(jsonPath("$.prikaz").value("SLAJD"))
+           .andExpect(jsonPath("$.pocetakMs").value(1_759_830_000_000L));
         when(service.lista(1L, StatusIzvodjenja.AKTIVNO)).thenReturn(List.of(INFO));
         mvc.perform(get("/izvodjenja").param("prezentacijaId", "1").param("status", "AKTIVNO"))
            .andExpect(status().isOk())

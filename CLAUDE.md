@@ -86,6 +86,7 @@ Kahoot-like lecture: the teacher builds a presentation (INFO and question slides
 code), students join from their phones and answer live. Code lives in `entity/uzivo`, `repository/uzivo`, `service/uzivo`,
 `rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V7__uzivo.sql` (idempotent; originally V5, renumbered after the redesign's V6).
 - **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
+- `NastavnickoStanje.pocetakMs` (epoch ms, zona `Clock`-a) je osnova štoperice u konzoli i daljinskom; vremena u stanju su uvek epoch ms.
   `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
 - **PLATNO slide (slide builder, phase 1; `V8__platno.sql`):** `TipSlajda.PLATNO` holds a canvas document in `slajdovi.platno`
   (JSON, <= 1 MB): `dto/uzivo/platno/*` (records `Platno`, `Sloj` = TEKST|SLIKA|OBLIK|TABELA|FORMULA|CRTEZ, `Animacija`, ...).
