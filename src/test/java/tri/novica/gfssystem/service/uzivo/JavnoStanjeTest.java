@@ -114,7 +114,7 @@ class JavnoStanjeTest {
                 .filter(u -> u.getId().equals(i.getArgument(0))).findFirst());
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, new PovezanostRegistar(), jsonMapper, clock);
+                ucesnikRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {

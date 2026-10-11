@@ -19,6 +19,8 @@ import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
 import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
+import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.validation.SlajdPP;
 
 import java.time.Clock;
@@ -61,6 +63,7 @@ public class PrezentacijaService {
     private final PredavanjeRepository predavanjeRepository;
     private final MedijService medijService;
     private final MedijRepository medijRepository;
+    private final PlatnoJson platnoJson;
     private final ObjectProvider<PrezentacijaPromene> promene;
     private final Clock clock;
 
@@ -170,7 +173,7 @@ public class PrezentacijaService {
 
     /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
     public SlajdDetails dodajSlajd(Long prezentacijaId, SlajdCmd cmd, Long posle) {
-        SlajdCmd n = proveren(cmd);
+        ProverenSlajd n = proveren(cmd);
         Prezentacija p = zakljucaj(prezentacijaId);
         List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(prezentacijaId);
         SlajdPP.proveriBrojSlajdova(slajdovi.size());
@@ -190,18 +193,18 @@ public class PrezentacijaService {
         slajdRepository.save(s);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(prezentacijaId));
-        return SlajdMapper.uDetails(s);
+        return SlajdMapper.uDetails(s, platnoJson);
     }
 
     /** Puna zamena sadržaja slajda; pitanje ostaje isti red (id), opcije se zamenjuju novim. */
     public SlajdDetails izmeniSlajd(Long id, SlajdCmd cmd) {
-        SlajdCmd n = proveren(cmd);
+        ProverenSlajd n = proveren(cmd);
         Prezentacija p = zakljucajZaSlajd(id);
         Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
         primeni(s, n);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
-        return SlajdMapper.uDetails(s);
+        return SlajdMapper.uDetails(s, platnoJson);
     }
 
     public void obrisiSlajd(Long id) {
@@ -233,7 +236,7 @@ public class PrezentacijaService {
         slajdRepository.save(k);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
-        return SlajdMapper.uDetails(k);
+        return SlajdMapper.uDetails(k, platnoJson);
     }
 
     /** {@code slajdIds} mora biti tačno permutacija id-jeva svih slajdova prezentacije. */
@@ -294,15 +297,32 @@ public class PrezentacijaService {
         return zakljucaj(prezentacijaId);
     }
 
-    /** Normalizuje i proverava komandu (400 pri grešci), uključujući postojanje slika. */
-    private SlajdCmd proveren(SlajdCmd cmd) {
+    /** Normalizovana komanda i (samo za PLATNO) normalizovan dokument platna. */
+    private record ProverenSlajd(SlajdCmd cmd, Platno platno) {
+    }
+
+    /**
+     * Normalizuje i proverava komandu (400 pri grešci), uključujući čitanje dokumenta platna i postojanje slika. Radi
+     * se pre zaključavanja (red zaključavanja), kao i upit o slikama.
+     */
+    private ProverenSlajd proveren(SlajdCmd cmd) {
         SlajdCmd n = SlajdPP.normalizuj(cmd);
         SlajdPP.proveri(n);
         proveriSliku(n.slikaId());
         if (n.pitanje() != null) {
             proveriSliku(n.pitanje().slikaId());
         }
-        return n;
+        Platno platno = null;
+        if (n.tip() == TipSlajda.PLATNO) {
+            platno = PlatnoPP.normalizuj(platnoJson.procitaj(n.platno()));
+            PlatnoPP.proveri(platno);
+            PlatnoPP.proveriVelicinu(platnoJson.velicinaBajtova(platno));
+            Set<String> ids = PlatnoPP.medijIds(platno);
+            if (!ids.isEmpty() && medijRepository.countByIdIn(ids) != ids.size()) {
+                throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.BAD_REQUEST);
+            }
+        }
+        return new ProverenSlajd(n, platno);
     }
 
     private void proveriSliku(String slikaId) {
@@ -312,8 +332,10 @@ public class PrezentacijaService {
     }
 
     /** Upisuje normalizovanu komandu u slajd (puna zamena). INFO gubi pitanje ({@code orphanRemoval} ga briše). */
-    private void primeni(Slajd s, SlajdCmd n) {
+    private void primeni(Slajd s, ProverenSlajd pn) {
+        SlajdCmd n = pn.cmd();
         s.setTip(n.tip());
+        s.setPlatno(pn.platno() == null ? null : platnoJson.zapisi(pn.platno()));
         s.setNaslov(n.naslov());
         s.setSadrzaj(n.sadrzaj());
         s.setSlika(medij(n.slikaId()));
@@ -369,6 +391,7 @@ public class PrezentacijaService {
         k.setSadrzaj(s.getSadrzaj());
         k.setSlika(s.getSlika());
         k.setBeleske(s.getBeleske());
+        k.setPlatno(s.getPlatno());
         k.setPostepeno(s.isPostepeno());
         k.setPitanje(s.getPitanje() == null ? null : kopija(s.getPitanje()));
         return k;
@@ -432,7 +455,7 @@ public class PrezentacijaService {
         return new PrezentacijaDetails(p.getId(), p.getNaziv(), p.getOpis(), predmet(p), slajdovi.size(), brojPitanja,
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
                 izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()), p.getTema(),
-                slajdovi.stream().map(SlajdMapper::uDetails).toList());
+                slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson)).toList());
     }
 
     private Long aktivnoIzvodjenjeId(Long prezentacijaId) {

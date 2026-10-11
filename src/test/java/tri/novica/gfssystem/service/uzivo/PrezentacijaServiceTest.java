@@ -10,7 +10,11 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
+import tools.jackson.databind.node.ObjectNode;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.dto.uzivo.platno.TekstSloj;
+import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
@@ -51,6 +55,7 @@ class PrezentacijaServiceTest {
     @Mock ObjectProvider<PrezentacijaPromene> promeneProvider;
     @Mock PrezentacijaPromene promene;
 
+    PlatnoJson platnoJson = new PlatnoJson();
     PrezentacijaService service;
     Predmet predmet;
     Prezentacija prez;
@@ -63,7 +68,7 @@ class PrezentacijaServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         service = new PrezentacijaService(prezentacijaRepository, slajdRepository, izvodjenjeRepository,
-                predmetRepository, predavanjeRepository, medijService, medijRepository, promeneProvider, CLOCK);
+                predmetRepository, predavanjeRepository, medijService, medijRepository, platnoJson, promeneProvider, CLOCK);
 
         predmet = new Predmet();
         predmet.setId(7L);
@@ -96,6 +101,8 @@ class PrezentacijaServiceTest {
         when(medijService.postoji(SLIKA)).thenReturn(true);
         when(medijRepository.getReferenceById(SLIKA)).thenReturn(medij);
         when(medijRepository.findById(SLIKA)).thenReturn(Optional.of(medij));
+        when(medijRepository.countByIdIn(anyCollection()))
+                .thenAnswer(inv -> (long) ((Collection<?>) inv.getArgument(0)).size());
 
         when(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(anyLong())).thenAnswer(inv -> slajdovi(inv.getArgument(0)));
         when(slajdRepository.findById(anyLong())).thenAnswer(inv -> nadjiUBazi(inv.getArgument(0)));
@@ -179,7 +186,7 @@ class PrezentacijaServiceTest {
     }
 
     static SlajdCmd infoCmd(String naslov) {
-        return new SlajdCmd(TipSlajda.INFO, naslov, null, null, null, false, null);
+        return new SlajdCmd(TipSlajda.INFO, naslov, null, null, null, false, null, null);
     }
 
     static PitanjeCmd pitanjeCmd(TipPitanja tip, List<OpcijaCmd> opcije) {
@@ -187,7 +194,7 @@ class PrezentacijaServiceTest {
     }
 
     static SlajdCmd pitanjeSlajdCmd(PitanjeCmd p) {
-        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p);
+        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p, null);
     }
 
     static void greska(int kod, String poruka, org.junit.jupiter.api.function.Executable e) {
@@ -514,7 +521,7 @@ class PrezentacijaServiceTest {
     void nepostojecaSlikaJe400() {
         when(medijService.postoji("nema")).thenReturn(false);
         greska(400, "Slika nije pronađena.",
-                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "nema", null, false, null), null));
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "nema", null, false, null, null), null));
         PitanjeCmd p = new PitanjeCmd(TipPitanja.SKALA, "Ocena?", "nema", null, null, null, null, null, null, null, null,
                 null, null);
         greska(400, "Slika nije pronađena.", () -> service.dodajSlajd(1L, pitanjeSlajdCmd(p), null));
@@ -523,7 +530,7 @@ class PrezentacijaServiceTest {
 
     @Test
     void dodajSlajdSaSlikomPostavljaReferencu() {
-        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, SLIKA, null, false, null), null);
+        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, SLIKA, null, false, null, null), null);
         assertEquals(SLIKA, d.slika().id());
         assertSame(medij, slajdovi(1L).get(0).getSlika());
     }
@@ -594,7 +601,7 @@ class PrezentacijaServiceTest {
         Slajd s = pitanjeUBazi(1, TipPitanja.ANKETA, "a", "b");
 
         SlajdDetails d = service.izmeniSlajd(s.getId(),
-                new SlajdCmd(TipSlajda.INFO, "Pauza", "Vraćamo se za 5 min", SLIKA, "b", true, null));
+                new SlajdCmd(TipSlajda.INFO, "Pauza", "Vraćamo se za 5 min", SLIKA, "b", true, null, null));
 
         assertEquals(TipSlajda.INFO, s.getTip());
         assertNull(s.getPitanje(), "orphanRemoval briše pitanje i njegove opcije");
@@ -802,5 +809,133 @@ class PrezentacijaServiceTest {
     @Test
     void predavanjaZaNepostojecuPrezentacijuJe404() {
         greska(404, "Prezentacija nije pronađena.", () -> service.predavanjaZaPokretanje(99L));
+    }
+
+    // --- platno ---
+
+    SlajdCmd platnoCmd(String beleske) {
+        return new SlajdCmd(TipSlajda.PLATNO, null, null, null, beleske, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno()));
+    }
+
+    Slajd platnoUBazi(int rb) {
+        Slajd s = new Slajd();
+        s.setPrezentacija(prez);
+        s.setRb(rb);
+        s.setTip(TipSlajda.PLATNO);
+        s.setPlatno(platnoJson.zapisi(PlatnoTestPodaci.ispravno()));
+        dodeliId(s);
+        baza.add(s);
+        return s;
+    }
+
+    @Test
+    void dodajSlajdPlatnoUpisujeNormalizovanDokument() {
+        ObjectNode cvor = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
+        ((ObjectNode) cvor.get("slojevi").get(0)).put("x", 12.345).put("popuna", "#ff00aa");
+        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, "ignorisi", null, null, null, false, null, cvor), null);
+
+        Platno ocekivano = PlatnoPP.normalizuj(platnoJson.procitaj(cvor));
+        assertEquals(platnoJson.zapisi(ocekivano), slajdovi(1L).get(0).getPlatno());
+        assertEquals(ocekivano, d.platno());
+        assertEquals(TipSlajda.PLATNO, d.tip());
+        assertNull(d.naslov());
+        assertEquals(12.35, ((TekstSloj) d.platno().slojevi().get(0)).x());
+        // medij: slika sloja i crtež, jednim upitom
+        verify(medijRepository).countByIdIn(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ));
+    }
+
+    @Test
+    void izmeniSlajdPlatnoCuvaDokument() {
+        Slajd s = platnoUBazi(1);
+        SlajdDetails d = service.izmeniSlajd(s.getId(), platnoCmd("nova beleška"));
+        assertEquals(platnoJson.zapisi(PlatnoPP.normalizuj(PlatnoTestPodaci.ispravno())), s.getPlatno());
+        assertEquals("nova beleška", s.getBeleske());
+        assertEquals(PlatnoTestPodaci.ispravno(), d.platno());
+    }
+
+    @Test
+    void izmeniSlajdUInfoBrisePlatno() {
+        Slajd s = platnoUBazi(1);
+        SlajdDetails d = service.izmeniSlajd(s.getId(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno())));
+        assertNull(s.getPlatno());
+        assertNull(d.platno());
+        assertEquals(TipSlajda.INFO, s.getTip());
+    }
+
+    @Test
+    void nepostojeciMedijUPlatnuJe400BezUpisa() {
+        when(medijRepository.countByIdIn(anyCollection())).thenReturn(1L);
+        greska(400, MedijService.NIJE_PRONADJENA, () -> service.dodajSlajd(1L, platnoCmd(null), null));
+        assertTrue(baza.isEmpty());
+        verify(slajdRepository, never()).save(any());
+        // provera je pre zaključavanja prezentacije (red zaključavanja)
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
+    void neispravanDokumentJe400PreZakljucavanja() {
+        ObjectNode cvor = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
+        cvor.put("nepoznato", 1);
+        SystemException e = assertThrows(SystemException.class,
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor), null));
+        assertEquals(400, e.getCode());
+        assertTrue(e.getMessage().startsWith("Neispravan dokument platna: "), e.getMessage());
+        assertTrue(baza.isEmpty());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+
+        greska(400, "Slajd može imati najviše 300 slojeva.", () -> {
+            ObjectNode mnogo = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
+            ((ObjectNode) mnogo).set("animacije", mnogo.arrayNode());
+            for (int i = 0; i < 300; i++) {
+                ((tools.jackson.databind.node.ArrayNode) mnogo.get("slojevi")).add(mnogo.get("slojevi").get(3).deepCopy()
+                        .withObject("").put("id", "x" + i));
+            }
+            service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, mnogo), null);
+        });
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
+    void dokumentPreko1MBJe400() {
+        ObjectNode cvor = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
+        // 20 000 tačaka po crtežu je dozvoljeno, ali pet takvih crteža zajedno prelaze 1 MB
+        ObjectNode crtez = (ObjectNode) cvor.get("slojevi").get(6);
+        tools.jackson.databind.node.ArrayNode potezi = (tools.jackson.databind.node.ArrayNode) crtez.get("potezi");
+        potezi.removeAll();
+        for (int k = 0; k < 2; k++) {
+            ObjectNode potez = potezi.addObject().put("boja", "#000000").put("debljina", 1);
+            tools.jackson.databind.node.ArrayNode tacke = potez.putArray("tacke");
+            for (int i = 0; i < 10_000; i++) tacke.add(1234.56).add(1234.56);
+        }
+        for (int c = 0; c < 4; c++) {
+            ObjectNode kopija = crtez.deepCopy();
+            kopija.put("id", "c" + (c + 2));
+            ((tools.jackson.databind.node.ArrayNode) cvor.get("slojevi")).add(kopija);
+        }
+        greska(400, "Dokument platna je prevelik (najviše 1 MB).",
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor), null));
+        assertTrue(baza.isEmpty());
+    }
+
+    @Test
+    void duplirajSlajdKopiraPlatno() {
+        Slajd s = platnoUBazi(1);
+        SlajdDetails d = service.duplirajSlajd(s.getId());
+        Slajd k = slajdovi(1L).get(1);
+        assertEquals(s.getPlatno(), k.getPlatno());
+        assertEquals(TipSlajda.PLATNO, k.getTip());
+        assertEquals(PlatnoTestPodaci.ispravno(), d.platno());
+    }
+
+    @Test
+    void dupliranjePrezentacijeKopiraPlatno() {
+        Slajd s = platnoUBazi(1);
+        PrezentacijaDetails d = service.dupliraj(1L);
+        List<Slajd> kopije = slajdovi(2L);
+        assertEquals(1, kopije.size());
+        assertEquals(s.getPlatno(), kopije.get(0).getPlatno());
+        assertEquals(PlatnoTestPodaci.ispravno(), d.slajdovi().get(0).platno());
     }
 }
