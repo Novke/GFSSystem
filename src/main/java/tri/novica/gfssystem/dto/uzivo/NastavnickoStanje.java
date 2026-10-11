@@ -15,6 +15,7 @@ import java.util.List;
  * {@code javniRezultat} i {@code javnaRangLista}: ono što dobija {@link JavnoStanje} ({@code rezultat} i
  * {@code rangLista}), izgrađeno istim kodom, pa važe ista pravila "ni ranije". Jedina razlika: {@code javniRezultat}
  * uvek ima tekstove opcija (sala ih vidi na platnu), a telefon ih ne dobija dok tekst nije dozvoljen.
+ * {@code brojStavki}: broj koraka trenutnog slajda (stavke INFO liste ili KLIK animacije PLATNO slajda); ime ostaje zbog starog fronta.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
