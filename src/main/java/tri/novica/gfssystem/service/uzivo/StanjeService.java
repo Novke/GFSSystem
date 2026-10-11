@@ -93,7 +93,7 @@ public class StanjeService {
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
-                TokIzvodjenja.brojStavki(trenutni), indeks, sl.size(),
+                TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
                 trenutni == null ? null : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson),
                 sledeci == null ? null : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson),
                 iz.getFaza(), runda == null ? null : rundaInfo(iz, runda),

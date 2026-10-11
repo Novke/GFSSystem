@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.uzivo.*;
@@ -47,8 +48,12 @@ class IzvodjenjeServiceDbTest {
     @Autowired Clock clock;
     @Autowired PlatformTransactionManager transakcije;
 
+    @Autowired tri.novica.gfssystem.repository.uzivo.MedijRepository medijRepository;
+
     Predmet predmet;
     Grupa grupa;
+    String slikaId = UUID.randomUUID().toString();
+    String crtezId = UUID.randomUUID().toString();
     final List<Long> prezentacije = new ArrayList<>();
 
     @BeforeEach
@@ -61,6 +66,8 @@ class IzvodjenjeServiceDbTest {
         grupa.setNaziv("IZ-" + oznaka);
         grupa.setGodinaUpisa(2026);
         grupa = grupaRepository.save(grupa);
+        medij(slikaId);
+        medij(crtezId);
     }
 
     @AfterEach
@@ -75,6 +82,114 @@ class IzvodjenjeServiceDbTest {
         }
         grupaRepository.deleteById(grupa.getId());
         predmetRepository.deleteById(predmet.getId());
+        medijRepository.deleteById(slikaId);
+        medijRepository.deleteById(crtezId);
+    }
+
+    PrezentacijaDetails prezentacijaSaPlatnom() {
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Platno uživo", null, null));
+        prezentacije.add(p.id());
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, null), null);
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PLATNO, "Platno", null, null, null, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(slikaId, crtezId))), null);
+        prezentacijaService.dodajSlajd(p.id(), pitanje(TipPitanja.JEDAN_TACAN, null), null);
+        return prezentacijaService.detalji(p.id());
+    }
+
+    void medij(String id) {
+        Medij m = new Medij();
+        m.setId(id);
+        m.setNaziv("m.png");
+        m.setMime("image/png");
+        m.setVelicina(10);
+        m.setKreirano(LocalDateTime.now(clock));
+        medijRepository.save(m);
+    }
+
+    @Test
+    void platnoSlajdKaoInfoSaKoracima() {
+        PrezentacijaDetails p = prezentacijaSaPlatnom();
+        Long id = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+
+        // napred: INFO -> PLATNO (0, 1, 2) -> PITANJE
+        NastavnickoStanje st = k(id, TipKomande.SLEDECI);
+        assertEquals(0, st.indeks());
+        st = k(id, TipKomande.SLEDECI);
+        assertEquals(1, st.indeks());
+        assertEquals(0, st.korak());
+        assertEquals(2, st.brojStavki());
+        assertNull(st.faza());
+        assertEquals(1, k(id, TipKomande.SLEDECI).korak());
+        assertEquals(2, k(id, TipKomande.SLEDECI).korak());
+        st = k(id, TipKomande.SLEDECI);
+        assertEquals(2, st.indeks());
+        assertEquals(Faza.CEKA, st.faza());
+        assertEquals(0, st.korak());
+
+        // nazad: PITANJE -> PLATNO na poslednjem koraku -> 1 -> 0 -> INFO
+        st = k(id, TipKomande.PRETHODNI);
+        assertEquals(1, st.indeks());
+        assertEquals(2, st.korak());
+        assertNull(st.faza());
+        assertEquals(1, k(id, TipKomande.PRETHODNI).korak());
+        assertEquals(0, k(id, TipKomande.PRETHODNI).korak());
+        assertEquals(0, k(id, TipKomande.PRETHODNI).indeks());
+
+    }
+
+    @Test
+    void idiNaPlatnoPocinjeOdNule() {
+        PrezentacijaDetails p = prezentacijaSaPlatnom();
+        Long id = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+        NastavnickoStanje st = service.komanda(id, new KomandaCmd(TipKomande.IDI_NA, 1));
+        assertEquals(1, st.indeks());
+        assertEquals(0, st.korak());
+        assertEquals(2, st.brojStavki());
+        assertNull(st.faza());
+    }
+
+    @Test
+    void izmenaPlatnaTokomIzvodjenjaSkracujeKorak() {
+        PrezentacijaDetails p = prezentacijaSaPlatnom();
+        Long id = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+        Long platnoId = p.slajdovi().get(1).id();
+        service.komanda(id, new KomandaCmd(TipKomande.IDI_NA, 1));
+        k(id, TipKomande.SLEDECI);
+        assertEquals(2, k(id, TipKomande.SLEDECI).korak());
+
+        prezentacijaService.izmeniSlajd(platnoId, new SlajdCmd(TipSlajda.PLATNO, "Platno", null, null, null, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.sKlikovima(1))));
+        NastavnickoStanje st = stanjeService.nastavnicko(id);
+        assertEquals(1, st.korak());
+        assertEquals(1, st.brojStavki());
+        assertNull(st.faza());
+
+        prezentacijaService.izmeniSlajd(platnoId, new SlajdCmd(TipSlajda.INFO, "Info", null, null, null, false, null, null));
+        st = stanjeService.nastavnicko(id);
+        assertEquals(0, st.korak());
+        assertEquals(0, st.brojStavki());
+        assertNull(st.faza());
+    }
+
+    @Test
+    void snimakPlatnaNosiSlojeveBezPotezaAJavnoStanjeNeNosiSadrzaj() {
+        PrezentacijaDetails p = prezentacijaSaPlatnom();
+        Long id = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
+        service.komanda(id, new KomandaCmd(TipKomande.IDI_NA, 1));
+
+        NastavnickoStanje st = stanjeService.nastavnicko(id);
+        assertEquals(2, st.brojStavki());
+        assertFalse(st.trenutniSlajd().platno().slojevi().isEmpty());
+        CrtezSloj crtez = st.trenutniSlajd().platno().slojevi().stream()
+                .filter(CrtezSloj.class::isInstance).map(CrtezSloj.class::cast).findFirst().orElseThrow();
+        assertNull(crtez.potezi());
+        // u bazi potezi ostaju
+        assertTrue(jdbc.queryForObject("select platno from slajdovi where id = ?", String.class, p.slajdovi().get(1).id())
+                .contains("\"potezi\":[{"));
+
+        JavnoStanje js = stanjeService.javno(id);
+        assertEquals(TipSlajda.PLATNO, js.slajdTip());
+        assertNull(js.pitanje());
     }
 
     /** INFO (postepeno, 2 stavke), JEDAN_TACAN sa {@code sekunde}, ANKETA bez vremena. */

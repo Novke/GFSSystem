@@ -2,7 +2,6 @@ package tri.novica.gfssystem.service.uzivo;
 
 import tri.novica.gfssystem.entity.uzivo.Izvodjenje;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
-import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 
 import java.util.List;
 
@@ -41,8 +40,16 @@ public final class TokIzvodjenja {
         return i >= 0 && i < slajdovi.size() ? slajdovi.get(i) : null;
     }
 
-    /** Broj stavki koje se otkrivaju jedna po jedna (INFO sa postepenim otkrivanjem), inače 0. */
-    public static int brojStavki(Slajd s) {
-        return s != null && s.getTip() == TipSlajda.INFO && s.isPostepeno() ? Markdown.brojStavki(s.getSadrzaj()) : 0;
+    /**
+     * Broj koraka koji se otkrivaju jedan po jedan: INFO sa postepenim otkrivanjem (stavke liste), PLATNO (animacije sa
+     * okidačem KLIK), inače 0.
+     */
+    public static int brojKoraka(Slajd s) {
+        if (s == null) return 0;
+        return switch (s.getTip()) {
+            case INFO -> s.isPostepeno() ? Markdown.brojStavki(s.getSadrzaj()) : 0;
+            case PLATNO -> PlatnoJson.brojKoraka(s.getPlatno());
+            default -> 0;
+        };
     }
 }

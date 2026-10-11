@@ -220,7 +220,7 @@ public class IzvodjenjeService {
         }
     }
 
-    /** → : sledeća stavka, pa otvori/zatvori pitanje, pa sledeći slajd; na kraju ništa. */
+    /** → : sledeći korak (stavka INFO-a, KLIK platna), pa otvori/zatvori pitanje, pa sledeći slajd; na kraju ništa. */
     private void sledeci(Izvodjenje iz, List<Slajd> sl) {
         int n = sl.size();
         int i = TokIzvodjenja.indeks(iz, sl);
@@ -233,8 +233,8 @@ public class IzvodjenjeService {
             return;
         }
         Slajd s = sl.get(i);
-        if (s.getTip() == TipSlajda.INFO) {
-            if (iz.getKorak() < TokIzvodjenja.brojStavki(s)) {
+        if (s.getTip() != TipSlajda.PITANJE) {
+            if (iz.getKorak() < TokIzvodjenja.brojKoraka(s)) {
                 iz.setKorak(iz.getKorak() + 1);
             } else {
                 idiNa(iz, sl, i + 1, true);
@@ -260,7 +260,7 @@ public class IzvodjenjeService {
         Slajd s = sl.get(i);
         if (s.getTip() == TipSlajda.PITANJE && iz.getFaza() == Faza.OTVORENO) {
             zatvori(iz);
-        } else if (s.getTip() == TipSlajda.INFO && iz.getKorak() > 0) {
+        } else if (s.getTip() != TipSlajda.PITANJE && iz.getKorak() > 0) {
             iz.setKorak(iz.getKorak() - 1);
         } else {
             idiNa(iz, sl, i - 1, false);
@@ -281,8 +281,8 @@ public class IzvodjenjeService {
 
     /**
      * Prelazak na slajd {@code j} (-1 prijava, n kraj). Otvoreno pitanje se zatvara; rezultati, tačan odgovor i
-     * rang-lista se gase (ekran i QR ostaju). INFO sa postepenim počinje od prve stavke ({@code napred}) ili sa svim
-     * otkrivenim (unazad); pitanje sa rundom prikazuje poslednju rundu kao zatvorenu, inače čeka.
+     * rang-lista se gase (ekran i QR ostaju). INFO sa postepenim i PLATNO počinju od koraka 0 ({@code napred}) ili sa svim
+     * otkrivenim (unazad: sa svim koracima); pitanje sa rundom prikazuje poslednju rundu kao zatvorenu, inače čeka.
      */
     private void idiNa(Izvodjenje iz, List<Slajd> sl, int j, boolean napred) {
         if (iz.getFaza() == Faza.OTVORENO) {
@@ -307,8 +307,8 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
-        if (s.getTip() == TipSlajda.INFO) {
-            iz.setKorak(napred ? 0 : TokIzvodjenja.brojStavki(s));
+        if (s.getTip() != TipSlajda.PITANJE) {
+            iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
             postaviFazuPitanja(iz, s);
         }
@@ -611,13 +611,13 @@ public class IzvodjenjeService {
         }
     }
 
-    /** Trenutni slajd je možda promenio tip ili broj stavki: faza i korak se usklađuju sa slajdom. */
+    /** Trenutni slajd je možda promenio tip ili broj koraka (stavki INFO-a, KLIK animacija platna); sve što nije PITANJE ponaša se kao INFO sa koracima: faza i korak se usklađuju sa slajdom. */
     private void uskladi(Izvodjenje iz, List<Slajd> sl) {
         if (iz.getPrikaz() != Prikaz.SLAJD) return;
         int i = TokIzvodjenja.pozicija(sl, iz.getTrenutniSlajdId());
         if (i < 0) return;
         Slajd s = sl.get(i);
-        if (s.getTip() == TipSlajda.INFO) {
+        if (s.getTip() != TipSlajda.PITANJE) {
             if (iz.getFaza() == Faza.OTVORENO) {
                 zatvori(iz);
             }
@@ -625,7 +625,7 @@ public class IzvodjenjeService {
             iz.setTrenutnaRundaId(null);
             iz.setRezultatiPrikazani(false);
             iz.setTacanPrikazan(false);
-            iz.setKorak(Math.min(iz.getKorak(), TokIzvodjenja.brojStavki(s)));
+            iz.setKorak(Math.min(iz.getKorak(), TokIzvodjenja.brojKoraka(s)));
         } else {
             iz.setKorak(0);
             if (iz.getFaza() == null) {
