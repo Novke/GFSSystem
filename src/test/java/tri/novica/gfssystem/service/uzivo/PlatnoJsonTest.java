@@ -169,4 +169,66 @@ class PlatnoJsonTest {
         String s = JsonMapper.builder().build().writeValueAsString(p);
         assertThat(s).contains("\"tip\":\"TEKST\"").contains("\"tip\":\"CRTEZ\"");
     }
+
+    private String porukaOdbijenog(String s) {
+        return assertThatThrownBy(() -> json.procitaj(cvor(s))).isInstanceOf(SystemException.class)
+                .actual().getMessage();
+    }
+
+    @Test
+    void porukaNeNosiVrednostIDajePutanju() {
+        String m = porukaOdbijenog(pun().replaceFirst("\"velicina\":18", "\"velicina\":\"TAJNA-VREDNOST\""));
+        assertThat(m).isEqualTo("Neispravan dokument platna: pogrešan tip vrednosti (slojevi[0].pasusi[0].delovi[0].velicina).");
+        assertThat(m).doesNotContain("TAJNA-VREDNOST");
+    }
+
+    @Test
+    void porukaZaNepoznatoPoljeImaImeAliOgranicenoNaCetrdeset() {
+        assertThat(porukaOdbijenog(dokument("", "", ",\"visak\":1")))
+                .isEqualTo("Neispravan dokument platna: nepoznato polje 'visak' (visak).");
+        String m = porukaOdbijenog(dokument("", "", ",\"" + "p".repeat(500) + "\":1"));
+        assertThat(m).contains("'" + "p".repeat(40) + "'").doesNotContain("p".repeat(41));
+    }
+
+    @Test
+    void porukaZaNepoznatTipISintaksu() {
+        String m = porukaOdbijenog(dokument("{" + osnova("v1") + ",\"tip\":\"VIDEO-TAJNA\"}", "", ""));
+        assertThat(m).startsWith("Neispravan dokument platna: nepoznat tip sloja").doesNotContain("VIDEO-TAJNA");
+        assertThatThrownBy(() -> json.izKolone("{\"verzija\": TAJNA"))
+                .hasMessageStartingWith("Neispravan dokument platna: neispravan JSON").hasMessageNotContaining("TAJNA");
+    }
+
+    @Test
+    void porukaZaNepoznatuVrednostEnumaNeNosiVrednost() {
+        assertThat(porukaOdbijenog(dokument("", animacija("KLIK", "SPIN-TAJNA", "500"), "")))
+                .doesNotContain("SPIN-TAJNA").contains("animacije[0].efekat");
+    }
+
+    @Test
+    void enumIzRednogBrojaJe400() {
+        odbijeno(dokument("", animacija("KLIK", "FADE", "500").replace("\"efekat\":\"FADE\"", "\"efekat\":2"), ""));
+    }
+
+    @Test
+    void brojIliBooleanUmestoStringaJe400() {
+        odbijeno(pun().replace("\"id\":\"t1\"", "\"id\":12"));
+        odbijeno(pun().replaceFirst("\"tekst\":\"Zdravo\"", "\"tekst\":true"));
+        odbijeno(pun().replaceFirst("\"tekst\":\"Zdravo\"", "\"tekst\":1.5"));
+    }
+
+    @Test
+    void nepoznatoPoljeUDeluPasusaUCeliJeTabeleJe400() {
+        String izmenjen = pun().replace("\"podvuceno\":false,\"precrtano\":false,\"polozaj\":\"OBICAN\"}]}],\"popuna\":null,\"ivice\"",
+                "\"podvuceno\":false,\"precrtano\":false,\"polozaj\":\"OBICAN\",\"x\":1}]}],\"popuna\":null,\"ivice\"");
+        assertThat(izmenjen).isNotEqualTo(pun());
+        assertThat(porukaOdbijenog(izmenjen)).contains("nepoznato polje 'x'").contains("slojevi[3].celije[0][0].pasusi[0].delovi[0]");
+    }
+
+    @Test
+    void izKoloneIgnorisePoljaKojaDolazeIzKasnijeFaze() {
+        String s = pun().replace("\"verzija\":1,", "\"verzija\":1,\"novo\":{\"a\":1},")
+                .replaceFirst("\"polozaj\":\"OBICAN\"", "\"polozaj\":\"OBICAN\",\"nova\":\"x\"");
+        assertThat(json.izKolone(s)).isEqualTo(json.procitaj(cvor(pun())));
+        odbijeno(s);
+    }
 }

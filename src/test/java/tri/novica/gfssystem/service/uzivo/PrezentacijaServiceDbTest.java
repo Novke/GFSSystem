@@ -329,6 +329,26 @@ class PrezentacijaServiceDbTest {
     }
 
     @Test
+    void formulaSaNepostojecomSlikomIzvoraJe400BezUpisa() {
+        Long id = nova("Platno formula bez izvora").id();
+        Platno p = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        java.util.List<tri.novica.gfssystem.dto.uzivo.platno.Sloj> slojevi = new java.util.ArrayList<>(p.slojevi());
+        for (int i = 0; i < slojevi.size(); i++) {
+            if (slojevi.get(i) instanceof tri.novica.gfssystem.dto.uzivo.platno.FormulaSloj f) {
+                slojevi.set(i, new tri.novica.gfssystem.dto.uzivo.platno.FormulaSloj(f.id(), f.naziv(), f.x(), f.y(), f.sirina(), f.visina(), f.rotacija(),
+                        f.providnost(), f.zakljucan(), f.senka(), f.latex(), f.boja(), f.velicina(), f.poravnanje(),
+                        UUID.randomUUID().toString()));
+            }
+        }
+        Platno platno = new Platno(p.verzija(), p.pozadina(), slojevi, p.animacije());
+        SystemException e = assertThrows(SystemException.class, () -> service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO,
+                null, null, null, null, false, null, PlatnoTestPodaci.cvor(platno)), null));
+        assertEquals(400, e.getCode());
+        assertEquals(MedijService.NIJE_PRONADJENA, e.getMessage());
+        assertEquals(0L, broj("select count(*) from slajdovi where prezentacija_id = ?", id));
+    }
+
+    @Test
     void platnoSlajdSeDuplira() {
         Long id = nova("Platno dupl").id();
         SlajdDetails d = service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,

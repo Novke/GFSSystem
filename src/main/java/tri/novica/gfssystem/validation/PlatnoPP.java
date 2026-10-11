@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /**
  * Normalizacija i pravila za dokument platna (spec 4.3, ugovor JSON-a u planu). Ne dira bazu: postojanje slika proverava
- * servis ({@link #medijIds}). Redosled upotrebe: {@code proveri(normalizuj(platno))}. {@code normalizuj} popunjava
+ * servis ({@code PrezentacijaService}, preko {@link #medijIds}). Redosled upotrebe: {@code proveri(normalizuj(platno))}. {@code normalizuj} popunjava
  * podrazumevane vrednosti, zaokružuje brojke na 2 decimale i boje piše velikim slovima, pa server uvek vraća sva polja.
  */
 public final class PlatnoPP {
@@ -217,8 +217,24 @@ public final class PlatnoPP {
         for (Sloj s : ili(p.slojevi(), List.<Sloj>of())) {
             if (s instanceof SlikaSloj i && i.medijId() != null) ids.add(i.medijId());
             if (s instanceof CrtezSloj c && c.medijId() != null) ids.add(c.medijId());
+            if (s instanceof FormulaSloj f && f.slikaIzvora() != null) ids.add(f.slikaIzvora());
         }
         return ids;
+    }
+
+    /** Vrednost za poruku o grešci: najviše 40 code point-a, bez kontrolnih znakova; null je "null". */
+    public static String zaPoruku(String v) {
+        if (v == null) return "null";
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (int i = 0; i < v.length() && n < 40; ) {
+            int cp = v.codePointAt(i);
+            i += Character.charCount(cp);
+            if (Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT) continue;
+            sb.appendCodePoint(cp);
+            n++;
+        }
+        return sb.toString();
     }
 
     private static final String NEISPRAVAN_ID = "Id sloja ili animacije nije ispravan.";
@@ -303,8 +319,8 @@ public final class PlatnoPP {
         List<Double> redovi = t.redovi();
         if (kolone == null || redovi == null || kolone.isEmpty() || redovi.isEmpty()
                 || kolone.size() > MAX_TABELA || redovi.size() > MAX_TABELA
-                || !kolone.stream().allMatch(d -> pozitivno(d, Double.MAX_VALUE))
-                || !redovi.stream().allMatch(d -> pozitivno(d, Double.MAX_VALUE))
+                || !kolone.stream().allMatch(d -> pozitivno(d, 2880))
+                || !redovi.stream().allMatch(d -> pozitivno(d, 2880))
                 || t.celije() == null || t.celije().size() != redovi.size()) {
             throw greska("Tabela nije ispravna.");
         }
@@ -314,7 +330,7 @@ public final class PlatnoPP {
             for (int k = 0; k < red.size(); k++) {
                 Celija c = red.get(k);
                 if (c == null || c.spojDesno() == null || c.spojDole() == null || c.spojDesno() < 0 || c.spojDole() < 0
-                        || k + c.spojDesno() >= kolone.size() || r + c.spojDole() >= redovi.size()
+                        || c.spojDesno() >= kolone.size() - k || c.spojDole() >= redovi.size() - r
                         || c.sidro() == null || c.pokrivena() == null || c.ivice() == null) {
                     throw greska("Tabela nije ispravna.");
                 }
@@ -343,7 +359,7 @@ public final class PlatnoPP {
             proveriListu(p.lista());
             for (Deo d : p.delovi()) {
                 if (d == null) throw greska("Pasus nije ispravan.");
-                if (d.font() == null || !FONTOVI.contains(d.font())) throw greska("Font nije podržan: " + d.font() + ".");
+                if (d.font() == null || !FONTOVI.contains(d.font())) throw greska("Font nije podržan: " + zaPoruku(d.font()) + ".");
                 if (!u(d.velicina(), 1, 400)) throw greska("Veličina slova mora biti od 1 do 400.");
                 proveriBoju(d.boja());
                 znakova[0] += duzina(d.tekst());

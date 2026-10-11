@@ -90,10 +90,10 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - **PLATNO slide (slide builder, phase 1; `V8__platno.sql`):** `TipSlajda.PLATNO` holds a canvas document in `slajdovi.platno`
   (JSON, <= 1 MB): `dto/uzivo/platno/*` (records `Platno`, `Sloj` = TEKST|SLIKA|OBLIK|TABELA|FORMULA|CRTEZ, `Animacija`, ...).
   `service/uzivo/PlatnoJson` is the strict parser (unknown field, wrong subtype, trailing tokens or a string instead of a number
-  = 400; floats accepted as ints). `validation/PlatnoPP.normalizuj` fills defaults and rounds numbers to 2 decimals, then
-  `proveri` enforces limits (300 layers, animation targets must exist, `medijId` must be an existing medij, font from the catalog
-  `PlatnoPP.FONTOVI`); called from `SlajdPP` / `PrezentacijaService`. `SlajdCmd.platno` / `SlajdDetails.platno`: a `PUT` without `platno`
-  on a PLATNO slide must return it unchanged (an old-flow command on an INFO slide clears it). `SlajdMapper.uDetailsZaIzvodjenje`
+  or a number/boolean/ordinal where a string/enum is expected = 400; floats are NOT accepted as ints; `izKolone` reading the stored column is lenient about unknown fields so a rolled-back image still reads newer data). `validation/PlatnoPP.normalizuj` fills defaults and rounds numbers to 2 decimals, then
+  `proveri` enforces limits (300 layers, animation targets must exist, font from the catalog
+  `PlatnoPP.FONTOVI`); called from `SlajdPP` / `PrezentacijaService`; existence of every `medijId` (background, image, drawing, formula `slikaIzvora`) is checked by `PrezentacijaService`, not by `PlatnoPP.proveri` (which only collects them in `medijIds`). `SlajdCmd.platno` / `SlajdDetails.platno`: a `PUT` of a PLATNO slide must send `platno` back
+  (a `PUT` without it is 400, the server does not keep the old one; an old-flow command on an INFO slide clears it). `SlajdMapper.uDetailsZaIzvodjenje`
   gives the run snapshot without the drawing strokes (`potezi`). Notes limit is 20 000 chars.
 - **Steps:** `TokIzvodjenja.brojKoraka` = gradual INFO list items, or for PLATNO the number of animations with trigger KLIK;
   `NastavnickoStanje.brojStavki` is that step count (name kept for the old frontend). If an edit during a run lowers the

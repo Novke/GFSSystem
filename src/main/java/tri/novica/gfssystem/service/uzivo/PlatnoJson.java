@@ -3,6 +3,15 @@ package tri.novica.gfssystem.service.uzivo;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.exc.StreamReadException;
+import tools.jackson.databind.cfg.CoercionAction;
+import tools.jackson.databind.cfg.CoercionInputShape;
+import tools.jackson.databind.cfg.EnumFeature;
+import tools.jackson.databind.exc.InvalidTypeIdException;
+import tools.jackson.databind.exc.MismatchedInputException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
+import tools.jackson.databind.type.LogicalType;
+import tri.novica.gfssystem.validation.PlatnoPP;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.MapperFeature;
@@ -21,14 +30,32 @@ public class PlatnoJson {
 
     private static final int MAX_PORUKA = 200;
 
-    private static final JsonMapper STROGI = JsonMapper.builder()
+    private static final JsonMapper STROGI = osnovniMapper()
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            .enable(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE)
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
-            .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
-            .changeDefaultPropertyInclusion(v -> v.withValueInclusion(JsonInclude.Include.ALWAYS))
             .build();
+
+    /**
+     * Isti mapper bez FAIL_ON_UNKNOWN_PROPERTIES, samo za čitanje sačuvane kolone: kasnija faza može da doda polja, a
+     * vraćena (starija) slika mora da ih pročita. Ulaz iz zahteva ({@link #procitaj}) ostaje strog.
+     */
+    private static final JsonMapper BLAGI = osnovniMapper()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build();
+
+    private static JsonMapper.Builder osnovniMapper() {
+        return JsonMapper.builder()
+                .enable(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE)
+                .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                .enable(EnumFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
+                .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+                .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+                // broj ili boolean nikad ne postaje String ("id":12, "tekst":true)
+                .withCoercionConfig(LogicalType.Textual, c -> c
+                        .setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
+                        .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                        .setCoercion(CoercionInputShape.Boolean, CoercionAction.Fail))
+                .changeDefaultPropertyInclusion(v -> v.withValueInclusion(JsonInclude.Include.ALWAYS));
+    }
 
     public Platno procitaj(JsonNode cvor) {
         if (cvor == null || cvor.isNull() || cvor.isMissingNode()) {
@@ -50,7 +77,7 @@ public class PlatnoJson {
             return null;
         }
         try {
-            return STROGI.readValue(json, Platno.class);
+            return BLAGI.readValue(json, Platno.class);
         } catch (JacksonException e) {
             throw greska(razlog(e));
         }
@@ -91,18 +118,35 @@ public class PlatnoJson {
         return new SystemException("Neispravan dokument platna: " + razlog + ".", 400);
     }
 
+    /** Fiksan razlog po vrsti izuzetka plus putanja (samo imena polja i indeksi); nikad vrednosti iz ulaza. */
     private static String razlog(JacksonException e) {
-        String m = e.getOriginalMessage();
-        if (m == null) {
-            m = "neispravan oblik";
+        String opis;
+        if (e instanceof UnrecognizedPropertyException u) {
+            opis = "nepoznato polje '" + PlatnoPP.zaPoruku(u.getPropertyName()) + "'";
+        } else if (e instanceof InvalidTypeIdException) {
+            opis = "nepoznat tip sloja";
+        } else if (e instanceof MismatchedInputException) {
+            opis = "pogrešan tip vrednosti";
+        } else if (e instanceof StreamReadException) {
+            opis = "neispravan JSON";
+        } else {
+            opis = "neispravan oblik";
         }
-        int nl = m.indexOf('\n');
-        if (nl >= 0) {
-            m = m.substring(0, nl);
+        String putanja = putanja(e);
+        String r = putanja.isEmpty() ? opis : opis + " (" + putanja + ")";
+        return r.length() > MAX_PORUKA ? r.substring(0, MAX_PORUKA) : r;
+    }
+
+    private static String putanja(JacksonException e) {
+        StringBuilder sb = new StringBuilder();
+        for (JacksonException.Reference r : e.getPath()) {
+            if (r.getPropertyName() != null) {
+                if (sb.length() > 0) sb.append('.');
+                sb.append(PlatnoPP.zaPoruku(r.getPropertyName()));
+            } else if (r.getIndex() >= 0) {
+                sb.append('[').append(r.getIndex()).append(']');
+            }
         }
-        if (m.length() > MAX_PORUKA) {
-            m = m.substring(0, MAX_PORUKA);
-        }
-        return m;
+        return sb.toString();
     }
 }

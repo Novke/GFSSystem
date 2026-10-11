@@ -567,6 +567,40 @@ class PlatnoPPTest {
     // --- medijIds ---
 
     @Test
+    void medijIdsSkupljaISlikuIzvoraFormule() {
+        ObjectNode d = dokument();
+        sloj(d, 5).put("slikaIzvora", "izvor-1");
+        assertEquals(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ, "izvor-1"), PlatnoPP.medijIds(normalizovan(d)));
+    }
+
+    @Test
+    void fontUPorukiJeOgranicenIBezKontrolnihZnakova() {
+        String ruzan = "A\n\r\u0000B" + "x".repeat(100);
+        String ocekivano = ("AB" + "x".repeat(100)).substring(0, 40);
+        greska("Font nije podržan: " + ocekivano + ".", d -> deo(d).put("font", ruzan));
+        // 40 code point-a, ne 40 char-ova: surogat parovi se ne seku
+        String emoji = "\uD83D\uDE00".repeat(60);
+        greska("Font nije podržan: " + "\uD83D\uDE00".repeat(40) + ".", d -> deo(d).put("font", emoji));
+    }
+
+    @Test
+    void sirinaKolonaIVisinaRedovaNajviseKaoSloj() {
+        String poruka = "Tabela nije ispravna.";
+        ispravno(d -> ((ArrayNode) sloj(d, 4).get("kolone")).set(0, 2880.0));
+        greska(poruka, d -> ((ArrayNode) sloj(d, 4).get("kolone")).set(0, 2880.01));
+        greska(poruka, d -> ((ArrayNode) sloj(d, 4).get("redovi")).set(0, 1.0e300));
+    }
+
+    @Test
+    void spojUTabeliNePrelaziPrekoCeleBrojeve() {
+        String poruka = "Tabela nije ispravna.";
+        greska(poruka, d -> celija(d, 0, 1).put("spojDesno", Integer.MAX_VALUE));
+        greska(poruka, d -> celija(d, 0, 0).put("spojDesno", Integer.MAX_VALUE));
+        greska(poruka, d -> celija(d, 1, 0).put("spojDole", Integer.MAX_VALUE));
+        greska(poruka, d -> celija(d, 0, 0).put("spojDole", Integer.MAX_VALUE));
+    }
+
+    @Test
     void medijIdsSkupljaPozadinuSlikeICrteze() {
         Platno p = PlatnoPP.normalizuj(PlatnoTestPodaci.ispravno());
         assertEquals(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ), PlatnoPP.medijIds(p));
