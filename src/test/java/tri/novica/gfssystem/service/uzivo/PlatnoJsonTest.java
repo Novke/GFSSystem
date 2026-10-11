@@ -89,6 +89,15 @@ class PlatnoJsonTest {
     }
 
     @Test
+    void listaArapskiBezTackeProlazi() {
+        String lista = "\"lista\":{\"vrsta\":\"BROJ\",\"znak\":null,\"boja\":null,\"format\":\"ARAPSKI\",\"pocetak\":1}";
+        Platno p = json.procitaj(cvor(pun().replace("\"lista\":null", lista)));
+        TekstSloj t = (TekstSloj) p.slojevi().get(0);
+        assertThat(t.pasusi().get(0).lista().format()).isEqualTo(FormatBroja.ARAPSKI);
+        assertThat(t.pasusi().get(0).lista().pocetak()).isEqualTo(1);
+    }
+
+    @Test
     void nepoznatoPoljeJe400() {
         odbijeno(dokument("", "", ",\"visak\":1"));
     }

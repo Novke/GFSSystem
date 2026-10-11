@@ -282,6 +282,13 @@ class PlatnoPPTest {
     }
 
     @Test
+    void listaArapskiJeIspravna() {
+        ispravno(d -> pasus(d, 0).set("lista", lista("BROJ", null, "ARAPSKI", 1)));
+        ispravno(d -> pasus(d, 0).set("lista", lista("BROJ", null, "ARAPSKI", 9999)));
+        greska("Lista nije ispravna.", d -> pasus(d, 0).set("lista", lista("BROJ", null, "ARAPSKI", 0)));
+    }
+
+    @Test
     void lista() {
         String poruka = "Lista nije ispravna.";
         ispravno(d -> pasus(d, 0).set("lista", lista("ZNAK", "••", null, null)));

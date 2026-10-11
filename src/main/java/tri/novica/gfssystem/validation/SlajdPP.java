@@ -189,6 +189,13 @@ public final class SlajdPP {
         }
     }
 
+    /** Pre uvoza: {@code postojeci} je trenutni broj slajdova prezentacije, {@code novi} broj uvezenih. */
+    public static void proveriBrojZaUvoz(long postojeci, int novi) {
+        if (postojeci + novi > MAX_SLAJDOVA) {
+            throw greska("Prezentacija može imati najviše 200 slajdova (ima " + postojeci + ", uvozi se " + novi + ").");
+        }
+    }
+
     /** Tipovi pitanja sa ponuđenim odgovorima. */
     public static boolean imaOpcije(TipPitanja tip) {
         return tip == TipPitanja.JEDAN_TACAN || tip == TipPitanja.VISE_TACNIH || tip == TipPitanja.ANKETA

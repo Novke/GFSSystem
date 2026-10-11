@@ -374,4 +374,63 @@ class PrezentacijaServiceDbTest {
         Platno citano = service.detalji(id).slajdovi().get(0).platno();
         assertNull(((tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) citano.slojevi().get(6)).potezi());
     }
+
+    // ---------------------------------------------------------------- uvoz
+
+    SlajdCmd platnoCmd(String medijId) {
+        return new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(medijId, medijId)));
+    }
+
+    List<String> naslovi(Long id) {
+        return service.detalji(id).slajdovi().stream().map(SlajdDetails::naslov).toList();
+    }
+
+    @Test
+    void uvozUbacujePosleIzabranog() {
+        Long id = nova("Uvoz posle").id();
+        SlajdDetails a = service.dodajSlajd(id, info("A", null), null);
+        service.dodajSlajd(id, info("B", null), null);
+
+        PrezentacijaDetails d = service.uveziSlajdove(id, new UvozSlajdovaCmd(a.id(),
+                List.of(info("U1", null), platnoCmd(slikaId), jedanTacan("x", "y"))));
+
+        assertEquals(5, d.slajdovi().size());
+        assertEquals(List.of(1, 2, 3, 4, 5), d.slajdovi().stream().map(SlajdDetails::rb).toList());
+        assertEquals("A", d.slajdovi().get(0).naslov());
+        assertEquals("U1", d.slajdovi().get(1).naslov());
+        assertEquals(TipSlajda.PLATNO, d.slajdovi().get(2).tip());
+        assertEquals(PlatnoTestPodaci.ispravno(slikaId, slikaId).slojevi(), d.slajdovi().get(2).platno().slojevi());
+        assertEquals(TipSlajda.PITANJE, d.slajdovi().get(3).tip());
+        assertEquals(2, d.slajdovi().get(3).pitanje().opcije().size());
+        assertEquals("B", d.slajdovi().get(4).naslov());
+        assertEquals(d.slajdovi().stream().map(SlajdDetails::id).toList(),
+                service.detalji(id).slajdovi().stream().map(SlajdDetails::id).toList());
+    }
+
+    @Test
+    void uvozNaKraj() {
+        Long id = nova("Uvoz kraj").id();
+        service.dodajSlajd(id, info("A", null), null);
+        service.dodajSlajd(id, info("B", null), null);
+
+        service.uveziSlajdove(id, new UvozSlajdovaCmd(null, List.of(info("U1", null), info("U2", null))));
+
+        assertEquals(List.of("A", "B", "U1", "U2"), naslovi(id));
+    }
+
+    @Test
+    void neispravanUvozNistaNeUpisuje() {
+        Long id = nova("Uvoz neispravan").id();
+        service.dodajSlajd(id, info("A", null), null);
+        java.time.LocalDateTime izmenjeno = service.detalji(id).izmenjeno();
+
+        SystemException e = assertThrows(SystemException.class, () -> service.uveziSlajdove(id, new UvozSlajdovaCmd(null,
+                List.of(info("U1", null), platnoCmd(UUID.randomUUID().toString())))));
+
+        assertEquals(400, e.getCode());
+        assertEquals("Slajd 2: Slika nije pronađena.", e.getMessage());
+        assertEquals(List.of("A"), naslovi(id));
+        assertEquals(izmenjeno, service.detalji(id).izmenjeno());
+    }
 }

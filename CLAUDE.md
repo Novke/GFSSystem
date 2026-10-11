@@ -95,6 +95,7 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   `PlatnoPP.FONTOVI`); called from `SlajdPP` / `PrezentacijaService`; existence of every `medijId` (background, image, drawing, formula `slikaIzvora`) is checked by `PrezentacijaService`, not by `PlatnoPP.proveri` (which only collects them in `medijIds`). `SlajdCmd.platno` / `SlajdDetails.platno`: a `PUT` of a PLATNO slide must send `platno` back
   (a `PUT` without it is 400, the server does not keep the old one; an old-flow command on an INFO slide clears it). `SlajdMapper.uDetailsZaIzvodjenje`
   gives the run snapshot without the drawing strokes (`potezi`). Notes limit is 20 000 chars.
+- **Import of many slides** (PowerPoint import, phase 2): `POST /prezentacije/{id}/slajdovi/uvoz` (`UvozSlajdovaCmd{posle, slajdovi}`, 1-200 slides, every slide validated before the lock, error `Slajd N: ...`, one transaction, 201 with the whole `PrezentacijaDetails`). `config/UvozConfig` answers 413 for `Content-Length` > 10 MB on that path (Spring/Tomcat have no JSON body limit; chunked requests are stopped by the frontend nginx `client_max_body_size 11m`). `FormatBroja.ARAPSKI` = `1 2 3` without punctuation (`arabicPlain`).
 - **Steps:** `TokIzvodjenja.brojKoraka` = gradual INFO list items, or for PLATNO the number of animations with trigger KLIK;
   `NastavnickoStanje.brojStavki` is that step count (name kept for the old frontend). If an edit during a run lowers the
   count, the step is clamped and the phase stays null (no 500).

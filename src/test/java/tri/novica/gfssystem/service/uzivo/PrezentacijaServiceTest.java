@@ -3,6 +3,7 @@ package tri.novica.gfssystem.service.uzivo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -116,6 +117,14 @@ class PrezentacijaServiceTest {
             dodeliId(s);
             if (!baza.contains(s)) baza.add(s);
             return s;
+        });
+        when(slajdRepository.saveAll(anyIterable())).thenAnswer(inv -> {
+            Iterable<Slajd> svi = inv.getArgument(0);
+            svi.forEach(s -> {
+                dodeliId(s);
+                if (!baza.contains(s)) baza.add(s);
+            });
+            return svi;
         });
         doAnswer(inv -> baza.remove((Slajd) inv.getArgument(0))).when(slajdRepository).delete(any(Slajd.class));
         doAnswer(inv -> {
@@ -495,6 +504,67 @@ class PrezentacijaServiceTest {
         greska(400, "Prezentacija može imati najviše 200 slajdova.", () -> service.dodajSlajd(1L, infoCmd("x"), null));
         assertEquals(200, baza.size());
         verify(promene, never()).slajdoviPromenjeni(any());
+    }
+
+    // ---------------------------------------------------------------- uvoz
+
+    @Test
+    void uvozBezSlajdovaJe400() {
+        String poruka = "Uvoz mora imati od 1 do 200 slajdova.";
+        greska(400, poruka, () -> service.uveziSlajdove(1L, new UvozSlajdovaCmd(null, null)));
+        greska(400, poruka, () -> service.uveziSlajdove(1L, new UvozSlajdovaCmd(null, List.of())));
+        greska(400, poruka, () -> service.uveziSlajdove(1L, null));
+        verify(prezentacijaRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void uvozOd201SlajdaJe400() {
+        List<SlajdCmd> mnogo = Collections.nCopies(201, infoCmd("x"));
+        greska(400, "Uvoz mora imati od 1 do 200 slajdova.",
+                () -> service.uveziSlajdove(1L, new UvozSlajdovaCmd(null, mnogo)));
+        verify(prezentacijaRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    void neispravanDrugiSlajdJe400SaBrojemINistaNeUpisuje() {
+        greska(400, "Slajd 2: Info slajd mora imati naslov, tekst ili sliku.", () -> service.uveziSlajdove(1L,
+                new UvozSlajdovaCmd(null, List.of(infoCmd("A"), infoCmd(" ")))));
+        verify(prezentacijaRepository, never()).findByIdForUpdate(any());
+        verify(slajdRepository, never()).save(any());
+        verify(slajdRepository, never()).saveAll(any());
+        assertTrue(baza.isEmpty());
+    }
+
+    @Test
+    void uvozPrekoGraniceJe400() {
+        for (int i = 1; i <= 199; i++) infoUBazi("S" + i, i);
+        greska(400, "Prezentacija može imati najviše 200 slajdova (ima 199, uvozi se 2).", () -> service.uveziSlajdove(1L,
+                new UvozSlajdovaCmd(null, List.of(infoCmd("A"), infoCmd("B")))));
+        verify(slajdRepository, never()).saveAll(any());
+        assertEquals(199, baza.size());
+    }
+
+    @Test
+    void uvozPosleNepostojecegJe400() {
+        infoUBazi("A", 1);
+        greska(400, "Slajd posle kog se dodaje nije u ovoj prezentaciji.",
+                () -> service.uveziSlajdove(1L, new UvozSlajdovaCmd(999L, List.of(infoCmd("U")))));
+        verify(slajdRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void uvozZakljucavaIJavlja() {
+        infoUBazi("A", 1);
+        service.uveziSlajdove(1L, new UvozSlajdovaCmd(null, List.of(infoCmd("U1"), infoCmd("U2"))));
+
+        InOrder redom = inOrder(promene);
+        redom.verify(promene).zakljucaj(1L);
+        redom.verify(promene).slajdoviPromenjeni(1L);
+        ArgumentCaptor<Iterable<Slajd>> novi = ArgumentCaptor.forClass(Iterable.class);
+        verify(slajdRepository).saveAll(novi.capture());
+        assertEquals(2, ((Collection<?>) novi.getValue()).size());
+        assertEquals(List.of("A", "U1", "U2"), slajdovi(1L).stream().map(Slajd::getNaslov).toList());
+        assertEquals(SADA, prez.getIzmenjeno());
     }
 
     @Test

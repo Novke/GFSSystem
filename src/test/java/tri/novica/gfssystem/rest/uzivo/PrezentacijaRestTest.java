@@ -246,4 +246,38 @@ class PrezentacijaRestTest {
            .andExpect(status().isBadRequest())
            .andExpect(jsonPath("$.reason").value(org.hamcrest.Matchers.startsWith("Neispravan dokument platna: ")));
     }
+
+    // ---------------------------------------------------------------- uvoz slajdova
+
+    @Test
+    void uvozVraca201() throws Exception {
+        when(service.uveziSlajdove(eq(1L), any())).thenReturn(DETAILS);
+        mvc.perform(post("/prezentacije/1/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"posle\":5,\"slajdovi\":[{\"tip\":\"INFO\",\"naslov\":\"X\"}]}"))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.id").value(1));
+        verify(service).uveziSlajdove(eq(1L), argThat(c -> c.posle() == 5 && c.slajdovi().size() == 1));
+    }
+
+    @Test
+    void uvozOd9_9MBProlazi() throws Exception {
+        when(service.uveziSlajdove(eq(1L), any())).thenReturn(DETAILS);
+        String slajd = "{\"tip\":\"INFO\",\"naslov\":\"" + "a".repeat(49_000) + "\"}";
+        String telo = "{\"posle\":null,\"slajdovi\":[" + String.join(",", java.util.Collections.nCopies(200, slajd)) + "]}";
+        assertTrue(telo.length() > 9_800_000 && telo.length() < 10_485_760);
+        mvc.perform(post("/prezentacije/1/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON).content(telo))
+           .andExpect(status().isCreated());
+    }
+
+    @Test
+    void uvozPrekoGraniceTelaJe413() throws Exception {
+        String prefiks = "{\"posle\":null,\"slajdovi\":[],\"x\":\"";
+        String sufiks = "\"}";
+        String telo = prefiks + "a".repeat(10_485_761 - prefiks.length() - sufiks.length()) + sufiks;
+        assertEquals(10_485_761, telo.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        mvc.perform(post("/prezentacije/1/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON).content(telo))
+           .andExpect(status().isPayloadTooLarge())
+           .andExpect(jsonPath("$.reason").value("Uvoz je prevelik (najviše 10 MB). Uvezi deo po deo (opseg slajdova)."));
+        verify(service, never()).uveziSlajdove(any(), any());
+    }
 }

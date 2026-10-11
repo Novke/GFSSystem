@@ -172,6 +172,55 @@ public class PrezentacijaService {
     // ---------------------------------------------------------------- slajdovi
 
     /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
+    static final String POSLE_NIJE_U_PREZENTACIJI = "Slajd posle kog se dodaje nije u ovoj prezentaciji.";
+    static final String NEISPRAVAN_UVOZ = "Uvoz mora imati od 1 do 200 slajdova.";
+
+    /**
+     * Uvoz više slajdova (spec 7.7): svi se normalizuju i proveravaju pre zaključavanja (greška u bilo kom = 400
+     * "Slajd N: ...", ništa se ne upisuje), pa se ubacuju redom posle {@code posle} (ili na kraj) u jednoj transakciji, uz
+     * isto zaključavanje i obaveštenje kao {@link #dodajSlajd}.
+     */
+    public PrezentacijaDetails uveziSlajdove(Long prezentacijaId, UvozSlajdovaCmd cmd) {
+        List<SlajdCmd> ulaz = cmd == null ? null : cmd.slajdovi();
+        if (ulaz == null || ulaz.isEmpty() || ulaz.size() > SlajdPP.MAX_SLAJDOVA) {
+            throw new SystemException(NEISPRAVAN_UVOZ, HttpStatus.BAD_REQUEST);
+        }
+        List<ProverenSlajd> provereni = new ArrayList<>(ulaz.size());
+        for (int i = 0; i < ulaz.size(); i++) {
+            try {
+                provereni.add(proveren(ulaz.get(i)));
+            } catch (SystemException e) {
+                throw new SystemException("Slajd " + (i + 1) + ": " + e.getMessage(),
+                        Objects.requireNonNullElse(e.getCode(), HttpStatus.BAD_REQUEST.value()));
+            }
+        }
+        Prezentacija p = zakljucaj(prezentacijaId);
+        List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(prezentacijaId);
+        SlajdPP.proveriBrojZaUvoz(slajdovi.size(), provereni.size());
+        int mesto = slajdovi.size();
+        if (cmd.posle() != null) {
+            int i = indeks(slajdovi, cmd.posle());
+            if (i < 0) {
+                throw new SystemException(POSLE_NIJE_U_PREZENTACIJI, HttpStatus.BAD_REQUEST);
+            }
+            mesto = i + 1;
+        }
+        List<Slajd> novi = new ArrayList<>(provereni.size());
+        for (ProverenSlajd n : provereni) {
+            Slajd s = new Slajd();
+            s.setPrezentacija(p);
+            primeni(s, n);
+            novi.add(s);
+        }
+        slajdovi.addAll(mesto, novi);
+        prenumerisi(slajdovi);
+        slajdRepository.saveAll(novi);
+        sacuvajIzmenu(p);
+        javi(pr -> pr.slajdoviPromenjeni(prezentacijaId));
+        log.info("Uvezeno slajdova: {} u prezentaciju {}", novi.size(), prezentacijaId);
+        return details(p, slajdovi);
+    }
+
     public SlajdDetails dodajSlajd(Long prezentacijaId, SlajdCmd cmd, Long posle) {
         ProverenSlajd n = proveren(cmd);
         Prezentacija p = zakljucaj(prezentacijaId);
@@ -181,7 +230,7 @@ public class PrezentacijaService {
         if (posle != null) {
             int i = indeks(slajdovi, posle);
             if (i < 0) {
-                throw new SystemException("Slajd posle kog se dodaje nije u ovoj prezentaciji.", HttpStatus.BAD_REQUEST);
+                throw new SystemException(POSLE_NIJE_U_PREZENTACIJI, HttpStatus.BAD_REQUEST);
             }
             mesto = i + 1;
         }
