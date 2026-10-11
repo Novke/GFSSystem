@@ -204,7 +204,7 @@ class PrezentacijaServiceTest {
 
     @Test
     void kreirajPostavljaPodrazumevanaPodesavanjaIVreme() {
-        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(7L, "  Momenti sile ", "  "));
+        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(7L, "  Momenti sile ", "  ", null));
 
         verify(prezentacijaRepository).save(argThat(p ->
                 !p.isTakmicenje() && p.getTelefonPrikaz() == TelefonPrikaz.DUGMAD && p.isDetaljiDozvoljeni()
@@ -224,25 +224,25 @@ class PrezentacijaServiceTest {
 
     @Test
     void kreirajNepostojeciPredmetJe404() {
-        greska(404, "Predmet nije pronađen.", () -> service.kreiraj(new CreatePrezentacijaCmd(99L, "X", null)));
+        greska(404, "Predmet nije pronađen.", () -> service.kreiraj(new CreatePrezentacijaCmd(99L, "X", null, null)));
         verify(prezentacijaRepository, never()).save(any());
     }
 
     @Test
     void kreirajBezPredmetaJe400() {
-        greska(400, "Predmet je obavezan.", () -> service.kreiraj(new CreatePrezentacijaCmd(null, "X", null)));
+        greska(400, "Predmet je obavezan.", () -> service.kreiraj(new CreatePrezentacijaCmd(null, "X", null, null)));
     }
 
     @Test
     void kreirajPrazanIliPredugNazivJe400() {
         String poruka = "Naziv je obavezan (najviše 200 znakova).";
-        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "   ", null)));
-        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, null, null)));
-        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "a".repeat(201), null)));
+        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "   ", null, null)));
+        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, null, null, null)));
+        greska(400, poruka, () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "a".repeat(201), null, null)));
         greska(400, "Opis može imati najviše 1000 znakova.",
-                () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "X", "a".repeat(1001))));
+                () -> service.kreiraj(new CreatePrezentacijaCmd(7L, "X", "a".repeat(1001), null)));
         verify(prezentacijaRepository, never()).save(any());
-        assertDoesNotThrow(() -> service.kreiraj(new CreatePrezentacijaCmd(7L, "a".repeat(200), "a".repeat(1000))));
+        assertDoesNotThrow(() -> service.kreiraj(new CreatePrezentacijaCmd(7L, "a".repeat(200), "a".repeat(1000), null)));
     }
 
     @Test
@@ -309,9 +309,46 @@ class PrezentacijaServiceTest {
     }
 
     @Test
+    void kreirajBezTemeDajeNacrt() {
+        service.kreiraj(new CreatePrezentacijaCmd(7L, "X", null, null));
+        verify(prezentacijaRepository).save(argThat(p -> p.getTema() == Tema.NACRT));
+    }
+
+    @Test
+    void kreirajSaTemom() {
+        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(7L, "X", null, Tema.BELA));
+        verify(prezentacijaRepository).save(argThat(p -> p.getTema() == Tema.BELA));
+        assertEquals(Tema.BELA, d.tema());
+    }
+
+    @Test
+    void izmeniBezTemeNeMenjaTemu() {
+        prez.setTema(Tema.PAPIR);
+        PrezentacijaDetails d = service.izmeni(1L, new UpdatePrezentacijaCmd("Naziv", null, false, TelefonPrikaz.DUGMAD, true, null));
+        assertEquals(Tema.PAPIR, prez.getTema());
+        assertEquals(Tema.PAPIR, d.tema());
+    }
+
+    @Test
+    void izmeniSaTemom() {
+        prez.setTema(Tema.PAPIR);
+        PrezentacijaDetails d = service.izmeni(1L, new UpdatePrezentacijaCmd("Naziv", null, false, TelefonPrikaz.DUGMAD, true, Tema.TAMNA));
+        assertEquals(Tema.TAMNA, prez.getTema());
+        assertEquals(Tema.TAMNA, d.tema());
+    }
+
+    @Test
+    void duplirajKopiraTemu() {
+        prez.setTema(Tema.PONOC);
+        PrezentacijaDetails d = service.dupliraj(1L);
+        verify(prezentacijaRepository).save(argThat(p -> p.getTema() == Tema.PONOC));
+        assertEquals(Tema.PONOC, d.tema());
+    }
+
+    @Test
     void izmeniMenjaNazivIPodesavanjaIIzmenjeno() {
         PrezentacijaDetails d = service.izmeni(1L,
-                new UpdatePrezentacijaCmd(" Novi naziv ", "", false, TelefonPrikaz.DUGMAD, true));
+                new UpdatePrezentacijaCmd(" Novi naziv ", "", false, TelefonPrikaz.DUGMAD, true, null));
         assertEquals("Novi naziv", prez.getNaziv());
         assertNull(prez.getOpis());
         assertFalse(prez.isTakmicenje());
@@ -320,7 +357,7 @@ class PrezentacijaServiceTest {
         assertEquals(SADA, prez.getIzmenjeno());
         assertEquals("Novi naziv", d.naziv());
         greska(400, "Naziv je obavezan (najviše 200 znakova).",
-                () -> service.izmeni(1L, new UpdatePrezentacijaCmd("", null, false, TelefonPrikaz.DUGMAD, true)));
+                () -> service.izmeni(1L, new UpdatePrezentacijaCmd("", null, false, TelefonPrikaz.DUGMAD, true, null)));
     }
 
     @Test
@@ -699,7 +736,7 @@ class PrezentacijaServiceTest {
         }).when(promene).zakljucaj(1L);
 
         switch (operacija) {
-            case "izmeni" -> service.izmeni(1L, new UpdatePrezentacijaCmd("Novo", null, false, TelefonPrikaz.DUGMAD, true));
+            case "izmeni" -> service.izmeni(1L, new UpdatePrezentacijaCmd("Novo", null, false, TelefonPrikaz.DUGMAD, true, null));
             case "dodajSlajd" -> service.dodajSlajd(1L, infoCmd("C"), a.getId());
             case "izmeniSlajd" -> service.izmeniSlajd(b.getId(), infoCmd("B2"));
             case "obrisiSlajd" -> service.obrisiSlajd(b.getId());

@@ -12,6 +12,7 @@ import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.entity.uzivo.TekstPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -93,7 +94,7 @@ class PrezentacijaServiceDbTest {
     }
 
     PrezentacijaDetails nova(String naziv) {
-        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), naziv, null));
+        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), naziv, null, null));
         prezentacije.add(d.id());
         return d;
     }
@@ -122,6 +123,13 @@ class PrezentacijaServiceDbTest {
     List<Long> pitanjaPrezentacije(Long prezentacijaId) {
         return jdbc.queryForList("select pitanje_id from slajdovi where prezentacija_id = ? and pitanje_id is not null",
                 Long.class, prezentacijaId);
+    }
+
+    @Test
+    void novaPrezentacijaImaTemuNacrtUBazi() {
+        Long id = nova("Tema").id();
+        assertEquals(Tema.NACRT, service.detalji(id).tema());
+        assertEquals("NACRT", jdbc.queryForObject("select tema from prezentacije where id = ?", String.class, id));
     }
 
     @Test

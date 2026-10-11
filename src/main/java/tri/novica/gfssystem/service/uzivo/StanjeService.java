@@ -101,7 +101,7 @@ public class StanjeService {
                 rezultat, odgovoriRunde.size(),
                 povezanost.brojPovezanih(p.ucesnici().stream().map(Ucesnik::getId).toList()),
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
-                javniRezultat(p), javnaRangLista(p));
+                javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema());
     }
 
     // ---------------------------------------------------------------- javno i lično stanje (telefoni)

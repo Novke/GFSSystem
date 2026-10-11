@@ -66,7 +66,7 @@ class UcesnikOdgovorDbTest {
 
     /** Prezentacija sa jednim JEDAN_TACAN pitanjem bez vremenskog ograničenja (raspored zatvaranja ne učestvuje). */
     PrezentacijaDetails prezentacija() {
-        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Statika uživo", null));
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Statika uživo", null, null));
         prezentacije.add(p.id());
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
                 new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koja sila?", null, null,
@@ -225,9 +225,9 @@ class UcesnikOdgovorDbTest {
      */
     @Test
     void ponovoOtvorenoPitanjePaTajmer() {
-        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Tajmer", null));
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Tajmer", null, null));
         prezentacije.add(p.id());
-        prezentacijaService.izmeni(p.id(), new UpdatePrezentacijaCmd("Tajmer", null, true, TelefonPrikaz.DUGMAD, true));
+        prezentacijaService.izmeni(p.id(), new UpdatePrezentacijaCmd("Tajmer", null, true, TelefonPrikaz.DUGMAD, true, null));
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
                 new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koja sila?", null, 20,
                         List.of(new OpcijaCmd("Gravitacija", true), new OpcijaCmd("Trenje", false)),

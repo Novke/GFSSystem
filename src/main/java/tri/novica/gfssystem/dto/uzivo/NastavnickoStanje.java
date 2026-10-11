@@ -4,6 +4,7 @@ import tri.novica.gfssystem.entity.uzivo.Ekran;
 import tri.novica.gfssystem.entity.uzivo.Faza;
 import tri.novica.gfssystem.entity.uzivo.Prikaz;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 
 import java.util.List;
 
@@ -21,5 +22,5 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
                                 TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
                                 Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
-                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista) {
+                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema) {
 }

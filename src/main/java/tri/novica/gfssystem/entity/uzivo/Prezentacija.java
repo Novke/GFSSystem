@@ -29,6 +29,8 @@ public class Prezentacija {
     private TelefonPrikaz telefonPrikaz;
     @Column(nullable = false)
     private boolean detaljiDozvoljeni;
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
+    private Tema tema = Tema.NACRT;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     @Column(nullable = false)

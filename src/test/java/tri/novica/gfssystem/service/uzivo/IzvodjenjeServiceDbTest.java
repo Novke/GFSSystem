@@ -79,7 +79,7 @@ class IzvodjenjeServiceDbTest {
 
     /** INFO (postepeno, 2 stavke), JEDAN_TACAN sa {@code sekunde}, ANKETA bez vremena. */
     PrezentacijaDetails prezentacija(Integer sekunde) {
-        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Statika uživo", null));
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Statika uživo", null, null));
         prezentacije.add(p.id());
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", "- a\n- b", null, null, true, null), null);
         prezentacijaService.dodajSlajd(p.id(), pitanje(TipPitanja.JEDAN_TACAN, sekunde), null);
@@ -248,7 +248,7 @@ class IzvodjenjeServiceDbTest {
 
     @Test
     void pokreniBezPitanjaNikadNeCuva() {
-        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Samo info", null));
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Samo info", null, null));
         prezentacije.add(p.id());
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null), null);
         IzvodjenjeInfo info = service.pokreni(p.id(), new PokreniCmd(true, grupa.getId(), null));

@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -33,7 +34,7 @@ class PrezentacijaRestTest {
 
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final PrezentacijaDetails DETAILS = new PrezentacijaDetails(1L, "Uvod", null, new PredmetKratko(7L, "Statika"),
-            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, List.of());
+            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of());
     static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null);
 
     @Autowired MockMvc mvc;
@@ -53,7 +54,7 @@ class PrezentacijaRestTest {
            .andExpect(jsonPath("$.telefonPrikaz").value("DUGMAD"))
            .andExpect(jsonPath("$.aktivnoIzvodjenjeId").value(org.hamcrest.Matchers.nullValue()))
            .andExpect(jsonPath("$.slajdovi").isArray());
-        verify(service).kreiraj(new CreatePrezentacijaCmd(7L, "Uvod", null));
+        verify(service).kreiraj(new CreatePrezentacijaCmd(7L, "Uvod", null, null));
     }
 
     @Test
@@ -111,7 +112,7 @@ class PrezentacijaRestTest {
         mvc.perform(put("/prezentacije/1").contentType(MediaType.APPLICATION_JSON).content("""
                 {"naziv":"Novi","opis":null,"takmicenje":true,"telefonPrikaz":"PITANJE","detaljiDozvoljeni":false}"""))
            .andExpect(status().isOk());
-        verify(service).izmeni(1L, new UpdatePrezentacijaCmd("Novi", null, true, TelefonPrikaz.PITANJE, false));
+        verify(service).izmeni(1L, new UpdatePrezentacijaCmd("Novi", null, true, TelefonPrikaz.PITANJE, false, null));
         mvc.perform(delete("/prezentacije/1")).andExpect(status().isNoContent());
         verify(service).obrisi(1L);
         mvc.perform(post("/prezentacije/1/dupliraj")).andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(1));

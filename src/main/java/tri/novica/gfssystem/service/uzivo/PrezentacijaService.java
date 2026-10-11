@@ -91,6 +91,7 @@ public class PrezentacijaService {
         p.setTakmicenje(false);
         p.setTelefonPrikaz(TelefonPrikaz.DUGMAD);
         p.setDetaljiDozvoljeni(true);
+        p.setTema(Objects.requireNonNullElse(cmd.tema(), Tema.NACRT));
         p.setKreirano(sada);
         p.setIzmenjeno(sada);
         p = prezentacijaRepository.save(p);
@@ -115,6 +116,9 @@ public class PrezentacijaService {
             p.setTelefonPrikaz(cmd.telefonPrikaz());
         }
         p.setDetaljiDozvoljeni(cmd.detaljiDozvoljeni());
+        if (cmd.tema() != null) {
+            p.setTema(cmd.tema());
+        }
         sacuvajIzmenu(p);
         // naziv se vidi i u stanju izvođenja u toku
         javi(pr -> pr.slajdoviPromenjeni(id));
@@ -145,6 +149,7 @@ public class PrezentacijaService {
         kopija.setTakmicenje(izvor.isTakmicenje());
         kopija.setTelefonPrikaz(izvor.getTelefonPrikaz());
         kopija.setDetaljiDozvoljeni(izvor.isDetaljiDozvoljeni());
+        kopija.setTema(izvor.getTema());
         kopija.setKreirano(sada);
         kopija.setIzmenjeno(sada);
         kopija = prezentacijaRepository.save(kopija);
@@ -419,14 +424,14 @@ public class PrezentacijaService {
                 slajdRepository.countByPrezentacijaId(id),
                 slajdRepository.countByPrezentacijaIdAndTip(id, TipSlajda.PITANJE),
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
-                izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id));
+                izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id), p.getTema());
     }
 
     private PrezentacijaDetails details(Prezentacija p, List<Slajd> slajdovi) {
         long brojPitanja = slajdovi.stream().filter(s -> s.getTip() == TipSlajda.PITANJE).count();
         return new PrezentacijaDetails(p.getId(), p.getNaziv(), p.getOpis(), predmet(p), slajdovi.size(), brojPitanja,
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
-                izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()),
+                izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()), p.getTema(),
                 slajdovi.stream().map(SlajdMapper::uDetails).toList());
     }
 
