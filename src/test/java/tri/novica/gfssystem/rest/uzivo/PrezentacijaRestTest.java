@@ -276,8 +276,28 @@ class PrezentacijaRestTest {
         String telo = prefiks + "a".repeat(10_485_761 - prefiks.length() - sufiks.length()) + sufiks;
         assertEquals(10_485_761, telo.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
         mvc.perform(post("/prezentacije/1/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON).content(telo))
-           .andExpect(status().isPayloadTooLarge())
+           .andExpect(status().isContentTooLarge())
            .andExpect(jsonPath("$.reason").value("Uvoz je prevelik (najviše 10 MB). Uvezi deo po deo (opseg slajdova)."));
         verify(service, never()).uveziSlajdove(any(), any());
+    }
+
+    @Test
+    void uvozTacnoNaGraniciTelaProlazi() throws Exception {
+        when(service.uveziSlajdove(eq(1L), any())).thenReturn(DETAILS);
+        String prefiks = "{\"posle\":null,\"slajdovi\":[{\"tip\":\"INFO\",\"naslov\":\"X\"}],\"x\":\"";
+        String sufiks = "\"}";
+        String telo = prefiks + "a".repeat(10_485_760 - prefiks.length() - sufiks.length()) + sufiks;
+        assertEquals(10_485_760, telo.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        mvc.perform(post("/prezentacije/1/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON).content(telo))
+           .andExpect(status().isCreated());
+    }
+
+    @Test
+    void uvozUNepostojecuPrezentacijuJe404() throws Exception {
+        doThrow(new SystemException("Prezentacija nije pronađena.", HttpStatus.NOT_FOUND))
+                .when(service).uveziSlajdove(eq(99L), any());
+        mvc.perform(post("/prezentacije/99/slajdovi/uvoz").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"posle\":null,\"slajdovi\":[{\"tip\":\"INFO\",\"naslov\":\"X\"}]}"))
+           .andExpect(status().isNotFound());
     }
 }

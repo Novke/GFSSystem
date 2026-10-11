@@ -95,6 +95,7 @@ class PlatnoJsonTest {
         TekstSloj t = (TekstSloj) p.slojevi().get(0);
         assertThat(t.pasusi().get(0).lista().format()).isEqualTo(FormatBroja.ARAPSKI);
         assertThat(t.pasusi().get(0).lista().pocetak()).isEqualTo(1);
+        assertThat(json.procitaj(cvor(json.zapisi(p)))).isEqualTo(p);
     }
 
     @Test

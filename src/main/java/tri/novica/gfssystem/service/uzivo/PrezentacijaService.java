@@ -46,6 +46,8 @@ import java.util.function.Consumer;
 public class PrezentacijaService {
 
     static final String NIJE_PRONADJENA = "Prezentacija nije pronađena.";
+    static final String POSLE_NIJE_U_PREZENTACIJI = "Slajd posle kog se dodaje nije u ovoj prezentaciji.";
+    static final String NEISPRAVAN_UVOZ = "Uvoz mora imati od 1 do 200 slajdova.";
     static final String SLAJD_NIJE_PRONADJEN = "Slajd nije pronađen.";
     static final String NEISPRAVAN_REDOSLED = "Redosled mora sadržati tačno sve slajdove prezentacije.";
     static final String IZVODJENJE_U_TOKU = "Prezentacija ima izvođenje u toku. Završi ga pre brisanja.";
@@ -171,10 +173,6 @@ public class PrezentacijaService {
 
     // ---------------------------------------------------------------- slajdovi
 
-    /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
-    static final String POSLE_NIJE_U_PREZENTACIJI = "Slajd posle kog se dodaje nije u ovoj prezentaciji.";
-    static final String NEISPRAVAN_UVOZ = "Uvoz mora imati od 1 do 200 slajdova.";
-
     /**
      * Uvoz više slajdova (spec 7.7): svi se normalizuju i proveravaju pre zaključavanja (greška u bilo kom = 400
      * "Slajd N: ...", ništa se ne upisuje), pa se ubacuju redom posle {@code posle} (ili na kraj) u jednoj transakciji, uz
@@ -221,6 +219,7 @@ public class PrezentacijaService {
         return details(p, slajdovi);
     }
 
+    /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
     public SlajdDetails dodajSlajd(Long prezentacijaId, SlajdCmd cmd, Long posle) {
         ProverenSlajd n = proveren(cmd);
         Prezentacija p = zakljucaj(prezentacijaId);
