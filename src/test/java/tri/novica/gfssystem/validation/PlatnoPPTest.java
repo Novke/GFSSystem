@@ -475,6 +475,22 @@ class PlatnoPPTest {
         greska(poruka, d -> sloj(d, 6).set("potezi", potezi(20_001)));
         ispravno(d -> sloj(d, 6).set("potezi", MAPPER.createArrayNode()));
         ispravno(d -> sloj(d, 6).putNull("potezi"));
+        ObjectNode bez = dokument();
+        sloj(bez, 6).putNull("potezi");
+        assertNull(((CrtezSloj) normalizovan(bez).slojevi().get(6)).potezi());
+        // proveri bez normalizuj: null font je 400, ne NPE
+        Platno p = PlatnoTestPodaci.ispravno();
+        TekstSloj t = (TekstSloj) p.slojevi().get(0);
+        Pasus ps = t.pasusi().get(0);
+        Deo d0 = ps.delovi().get(0);
+        Deo bezFonta = new Deo(d0.tekst(), null, d0.velicina(), d0.boja(), false, false, false, false, d0.polozaj());
+        Pasus np = new Pasus(ps.poravnanje(), ps.nivo(), ps.lista(), ps.uvlacenje(), ps.razmakPre(), ps.razmakPosle(),
+                ps.proredProcenat(), ps.tabulatori(), java.util.List.of(bezFonta));
+        TekstSloj nt = new TekstSloj(t.id(), t.naziv(), t.x(), t.y(), t.sirina(), t.visina(), t.rotacija(), t.providnost(),
+                t.zakljucan(), t.senka(), java.util.List.of(np), t.okvir(), t.popuna(), t.ivica());
+        Platno bezFontaPlatno = new Platno(1, p.pozadina(), java.util.List.of(nt), java.util.List.of());
+        assertEquals("Font nije podržan: null.",
+                assertThrows(SystemException.class, () -> PlatnoPP.proveri(bezFontaPlatno)).getMessage());
     }
 
     static ObjectNode potez(ObjectNode d) {

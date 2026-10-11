@@ -339,4 +339,19 @@ class PrezentacijaServiceDbTest {
         prezentacije.add(kopijaPrez.id());
         assertEquals(d.platno(), kopijaPrez.slajdovi().get(0).platno());
     }
+
+    @Test
+    void crtezBezPotezaOstajeNullKrozServis() {
+        Long id = nova("Platno crtez").id();
+        Platno p = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        java.util.List<tri.novica.gfssystem.dto.uzivo.platno.Sloj> slojevi = new ArrayList<>(p.slojevi());
+        tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj c = (tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) slojevi.get(6);
+        slojevi.set(6, new tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj(c.id(), c.naziv(), c.x(), c.y(), c.sirina(),
+                c.visina(), c.rotacija(), c.providnost(), c.zakljucan(), c.senka(), c.medijId(), null));
+        Platno bez = new Platno(1, p.pozadina(), slojevi, p.animacije());
+        service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(bez)), null);
+        Platno citano = service.detalji(id).slajdovi().get(0).platno();
+        assertNull(((tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) citano.slojevi().get(6)).potezi());
+    }
 }

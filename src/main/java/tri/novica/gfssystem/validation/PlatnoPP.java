@@ -40,7 +40,7 @@ public final class PlatnoPP {
 
     // ------------------------------------------------------------------ normalizacija
 
-    /** Kopija sa podrazumevanim vrednostima; {@code null} za {@code null}. Nedostajuće liste su prazne. */
+    /** Kopija sa podrazumevanim vrednostima; {@code null} za {@code null}. Nedostajuće liste su prazne (osim {@code potezi} crteža: {@code null} je crtež bez poteza). */
     public static Platno normalizuj(Platno p) {
         if (p == null) return null;
         Pozadina pozadina = p.pozadina() == null ? null
@@ -72,7 +72,7 @@ public final class PlatnoPP {
             case FormulaSloj f -> new FormulaSloj(f.id(), naziv, x, y, sirina, visina, rotacija, providnost, zakljucan, senka,
                     f.latex(), boja(f.boja()), r(f.velicina()), ili(f.poravnanje(), Poravnanje.LEVO), f.slikaIzvora());
             case CrtezSloj c -> new CrtezSloj(c.id(), naziv, x, y, sirina, visina, rotacija, providnost, zakljucan, senka,
-                    c.medijId(), lista(c.potezi(), PlatnoPP::potez));
+                    c.medijId(), c.potezi() == null ? null : lista(c.potezi(), PlatnoPP::potez));
         };
     }
 
@@ -343,7 +343,7 @@ public final class PlatnoPP {
             proveriListu(p.lista());
             for (Deo d : p.delovi()) {
                 if (d == null) throw greska("Pasus nije ispravan.");
-                if (!FONTOVI.contains(d.font())) throw greska("Font nije podržan: " + d.font() + ".");
+                if (d.font() == null || !FONTOVI.contains(d.font())) throw greska("Font nije podržan: " + d.font() + ".");
                 if (!u(d.velicina(), 1, 400)) throw greska("Veličina slova mora biti od 1 do 400.");
                 proveriBoju(d.boja());
                 znakova[0] += duzina(d.tekst());
