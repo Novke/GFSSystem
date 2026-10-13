@@ -182,6 +182,7 @@ class NastavnickoStanjeTest {
 
         assertEquals(17, st.verzija());
         assertEquals(clock.millis(), st.serverVremeMs());
+        assertEquals(T0.atZone(ZONA).toInstant().toEpochMilli(), st.pocetakMs());
         assertEquals(Prikaz.SLAJD, st.prikaz());
         assertEquals(1, st.indeks());
         assertEquals(3, st.brojSlajdova());

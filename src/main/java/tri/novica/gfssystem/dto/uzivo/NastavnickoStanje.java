@@ -16,6 +16,8 @@ import java.util.List;
  * {@code rangLista}), izgrađeno istim kodom, pa važe ista pravila "ni ranije". Jedina razlika: {@code javniRezultat}
  * uvek ima tekstove opcija (sala ih vidi na platnu), a telefon ih ne dobija dok tekst nije dozvoljen.
  * {@code brojStavki}: broj koraka trenutnog slajda (stavke INFO liste ili KLIK animacije PLATNO slajda); ime ostaje zbog starog fronta.
+ * {@code pocetakMs}: početak izvođenja u epoch ms (zona {@code Clock}-a, kao {@code rokMs}); štoperica u konzoli i
+ * daljinskom meri od njega po serverskom satu (spec graditelja 9), nezavisno od vremenske zone pregledača.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
@@ -23,5 +25,5 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
                                 TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
                                 Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
-                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema) {
+                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema, long pocetakMs) {
 }
