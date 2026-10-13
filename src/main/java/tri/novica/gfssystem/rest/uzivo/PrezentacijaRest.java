@@ -55,6 +55,13 @@ public class PrezentacijaRest {
         return prezentacijaService.dupliraj(id);
     }
 
+    /** Uvoz više slajdova odjednom (PowerPoint); telo do 10 MB ({@link tri.novica.gfssystem.config.UvozConfig}). */
+    @PostMapping("/{id}/slajdovi/uvoz")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PrezentacijaDetails uvoz(@PathVariable Long id, @RequestBody UvozSlajdovaCmd cmd) {
+        return prezentacijaService.uveziSlajdove(id, cmd);
+    }
+
     /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
     @PostMapping("/{id}/slajdovi")
     @ResponseStatus(HttpStatus.CREATED)
