@@ -31,7 +31,7 @@ class IzvodjenjeRestTest {
             null, null, Faza.OTVORENO, new RundaInfo(101L, 1, 1_759_831_220_000L, null, true), false, false, false,
             Ekran.NORMALAN, false, TelefonPrikaz.DUGMAD, true, false, null, 1, 1,
             List.of(new UcesnikStanje(31L, "Ana", 0, true, true)), List.of(new RangStavka(1, 31L, "Ana", 0)),
-            null, null);
+            null, null, Tema.NACRT);
 
     @Autowired MockMvc mvc;
     @MockitoBean IzvodjenjeService service;

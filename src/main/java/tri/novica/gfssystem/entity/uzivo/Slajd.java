@@ -31,6 +31,9 @@ public class Slajd {
     /** Stavke liste u sadržaju se otkrivaju jedna po jedna. */
     @Column(nullable = false)
     private boolean postepeno;
+    /** JSON dokument platna (spec 4.3), samo za PLATNO; čita/piše {@code PlatnoJson}. */
+    @Column(columnDefinition = "mediumtext")
+    private String platno;
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "pitanje_id")
     private Pitanje pitanje;

@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.validation;
 
 import org.springframework.http.HttpStatus;
+import tools.jackson.databind.JsonNode;
 import tri.novica.gfssystem.dto.uzivo.OpcijaCmd;
 import tri.novica.gfssystem.dto.uzivo.PitanjeCmd;
 import tri.novica.gfssystem.dto.uzivo.SlajdCmd;
@@ -22,12 +23,13 @@ import java.util.Objects;
 public final class SlajdPP {
 
     public static final int MAX_SLAJDOVA = 200;
+    public static final int MAX_BELESKE = 20_000;
+    public static final String BEZ_PLATNA = "Platno slajd mora imati dokument platna.";
     public static final String TACNO = "Tačno";
     public static final String NETACNO = "Netačno";
 
     private static final int MAX_NASLOV = 300;
     private static final int MAX_SADRZAJ = 20_000;
-    private static final int MAX_BELESKE = 5_000;
     private static final int MAX_TEKST_PITANJA = 2_000;
     private static final int MIN_OPCIJA = 2;
     private static final int MAX_OPCIJA = 6;
@@ -48,9 +50,13 @@ public final class SlajdPP {
      */
     public static SlajdCmd normalizuj(SlajdCmd cmd) {
         if (cmd == null) return null;
+        JsonNode platno = cmd.platno() == null || cmd.platno().isNull() || cmd.platno().isMissingNode() ? null : cmd.platno();
+        if (cmd.tip() == TipSlajda.PLATNO) {
+            return new SlajdCmd(cmd.tip(), null, null, null, prazanUNull(cmd.beleske()), false, null, platno);
+        }
         PitanjeCmd pitanje = cmd.tip() == TipSlajda.INFO ? null : normalizuj(cmd.pitanje());
         return new SlajdCmd(cmd.tip(), prazanUNull(cmd.naslov()), prazanUNull(cmd.sadrzaj()), prazanUNull(cmd.slikaId()),
-                prazanUNull(cmd.beleske()), cmd.postepeno(), pitanje);
+                prazanUNull(cmd.beleske()), cmd.postepeno(), pitanje, null);
     }
 
     private static PitanjeCmd normalizuj(PitanjeCmd p) {
@@ -94,7 +100,13 @@ public final class SlajdPP {
             throw greska("Tekst slajda može imati najviše 20000 znakova.");
         }
         if (duzina(cmd.beleske()) > MAX_BELESKE) {
-            throw greska("Beleške mogu imati najviše 5000 znakova.");
+            throw greska("Beleške mogu imati najviše 20000 znakova.");
+        }
+        if (cmd.tip() == TipSlajda.PLATNO) {
+            if (cmd.platno() == null) {
+                throw greska(BEZ_PLATNA);
+            }
+            return;
         }
         if (cmd.tip() == TipSlajda.INFO) {
             if (prazan(cmd.naslov()) && prazan(cmd.sadrzaj()) && prazan(cmd.slikaId())) {

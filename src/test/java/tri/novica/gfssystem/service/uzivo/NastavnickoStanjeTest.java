@@ -114,7 +114,7 @@ class NastavnickoStanjeTest {
         when(odgovorRepository.findAllByRundaIzvodjenjeId(IZ)).thenReturn(odgovori);
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, povezanost, jsonMapper, clock);
+                ucesnikRepository, povezanost, jsonMapper, new PlatnoJson(), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {

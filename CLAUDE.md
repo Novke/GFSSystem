@@ -87,6 +87,18 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 `rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V7__uzivo.sql` (idempotent; originally V5, renumbered after the redesign's V6).
 - **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
   `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
+- **PLATNO slide (slide builder, phase 1; `V8__platno.sql`):** `TipSlajda.PLATNO` holds a canvas document in `slajdovi.platno`
+  (JSON, <= 1 MB): `dto/uzivo/platno/*` (records `Platno`, `Sloj` = TEKST|SLIKA|OBLIK|TABELA|FORMULA|CRTEZ, `Animacija`, ...).
+  `service/uzivo/PlatnoJson` is the strict parser (unknown field, wrong subtype, trailing tokens or a string instead of a number
+  or a number/boolean/ordinal where a string/enum is expected = 400; floats are NOT accepted as ints; `izKolone` reading the stored column is lenient about unknown fields so a rolled-back image still reads newer data). `validation/PlatnoPP.normalizuj` fills defaults and rounds numbers to 2 decimals, then
+  `proveri` enforces limits (300 layers, animation targets must exist, font from the catalog
+  `PlatnoPP.FONTOVI`); called from `SlajdPP` / `PrezentacijaService`; existence of every `medijId` (background, image, drawing, formula `slikaIzvora`) is checked by `PrezentacijaService`, not by `PlatnoPP.proveri` (which only collects them in `medijIds`). `SlajdCmd.platno` / `SlajdDetails.platno`: a `PUT` of a PLATNO slide must send `platno` back
+  (a `PUT` without it is 400, the server does not keep the old one; an old-flow command on an INFO slide clears it). `SlajdMapper.uDetailsZaIzvodjenje`
+  gives the run snapshot without the drawing strokes (`potezi`). Notes limit is 20 000 chars.
+- **Steps:** `TokIzvodjenja.brojKoraka` = gradual INFO list items, or for PLATNO the number of animations with trigger KLIK;
+  `NastavnickoStanje.brojStavki` is that step count (name kept for the old frontend). If an edit during a run lowers the
+  count, the step is clamped and the phase stays null (no 500).
+- **Theme:** `prezentacije.tema` (`Tema` NACRT|BELA|PAPIR|TAMNA|PONOC, default NACRT) is carried in the states (`tema`).
 - **Public entry points, exactly these three:** `/public/uzivo/**` (`PublicUzivoRest`: info, `ja`, join with the
   `gfs_uzivo` cookie, HttpOnly, 32-char token, only its SHA-256 in the DB), `/public/mediji/{uuid}` (slide images) and the
   student WebSocket `/public/ws`. Nothing else uzivo-related may go under `/public/**` (nginx exempts `/api/public/` from auth).
@@ -136,7 +148,7 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - Tests: `config/UzivoChannelInterceptorTest`, `service/uzivo/UzivoObjavljivacTest` (no Spring) and `UzivoWebSocketIT`
   (real STOMP client against `RANDOM_PORT` and MySQL; commits and cleans up its own data). The uživo `*DbTest` classes
   (`IzvodjenjeServiceDbTest`, `PrezentacijaServiceDbTest`, `UcesnikOdgovorDbTest`: locking, cascades, constraints) and the
-  IT need a real MySQL (`SPRING_DATASOURCE_URL`, e.g. `jdbc:mysql://localhost:3308/gftest` on novica-dev); the rest are
+  IT need a real MySQL (`SPRING_DATASOURCE_URL`, e.g. `jdbc:mysql://localhost:3307/gftest` on novica-dev (throwaway `gfs-redizajn-mysql`, never `shared-mysql`)); the rest are
   plain unit tests.
 
 ## Build & Run
@@ -181,12 +193,12 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4, V6 and V7 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4, V6, V7 and V8 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
-  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. **Next free version: `V8`.**
+  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. **Next free version: `V9`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
   (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history). Run

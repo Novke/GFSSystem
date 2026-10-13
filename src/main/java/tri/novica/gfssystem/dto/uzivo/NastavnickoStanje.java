@@ -4,6 +4,7 @@ import tri.novica.gfssystem.entity.uzivo.Ekran;
 import tri.novica.gfssystem.entity.uzivo.Faza;
 import tri.novica.gfssystem.entity.uzivo.Prikaz;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 
 import java.util.List;
 
@@ -14,6 +15,7 @@ import java.util.List;
  * {@code javniRezultat} i {@code javnaRangLista}: ono što dobija {@link JavnoStanje} ({@code rezultat} i
  * {@code rangLista}), izgrađeno istim kodom, pa važe ista pravila "ni ranije". Jedina razlika: {@code javniRezultat}
  * uvek ima tekstove opcija (sala ih vidi na platnu), a telefon ih ne dobija dok tekst nije dozvoljen.
+ * {@code brojStavki}: broj koraka trenutnog slajda (stavke INFO liste ili KLIK animacije PLATNO slajda); ime ostaje zbog starog fronta.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
@@ -21,5 +23,5 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
                                 TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
                                 Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
-                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista) {
+                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema) {
 }

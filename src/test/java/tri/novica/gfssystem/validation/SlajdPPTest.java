@@ -51,11 +51,11 @@ class SlajdPPTest {
     static SlajdCmd pitanje(Consumer<P> izmena) {
         P p = new P();
         izmena.accept(p);
-        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p.cmd());
+        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p.cmd(), null);
     }
 
     static SlajdCmd info(String naslov, String sadrzaj, String slikaId) {
-        return new SlajdCmd(TipSlajda.INFO, naslov, sadrzaj, slikaId, null, false, null);
+        return new SlajdCmd(TipSlajda.INFO, naslov, sadrzaj, slikaId, null, false, null, null);
     }
 
     static String znakova(int n) {
@@ -80,7 +80,7 @@ class SlajdPPTest {
 
     @Test
     void tipSlajdaJeObavezan() {
-        greska("Tip slajda je obavezan.", new SlajdCmd(null, "Naslov", null, null, null, false, null));
+        greska("Tip slajda je obavezan.", new SlajdCmd(null, "Naslov", null, null, null, false, null, null));
         greska("Tip slajda je obavezan.", () -> SlajdPP.proveri(null));
     }
 
@@ -102,7 +102,7 @@ class SlajdPPTest {
         // znakovi kao u MySQL-u (code point), ne UTF-16 jedinice: 300 emodžija staje u varchar(300)
         ispravan(info("😀".repeat(300), null, null));
         greska("Naslov može imati najviše 300 znakova.",
-                new SlajdCmd(TipSlajda.PITANJE, znakova(301), null, null, null, false, new P().cmd()));
+                new SlajdCmd(TipSlajda.PITANJE, znakova(301), null, null, null, false, new P().cmd(), null));
     }
 
     @Test
@@ -112,12 +112,12 @@ class SlajdPPTest {
     }
 
     @Test
-    void beleskeNajvise5000Znakova() {
-        greska("Beleške mogu imati najviše 5000 znakova.",
-                new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, znakova(5_001), false, null));
-        greska("Beleške mogu imati najviše 5000 znakova.",
-                new SlajdCmd(TipSlajda.PITANJE, null, null, null, znakova(5_001), false, new P().cmd()));
-        ispravan(new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, znakova(5_000), false, null));
+    void beleskeNajvise20000Znakova() {
+        greska("Beleške mogu imati najviše 20000 znakova.",
+                new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, znakova(20_001), false, null, null));
+        greska("Beleške mogu imati najviše 20000 znakova.",
+                new SlajdCmd(TipSlajda.PITANJE, null, null, null, znakova(20_001), false, new P().cmd(), null));
+        ispravan(new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, znakova(20_000), false, null, null));
     }
 
     @Test
@@ -132,7 +132,7 @@ class SlajdPPTest {
 
     @Test
     void slajdSaPitanjemMoraImatiPitanje() {
-        greska("Slajd sa pitanjem mora imati pitanje.", new SlajdCmd(TipSlajda.PITANJE, "x", null, null, null, false, null));
+        greska("Slajd sa pitanjem mora imati pitanje.", new SlajdCmd(TipSlajda.PITANJE, "x", null, null, null, false, null, null));
     }
 
     @Test
@@ -336,7 +336,7 @@ class SlajdPPTest {
 
     @Test
     void normalizujTrimujeIPrazanStringUNull() {
-        SlajdCmd n = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.INFO, "  Uvod  ", "   ", "", " beleška \n", true, null));
+        SlajdCmd n = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.INFO, "  Uvod  ", "   ", "", " beleška \n", true, null, null));
         assertEquals("Uvod", n.naslov());
         assertNull(n.sadrzaj());
         assertNull(n.slikaId());
@@ -355,7 +355,7 @@ class SlajdPPTest {
 
     @Test
     void normalizujInfoBrisePitanje() {
-        SlajdCmd n = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, new P().cmd()));
+        SlajdCmd n = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, new P().cmd(), null));
         assertNull(n.pitanje());
     }
 
@@ -458,12 +458,57 @@ class SlajdPPTest {
     @Test
     void normalizujPodnosiNulove() {
         assertNull(SlajdPP.normalizuj(null));
-        SlajdCmd bezPitanja = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, null));
+        SlajdCmd bezPitanja = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, null, null));
         assertNull(bezPitanja.pitanje());
         PitanjeCmd bezTipa = SlajdPP.normalizuj(pitanje(x -> {
             x.tip = null;
             x.opcije = null;
         })).pitanje();
         assertNull(bezTipa.tip());
+    }
+
+    // --- platno ---
+
+    static final tools.jackson.databind.json.JsonMapper MAPPER = tools.jackson.databind.json.JsonMapper.builder().build();
+
+    @Test
+    void platnoSlajdBezPlatnaPada() {
+        greska("Platno slajd mora imati dokument platna.",
+                new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, null));
+        // eksplicitni "platno": null stiže kao NullNode
+        greska("Platno slajd mora imati dokument platna.", SlajdPP.normalizuj(
+                new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, MAPPER.nullNode())));
+        ispravan(new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, MAPPER.createObjectNode()));
+    }
+
+    @Test
+    void normalizujPlatnoBriseNaslovSadrzajSlikuPostepenoIPitanjeAliCuvaBeleske() {
+        tools.jackson.databind.JsonNode platno = MAPPER.createObjectNode().put("verzija", 1);
+        SlajdCmd n = SlajdPP.normalizuj(new SlajdCmd(TipSlajda.PLATNO, "Naslov", "Sadržaj", "slika", " beleška ", true,
+                new P().cmd(), platno));
+        assertEquals(TipSlajda.PLATNO, n.tip());
+        assertNull(n.naslov());
+        assertNull(n.sadrzaj());
+        assertNull(n.slikaId());
+        assertFalse(n.postepeno());
+        assertNull(n.pitanje());
+        assertEquals("beleška", n.beleske());
+        assertSame(platno, n.platno());
+    }
+
+    @Test
+    void normalizujInfoIPitanjeBrisuPlatno() {
+        tools.jackson.databind.JsonNode platno = MAPPER.createObjectNode();
+        assertNull(SlajdPP.normalizuj(new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, platno)).platno());
+        assertNull(SlajdPP.normalizuj(new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, new P().cmd(), platno)).platno());
+    }
+
+    @Test
+    void beleskePlatnoSlajda() {
+        tools.jackson.databind.JsonNode platno = MAPPER.createObjectNode();
+        ispravan(new SlajdCmd(TipSlajda.PLATNO, null, null, null, znakova(20_000), false, null, platno));
+        greska("Beleške mogu imati najviše 20000 znakova.",
+                new SlajdCmd(TipSlajda.PLATNO, null, null, null, znakova(20_001), false, null, platno));
+        assertEquals(20_000, SlajdPP.MAX_BELESKE);
     }
 }

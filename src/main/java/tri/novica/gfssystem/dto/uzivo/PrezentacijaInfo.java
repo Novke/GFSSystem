@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.dto.uzivo;
 
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 
 import java.time.LocalDateTime;
 
@@ -8,5 +9,5 @@ import java.time.LocalDateTime;
 public record PrezentacijaInfo(Long id, String naziv, String opis, PredmetKratko predmet, long brojSlajdova,
                                long brojPitanja, LocalDateTime izmenjeno, boolean takmicenje,
                                TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, long brojIzvodjenja,
-                               Long aktivnoIzvodjenjeId) {
+                               Long aktivnoIzvodjenjeId, Tema tema) {
 }

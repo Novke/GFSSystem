@@ -9,8 +9,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.service.uzivo.PlatnoJson;
+import tri.novica.gfssystem.service.uzivo.PlatnoTestPodaci;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -33,8 +37,8 @@ class PrezentacijaRestTest {
 
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final PrezentacijaDetails DETAILS = new PrezentacijaDetails(1L, "Uvod", null, new PredmetKratko(7L, "Statika"),
-            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, List.of());
-    static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null);
+            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of());
+    static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null, null);
 
     @Autowired MockMvc mvc;
     @MockitoBean PrezentacijaService service;
@@ -53,7 +57,7 @@ class PrezentacijaRestTest {
            .andExpect(jsonPath("$.telefonPrikaz").value("DUGMAD"))
            .andExpect(jsonPath("$.aktivnoIzvodjenjeId").value(org.hamcrest.Matchers.nullValue()))
            .andExpect(jsonPath("$.slajdovi").isArray());
-        verify(service).kreiraj(new CreatePrezentacijaCmd(7L, "Uvod", null));
+        verify(service).kreiraj(new CreatePrezentacijaCmd(7L, "Uvod", null, null));
     }
 
     @Test
@@ -111,7 +115,7 @@ class PrezentacijaRestTest {
         mvc.perform(put("/prezentacije/1").contentType(MediaType.APPLICATION_JSON).content("""
                 {"naziv":"Novi","opis":null,"takmicenje":true,"telefonPrikaz":"PITANJE","detaljiDozvoljeni":false}"""))
            .andExpect(status().isOk());
-        verify(service).izmeni(1L, new UpdatePrezentacijaCmd("Novi", null, true, TelefonPrikaz.PITANJE, false));
+        verify(service).izmeni(1L, new UpdatePrezentacijaCmd("Novi", null, true, TelefonPrikaz.PITANJE, false, null));
         mvc.perform(delete("/prezentacije/1")).andExpect(status().isNoContent());
         verify(service).obrisi(1L);
         mvc.perform(post("/prezentacije/1/dupliraj")).andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(1));
@@ -152,7 +156,7 @@ class PrezentacijaRestTest {
         mvc.perform(post("/prezentacije/1/slajdovi").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"tip\":\"INFO\",\"naslov\":\"A\"}"))
            .andExpect(status().isCreated());
-        verify(service).dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, "A", null, null, null, false, null), null);
+        verify(service).dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, "A", null, null, null, false, null, null), null);
     }
 
     @Test
@@ -208,5 +212,38 @@ class PrezentacijaRestTest {
            .andExpect(jsonPath("$.grupa.naziv").value("GD-2025"))
            .andExpect(jsonPath("$.predavanje").value(org.hamcrest.Matchers.nullValue()));
         verify(izvodjenjeService).pokreni(1L, new PokreniCmd(true, 3L, null));
+    }
+
+    @Test
+    void platnoSlajdProlaziKaoSirovJsonINazadKaoDokument() throws Exception {
+        Platno platno = PlatnoTestPodaci.ispravno();
+        SlajdDetails platnoSlajd = new SlajdDetails(9L, 1, TipSlajda.PLATNO, null, null, null, null, false, null, platno);
+        when(service.dodajSlajd(eq(1L), any(), isNull())).thenReturn(platnoSlajd);
+        String telo = "{\"tip\":\"PLATNO\",\"platno\":" + new PlatnoJson().zapisi(platno) + "}";
+
+        mvc.perform(post("/prezentacije/1/slajdovi").contentType(MediaType.APPLICATION_JSON).content(telo))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.tip").value("PLATNO"))
+           .andExpect(jsonPath("$.platno.verzija").value(1))
+           .andExpect(jsonPath("$.platno.slojevi[0].tip").value("TEKST"))
+           .andExpect(jsonPath("$.platno.slojevi[0].pasusi[0].delovi[0].tekst").value("Prvi pasus"))
+           .andExpect(jsonPath("$.platno.animacije.length()").value(4));
+        ArgumentCaptor<SlajdCmd> cmd = ArgumentCaptor.forClass(SlajdCmd.class);
+        verify(service).dodajSlajd(eq(1L), cmd.capture(), isNull());
+        assertEquals(TipSlajda.PLATNO, cmd.getValue().tip());
+        assertEquals(platno, new PlatnoJson().procitaj(cmd.getValue().platno()));
+    }
+
+    @Test
+    void platnoSaNepoznatimPoljemJe400SaPorukom() throws Exception {
+        // servis je lažan, ali čita dokument pravim PlatnoJson-om kao pravi servis: nepoznato polje se ne sme izgubiti tiho
+        when(service.dodajSlajd(eq(1L), any(), isNull())).thenAnswer(inv -> {
+            new PlatnoJson().procitaj(inv.<SlajdCmd>getArgument(1).platno());
+            return SLAJD;
+        });
+        mvc.perform(post("/prezentacije/1/slajdovi").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tip\":\"PLATNO\",\"platno\":{\"verzija\":1,\"nepoznato\":true}}"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value(org.hamcrest.Matchers.startsWith("Neispravan dokument platna: ")));
     }
 }

@@ -7,11 +7,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.entity.uzivo.TekstPrikaz;
+import tri.novica.gfssystem.entity.uzivo.Tema;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -93,25 +95,25 @@ class PrezentacijaServiceDbTest {
     }
 
     PrezentacijaDetails nova(String naziv) {
-        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), naziv, null));
+        PrezentacijaDetails d = service.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), naziv, null, null));
         prezentacije.add(d.id());
         return d;
     }
 
     static SlajdCmd info(String naslov, String slikaId) {
-        return new SlajdCmd(TipSlajda.INFO, naslov, null, slikaId, null, false, null);
+        return new SlajdCmd(TipSlajda.INFO, naslov, null, slikaId, null, false, null, null);
     }
 
     SlajdCmd jedanTacan(String... opcije) {
         List<OpcijaCmd> lista = new ArrayList<>();
         for (int i = 0; i < opcije.length; i++) lista.add(new OpcijaCmd(opcije[i], i == 0));
         return new SlajdCmd(TipSlajda.PITANJE, null, null, null, "beleška", false, new PitanjeCmd(TipPitanja.JEDAN_TACAN,
-                "Koja sila?", slikaId, 20, lista, null, null, null, null, null, null, null, null));
+                "Koja sila?", slikaId, 20, lista, null, null, null, null, null, null, null, null), null);
     }
 
     static SlajdCmd kratakTekst() {
         return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, new PitanjeCmd(TipPitanja.KRATAK_TEKST,
-                "Materijal?", null, null, null, null, null, null, null, null, List.of("beton", "čelik"), null, null));
+                "Materijal?", null, null, null, null, null, null, null, null, List.of("beton", "čelik"), null, null), null);
     }
 
     long broj(String sql, Object... args) {
@@ -122,6 +124,13 @@ class PrezentacijaServiceDbTest {
     List<Long> pitanjaPrezentacije(Long prezentacijaId) {
         return jdbc.queryForList("select pitanje_id from slajdovi where prezentacija_id = ? and pitanje_id is not null",
                 Long.class, prezentacijaId);
+    }
+
+    @Test
+    void novaPrezentacijaImaTemuNacrtUBazi() {
+        Long id = nova("Tema").id();
+        assertEquals(Tema.NACRT, service.detalji(id).tema());
+        assertEquals("NACRT", jdbc.queryForObject("select tema from prezentacije where id = ?", String.class, id));
     }
 
     @Test
@@ -151,7 +160,7 @@ class PrezentacijaServiceDbTest {
         Long pitanje1 = q1.pitanje().id();
         SlajdCmd viseTacnih = new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, new PitanjeCmd(
                 TipPitanja.VISE_TACNIH, "Koje sile?", null, null,
-                List.of(new OpcijaCmd("x", true), new OpcijaCmd("y", true)), null, null, null, null, null, null, null, null));
+                List.of(new OpcijaCmd("x", true), new OpcijaCmd("y", true)), null, null, null, null, null, null, null, null), null);
         SlajdDetails q1izm = service.izmeniSlajd(q1.id(), viseTacnih);
         assertEquals(pitanje1, q1izm.pitanje().id());
         assertEquals(2, broj("select count(*) from pitanje_opcije where pitanje_id = ?", pitanje1));
@@ -270,5 +279,99 @@ class PrezentacijaServiceDbTest {
         assertEquals(new GrupaKratko(grupa.getId(), grupa.getNaziv()), lista.get(0).grupa());
         assertTrue(lista.get(0).zavrseno());
         assertEquals(danas.minusDays(40 + 26), lista.get(29).datum());
+    }
+
+    @Autowired PlatnoJson platnoJson;
+    @Autowired tools.jackson.databind.json.JsonMapper jsonMapper;
+
+    @Test
+    void platnoSlajdSeCuvaIVracaSaIstimSlojevima() {
+        Long id = nova("Platno").id();
+        Platno platno = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        SlajdDetails d = service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, "beleška", false, null,
+                PlatnoTestPodaci.cvor(platno)), null);
+        assertEquals(platno, d.platno());
+
+        PrezentacijaDetails detalji = service.detalji(id);
+        SlajdDetails slajd = detalji.slajdovi().get(0);
+        assertEquals(TipSlajda.PLATNO, slajd.tip());
+        assertEquals(platno.slojevi(), slajd.platno().slojevi());
+        assertEquals(platno.animacije(), slajd.platno().animacije());
+        assertEquals(1L, broj("select count(*) from slajdovi where prezentacija_id = ? and platno is not null", id));
+    }
+
+    @Test
+    void izmenaSamoBeleskiSaVracenimPlatnomCuvaSlojeve() {
+        Long id = nova("Platno beleske").id();
+        Platno platno = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        SlajdDetails d = service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(platno)), null);
+
+        // stari tok forme: SlajdDetails -> JSON -> SlajdCmd sa promenjenim beleškama, platno vraćeno nazad kroz JSON
+        tools.jackson.databind.JsonNode vraceno = jsonMapper.valueToTree(d.platno());
+        service.izmeniSlajd(d.id(), new SlajdCmd(TipSlajda.PLATNO, null, null, null, "samo beleške", false, null, vraceno));
+
+        SlajdDetails posle = service.detalji(id).slajdovi().get(0);
+        assertEquals("samo beleške", posle.beleske());
+        assertEquals(platno.slojevi(), posle.platno().slojevi());
+        assertEquals(platno.animacije(), posle.platno().animacije());
+    }
+
+    @Test
+    void platnoSaNepostojecimMedijemJe400BezUpisa() {
+        Long id = nova("Platno bez medija").id();
+        Platno platno = PlatnoTestPodaci.ispravno(slikaId, UUID.randomUUID().toString());
+        SystemException e = assertThrows(SystemException.class, () -> service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO,
+                null, null, null, null, false, null, PlatnoTestPodaci.cvor(platno)), null));
+        assertEquals(400, e.getCode());
+        assertEquals("Slika nije pronađena.", e.getMessage());
+        assertEquals(0L, broj("select count(*) from slajdovi where prezentacija_id = ?", id));
+    }
+
+    @Test
+    void formulaSaNepostojecomSlikomIzvoraJe400BezUpisa() {
+        Long id = nova("Platno formula bez izvora").id();
+        Platno p = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        java.util.List<tri.novica.gfssystem.dto.uzivo.platno.Sloj> slojevi = new java.util.ArrayList<>(p.slojevi());
+        for (int i = 0; i < slojevi.size(); i++) {
+            if (slojevi.get(i) instanceof tri.novica.gfssystem.dto.uzivo.platno.FormulaSloj f) {
+                slojevi.set(i, new tri.novica.gfssystem.dto.uzivo.platno.FormulaSloj(f.id(), f.naziv(), f.x(), f.y(), f.sirina(), f.visina(), f.rotacija(),
+                        f.providnost(), f.zakljucan(), f.senka(), f.latex(), f.boja(), f.velicina(), f.poravnanje(),
+                        UUID.randomUUID().toString()));
+            }
+        }
+        Platno platno = new Platno(p.verzija(), p.pozadina(), slojevi, p.animacije());
+        SystemException e = assertThrows(SystemException.class, () -> service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO,
+                null, null, null, null, false, null, PlatnoTestPodaci.cvor(platno)), null));
+        assertEquals(400, e.getCode());
+        assertEquals(MedijService.NIJE_PRONADJENA, e.getMessage());
+        assertEquals(0L, broj("select count(*) from slajdovi where prezentacija_id = ?", id));
+    }
+
+    @Test
+    void platnoSlajdSeDuplira() {
+        Long id = nova("Platno dupl").id();
+        SlajdDetails d = service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(slikaId, slikaId))), null);
+        SlajdDetails kopija = service.duplirajSlajd(d.id());
+        assertEquals(d.platno(), kopija.platno());
+        PrezentacijaDetails kopijaPrez = service.dupliraj(id);
+        prezentacije.add(kopijaPrez.id());
+        assertEquals(d.platno(), kopijaPrez.slajdovi().get(0).platno());
+    }
+
+    @Test
+    void crtezBezPotezaOstajeNullKrozServis() {
+        Long id = nova("Platno crtez").id();
+        Platno p = PlatnoTestPodaci.ispravno(slikaId, slikaId);
+        java.util.List<tri.novica.gfssystem.dto.uzivo.platno.Sloj> slojevi = new ArrayList<>(p.slojevi());
+        tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj c = (tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) slojevi.get(6);
+        slojevi.set(6, new tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj(c.id(), c.naziv(), c.x(), c.y(), c.sirina(),
+                c.visina(), c.rotacija(), c.providnost(), c.zakljucan(), c.senka(), c.medijId(), null));
+        Platno bez = new Platno(1, p.pozadina(), slojevi, p.animacije());
+        service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(bez)), null);
+        Platno citano = service.detalji(id).slajdovi().get(0).platno();
+        assertNull(((tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) citano.slojevi().get(6)).potezi());
     }
 }

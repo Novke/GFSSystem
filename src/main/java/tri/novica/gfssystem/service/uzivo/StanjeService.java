@@ -35,6 +35,7 @@ public class StanjeService {
     private final UcesnikRepository ucesnikRepository;
     private final PovezanostRegistar povezanost;
     private final JsonMapper jsonMapper;
+    private final PlatnoJson platnoJson;
     private final Clock clock;
 
     /** Sve što stanje izvođenja traži, učitano jednom. */
@@ -92,16 +93,16 @@ public class StanjeService {
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
-                TokIzvodjenja.brojStavki(trenutni), indeks, sl.size(),
-                trenutni == null ? null : SlajdMapper.uDetails(trenutni),
-                sledeci == null ? null : SlajdMapper.uDetails(sledeci),
+                TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
+                trenutni == null ? null : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson),
+                sledeci == null ? null : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson),
                 iz.getFaza(), runda == null ? null : rundaInfo(iz, runda),
                 iz.isRezultatiPrikazani(), iz.isTacanPrikazan(), iz.isRangListaPrikazana(), iz.getEkran(),
                 iz.isQrPrikazan(), iz.getTelefonPrikaz(), iz.isDetaljiDozvoljeni(), iz.isTakmicenje(),
                 rezultat, odgovoriRunde.size(),
                 povezanost.brojPovezanih(p.ucesnici().stream().map(Ucesnik::getId).toList()),
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
-                javniRezultat(p), javnaRangLista(p));
+                javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema());
     }
 
     // ---------------------------------------------------------------- javno i lično stanje (telefoni)

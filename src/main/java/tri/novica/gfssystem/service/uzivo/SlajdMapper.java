@@ -4,6 +4,7 @@ import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
+import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.entity.uzivo.Pitanje;
 import tri.novica.gfssystem.entity.uzivo.PitanjeOpcija;
@@ -18,9 +19,19 @@ public final class SlajdMapper {
 
     private SlajdMapper() {}
 
-    public static SlajdDetails uDetails(Slajd s) {
+    public static SlajdDetails uDetails(Slajd s, PlatnoJson platnoJson) {
+        return uDetails(s, platnoJson.izKolone(s.getPlatno()));
+    }
+
+    /** Za snimak izvođenja: platno bez poteza crteža (potezi trebaju samo editoru). */
+    public static SlajdDetails uDetailsZaIzvodjenje(Slajd s, PlatnoJson platnoJson) {
+        Platno platno = platnoJson.izKolone(s.getPlatno());
+        return uDetails(s, platno == null ? null : platno.bezPoteza());
+    }
+
+    private static SlajdDetails uDetails(Slajd s, Platno platno) {
         return new SlajdDetails(s.getId(), s.getRb(), s.getTip(), s.getNaslov(), s.getSadrzaj(), uInfo(s.getSlika()),
-                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()));
+                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()), platno);
     }
 
     /** {@code null} za {@code null}; opcije po {@code rb} (i kad kolekcija nije učitana sa {@code @OrderBy}). */

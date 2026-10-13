@@ -12,6 +12,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import tri.novica.gfssystem.service.uzivo.UcesnikService;
+import tri.novica.gfssystem.validation.PlatnoPP;
 
 import java.util.Arrays;
 
@@ -28,7 +29,8 @@ import java.util.Arrays;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     static final int MAX_PORUKA = 8 * 1024;
-    static final int MAX_BAFER_SLANJA = 512 * 1024;
+    /** Jedan snimak nastavnika nosi platno tekućeg i sledećeg slajda (svako do MAX_BAJTOVA) plus omotač. */
+    static final int MAX_BAFER_SLANJA = 2 * PlatnoPP.MAX_BAJTOVA + 1_048_576;
     static final int MAX_VREME_SLANJA_MS = 15_000;
     static final long HEARTBEAT_MS = 10_000;
 
