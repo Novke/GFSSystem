@@ -19,6 +19,9 @@ public class Grupa {
     private Long id;
     private String naziv;
     private Integer godinaUpisa;
+    /** Link za poziv u WhatsApp grupu, uvek u obliku {@code https://chat.whatsapp.com/<kod>} (vidi {@code WaLink}); null = nije podešen. */
+    @Column(length = 100)
+    private String waLink;
 
     @OneToMany(cascade = CascadeType.PERSIST, mappedBy = "grupa")
     private List<Student> studenti;

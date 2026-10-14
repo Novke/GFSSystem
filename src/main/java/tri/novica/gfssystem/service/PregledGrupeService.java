@@ -81,7 +81,7 @@ public class PregledGrupeService {
 
         GrupaInfo info = new GrupaInfo(grupa.getId(), grupa.getNaziv(), grupa.getGodinaUpisa(), (long) studenti.size());
         return new GrupaPregledInfo(info, studenti.size(), brojPredavanja, prosecnaPrisutnost,
-                otvorenOnboarding(grupaId), redovi);
+                otvorenOnboarding(grupaId), redovi, grupa.getWaLink());
     }
 
     /**
