@@ -124,6 +124,19 @@ class OnboardingServiceTest {
         assertEquals("ana@example.com", c.getValue().getEmail());
         assertEquals(StatusPrijave.NA_CEKANJU, c.getValue().getStatus());
         assertEquals(SADA, c.getValue().getPodneto());
+        assertNull(info.getWaLink());
+    }
+
+    @Test
+    void uspesnaPrijavaVracaWhatsAppLinkGrupe() {
+        sesija(true, SADA.plusDays(7));
+        grupa.setWaLink("https://chat.whatsapp.com/AbCdEfGhIj1234567890Kl");
+        when(prijavaRepository.save(any(Prijava.class))).thenAnswer(inv -> {
+            Prijava p = inv.getArgument(0);
+            p.setId(101L);
+            return p;
+        });
+        assertEquals("https://chat.whatsapp.com/AbCdEfGhIj1234567890Kl", service.podnesi(TOKEN, forma("GD12", 2026), "ip").getWaLink());
     }
 
     @Test

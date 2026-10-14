@@ -2,12 +2,19 @@ package tri.novica.gfssystem.rest;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.grupa.CreateGrupaCmd;
 import tri.novica.gfssystem.dto.grupa.GrupaDetails;
 import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.grupa.KontaktiFajl;
 import tri.novica.gfssystem.dto.grupa.UpdateGrupaCmd;
+import tri.novica.gfssystem.dto.grupa.WaLinkCmd;
+import tri.novica.gfssystem.dto.grupa.WaLinkInfo;
 import tri.novica.gfssystem.dto.pregled.GrupaPregledInfo;
 import tri.novica.gfssystem.dto.pregled.PrisustvoMatricaInfo;
 import tri.novica.gfssystem.dto.student.StudentInfo;
@@ -15,12 +22,15 @@ import tri.novica.gfssystem.service.GrupaService;
 import tri.novica.gfssystem.service.PregledGrupeService;
 import tri.novica.gfssystem.service.StudentService;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
 @RequestMapping("/grupe")
 @RequiredArgsConstructor
 public class GrupaRest {
+
+    private static final MediaType VCARD = new MediaType("text", "vcard", StandardCharsets.UTF_8);
 
     private final GrupaService grupaService;
     private final StudentService studentService;
@@ -77,5 +87,27 @@ public class GrupaRest {
     public PrisustvoMatricaInfo prisustvo(@PathVariable Long id, @RequestParam(required = false) Long predmetId,
                                           @RequestParam(required = false) Integer godina) {
         return pregledGrupeService.prisustvo(id, predmetId, godina);
+    }
+
+    /** Link za poziv u WhatsApp grupu: telo {@code {"waLink": "<link>"|null}}; null ili prazno uklanja link. */
+    @PatchMapping("/{id}/wa-link")
+    @ResponseStatus(HttpStatus.OK)
+    public WaLinkInfo postaviWaLink(@PathVariable Long id, @Valid @RequestBody WaLinkCmd cmd) {
+        return grupaService.postaviWaLink(id, cmd);
+    }
+
+    /**
+     * Kontakti grupe kao vCard za uvoz u telefon (Android: Kontakti / Google Contacts, iPhone: Safari). Iza basic-auth-a
+     * kao i ostatak {@code /grupe}: sadrži brojeve telefona i emailove, nikad pod {@code /public}.
+     */
+    @GetMapping("/{id}/kontakti.vcf")
+    public ResponseEntity<byte[]> kontakti(@PathVariable Long id) {
+        KontaktiFajl fajl = grupaService.kontakti(id);
+        return ResponseEntity.ok()
+                .contentType(VCARD)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(fajl.imeFajla(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(fajl.sadrzaj().getBytes(StandardCharsets.UTF_8));
     }
 }

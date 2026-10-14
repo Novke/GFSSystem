@@ -216,7 +216,7 @@ public class OnboardingService {
         prijava.setPodneto(sada());
         Prijava sacuvana = prijavaRepository.save(prijava);
         log.info("Onboarding prijava: sesija={}, indeks={}, ip={}", sesija.getId(), sacuvana.getIndeks(), ip);
-        return new PodnetaPrijavaInfo(sacuvana.getId());
+        return new PodnetaPrijavaInfo(sacuvana.getId(), sesija.getGrupa().getWaLink());
     }
 
     // ---------------------------------------------------------------- pomoćne

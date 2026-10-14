@@ -71,7 +71,7 @@ class PublicUpisRestTest {
 
     @Test
     void ipIdeIzXForwardedFor() throws Exception {
-        when(service.podnesi(eq(T), any(), eq("203.0.113.9"))).thenReturn(new tri.novica.gfssystem.dto.onboarding.PodnetaPrijavaInfo(5L));
+        when(service.podnesi(eq(T), any(), eq("203.0.113.9"))).thenReturn(new tri.novica.gfssystem.dto.onboarding.PodnetaPrijavaInfo(5L, null));
         mvc.perform(post("/public/upis/" + T).header("X-Forwarded-For", "203.0.113.9, 172.18.0.3")
                 .contentType(MediaType.APPLICATION_JSON).content(TELO))
            .andExpect(status().isCreated())

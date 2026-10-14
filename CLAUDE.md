@@ -69,6 +69,16 @@ the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/
   public-path regex also exempts the SPA route `/upis/`, assets and hashed bundles, none of which reach the backend).
   Any new mapping under `/public/**` is therefore unauthenticated on the internet automatically: put only
   student-facing endpoints there.
+- **WhatsApp group link:** `grupe.wa_link` (Flyway `V9`), set by the teacher with `PATCH /grupe/{id}/wa-link`
+  (`{"waLink": "<link>"|null}`, key required and unknown fields 400 like `PragProlazaCmd`; null/blank removes it). `utility/WaLink`
+  accepts what WhatsApp shares (with or without scheme, `www.`, `invite/`, a query) and stores only
+  `https://chat.whatsapp.com/<10-40 alnum>`; anything else is 400, because the link is shown on the public form. The public
+  `POST /public/upis/{token}` returns it in `PodnetaPrijavaInfo.waLink` (after a successful submit only, never in `GET`), and
+  `GrupaPregledInfo.waLink` carries it to the group page.
+- **Contacts for the phone:** `GET /grupe/{id}/kontakti.vcf` (behind basic-auth, never under `/public`): one vCard 3.0 file
+  (`utility/VCard`, UTF-8, CRLF, RFC 2426 escaping) with every student of the group that has a phone or an email, ordered by
+  index; numbers normalized to `+381...` (`utility/Telefon`), the group name as the name suffix and `CATEGORIES`
+  ("Ana Petrović GD-2026"), `Content-Disposition: attachment` with an ASCII file name, `Cache-Control: no-store`.
 - **Only new students:** dedupe by (normalized index, enrollment year) against `studenti`, against pending submissions in
   the same session, on edit and on accept. `IndeksUtil.normalizuj` strips whitespace and upper-cases (`"gd 1"` -> `GD1`);
   `POST /studenti` uses the same normalization and duplicate check.
@@ -195,12 +205,12 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4, V6, V7 and V8 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4 and V6-V9 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
-  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. **Next free version: `V9`.**
+  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. **Next free version: `V10`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
   (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history). Run
