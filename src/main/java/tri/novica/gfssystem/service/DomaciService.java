@@ -1,21 +1,37 @@
 package tri.novica.gfssystem.service;
 
 import lombok.RequiredArgsConstructor;
+import jakarta.transaction.Transactional;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.web.PagedModel;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.domaci.*;
+import tri.novica.gfssystem.dto.grupa.GrupaInfo;
+import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.entity.view.DomaciEvidentiranjeView;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.spec.DomaciSpecs;
+import tri.novica.gfssystem.utility.Brojaci;
+import tri.novica.gfssystem.utility.SkolskaGodina;
 import tri.novica.gfssystem.utility.Utility;
 
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DomaciService {
+
+    /** Polja po kojima lista domaćih sme da se sortira ({@code PageableUtil.proveri}). */
+    public static final Set<String> SORT_POLJA = Set.of("datum", "naslov");
+    public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.desc("datum"));
 
     private final DomaciRepository domaciRepository;
     private final PredavanjeRepository predavanjeRepository;
@@ -46,6 +62,14 @@ public class DomaciService {
         domaci.setDatum(LocalDate.now());
 
         return mapper.map(domaciRepository.save(domaci), DomaciId.class);
+    }
+
+    /** Briše domaći zajedno sa urađenim domaćim (kaskada); predavanje, grupa i predmet ostaju. */
+    @Transactional
+    public void obrisi(Long id) {
+        Domaci domaci = domaciRepository.findById(id)
+                .orElseThrow(() -> new SystemException("Domaci ne postoji! ID = " + id, 404));
+        domaciRepository.delete(domaci);
     }
 
     public DomaciDetails getDomaci(Long id) {
@@ -150,5 +174,43 @@ public class DomaciService {
         return domaci.stream().map(
                         d -> mapper.map(d, DomaciInfo.class))
                 .toList();
+    }
+
+    /**
+     * Lista domaćih sa filterima i stranicom. {@code pageable} je već prošao {@code PageableUtil.proveri}
+     * (REST sloj). Predmet, grupa i predavanje dolaze u istom upitu, brojači jednim agregatnim upitom po stranici.
+     */
+    public PagedModel<DomaciListItem> pretraga(DomaciFilter f, Pageable pageable) {
+        SkolskaGodina.proveri(f.godina());
+        Specification<Domaci> spec = Specification.allOf(
+                DomaciSpecs.zaPrikaz(),
+                DomaciSpecs.predmet(f.predmetId()),
+                DomaciSpecs.grupa(f.grupaId()),
+                DomaciSpecs.godina(f.godina()),
+                DomaciSpecs.pregledan(f.pregledan()),
+                DomaciSpecs.naslov(f.q()),
+                DomaciSpecs.od(f.od()),
+                DomaciSpecs.doDatuma(f.doDatuma()));
+        Page<Domaci> strana = domaciRepository.findAll(spec, pageable);
+
+        List<Long> ids = strana.map(Domaci::getId).toList();
+        Set<Long> grupaIds = strana.stream().map(Domaci::getGrupa).filter(Objects::nonNull)
+                .map(Grupa::getId).collect(Collectors.toSet());
+        Map<Long, Long> uradjeni = Brojaci.poId(ids, domaciRepository::brojUradjenihPoDomacem);
+        Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+
+        return new PagedModel<>(strana.map(d -> uListItem(d, uradjeni, studenti)));
+    }
+
+    /** Ručno mapiranje (ModelMapper je STRICT, a brojači nisu polja entiteta). */
+    private static DomaciListItem uListItem(Domaci d, Map<Long, Long> uradjeni, Map<Long, Long> studenti) {
+        Grupa g = d.getGrupa();
+        long brojStudenata = g == null ? 0 : studenti.getOrDefault(g.getId(), 0L);
+        GrupaInfo grupa = g == null ? null : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata);
+        PredmetInfo predmet = new PredmetInfo(d.getPredmet().getId(), d.getPredmet().getNaziv());
+        Predavanje p = d.getPredavanje();
+        DomaciPredavanjeRef predavanje = p == null ? null : new DomaciPredavanjeRef(p.getId(), p.getRb());
+        return new DomaciListItem(d.getId(), d.getNaslov(), d.getDatum(), d.getPregledan(), predmet, grupa, predavanje,
+                uradjeni.getOrDefault(d.getId(), 0L), brojStudenata);
     }
 }

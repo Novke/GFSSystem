@@ -13,5 +13,8 @@ public class GrupaStudentInfo {
     private String ime;
     private String prezime;
     private String indeks;
+    private int godina;
+    private String brojTelefona;
+    private String email;
 
 }

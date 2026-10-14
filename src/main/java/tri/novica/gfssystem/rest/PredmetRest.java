@@ -44,8 +44,8 @@ public class PredmetRest {
     @GetMapping("/{id}/tipovi")
     @ResponseBody
     @ResponseStatus(HttpStatus.OK)
-    public List<TipTestaInfo> findTipovePredmeta(@PathVariable Long id){
-        return predmetService.findTipovePredmeta(id);
+    public List<TipTestaInfo> findTipovePredmeta(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean svi){
+        return predmetService.findTipovePredmeta(id, svi);
     }
 
     @GetMapping("/{id}/poeni")

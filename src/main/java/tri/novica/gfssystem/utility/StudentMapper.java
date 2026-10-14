@@ -20,6 +20,7 @@ public interface StudentMapper {
     StudentMapper INSTANCE = Mappers.getMapper(StudentMapper.class);
 
     @Mapping(source = "grupa.naziv", target = "grupa")
+    @Mapping(source = "grupa.id", target = "grupaId")
     @Mapping(target = "aktivnosti", ignore = true)
     @Mapping(target = "polaganja", ignore = true)
     @Mapping(target = "uradjeniDomaci", ignore = true)
@@ -47,6 +48,8 @@ public interface StudentMapper {
     @Mapping(source = "test.id", target = "testId")
     @Mapping(source = "test.datum", target = "datum")
     @Mapping(source = "test.tipTesta", target = "tipTesta")
+    @Mapping(source = "test.pragProlaza", target = "pragProlaza")
+    @Mapping(target = "polozeno", expression = "java(tri.novica.gfssystem.utility.Prolaz.polozenoIliNull(polaganje.getOstvareniPoeni(), polaganje.getTest().getPragProlaza(), polaganje.getPrepisivao()))")
     StudentPregledTestInfo toTestDetails(Polaganje polaganje);
 
     @Mapping(source = "test.id", target = "testId")

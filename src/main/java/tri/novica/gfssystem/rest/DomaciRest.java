@@ -2,11 +2,16 @@ package tri.novica.gfssystem.rest;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.domaci.*;
 import tri.novica.gfssystem.service.DomaciService;
+import tri.novica.gfssystem.utility.PageableUtil;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -15,6 +20,23 @@ import java.util.List;
 public class DomaciRest {
 
     private final DomaciService domaciService;
+
+    /**
+     * Lista domaćih za UI: filteri su opcioni, {@code page}/{@code size} (podrazumevano 25, najviše 100) i
+     * {@code sort} po {@code datum} ili {@code naslov} (podrazumevano {@code datum,desc}).
+     * Literal {@code /pretraga} ima prednost nad {@code /{id}}.
+     */
+    @GetMapping("/pretraga")
+    @ResponseStatus(HttpStatus.OK)
+    public PagedModel<DomaciListItem> pretraga(@RequestParam(required = false) Long predmetId,
+            @RequestParam(required = false) Long grupaId, @RequestParam(required = false) Integer godina,
+            @RequestParam(required = false) Boolean pregledan, @RequestParam(required = false) String q,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate od,
+            @RequestParam(name = "do", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate doDatuma,
+            Pageable pageable) {
+        return domaciService.pretraga(new DomaciFilter(predmetId, grupaId, godina, pregledan, q, od, doDatuma),
+                PageableUtil.proveri(pageable, DomaciService.SORT_POLJA, DomaciService.PODRAZUMEVANI_SORT));
+    }
 
     @PostMapping
     @ResponseBody
@@ -28,6 +50,12 @@ public class DomaciRest {
     @ResponseStatus(HttpStatus.OK)
     public DomaciDetails view(@PathVariable Long id){
         return domaciService.getDomaci(id);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void obrisi(@PathVariable Long id) {
+        domaciService.obrisi(id);
     }
 
     @PostMapping("/evidentiraj")

@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -14,4 +16,7 @@ public class StudentInfo {
     private int godina;
     private String indeks;
     private String brojTelefona;
+    private String email;
+    private LocalDate datumRodjenja;
+    private String opstina;
 }

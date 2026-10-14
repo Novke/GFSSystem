@@ -12,5 +12,6 @@ public class TestStatistikaPoGrupiInfo {
     private TestGrupa grupa;
     private int brojPolaganja;
     private double prosecniPoeni;
-    private double procenatProlaznosti;
+    /** Null kad test nema prag prolaza (vidi {@code Prolaz}). */
+    private Double procenatProlaznosti;
 }

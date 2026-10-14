@@ -1,15 +1,16 @@
 package tri.novica.gfssystem.config;
 
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.ext.javatime.deser.LocalDateDeserializer;
+import tools.jackson.databind.ext.javatime.deser.LocalDateTimeDeserializer;
+import tools.jackson.databind.ext.javatime.ser.LocalDateSerializer;
+import tools.jackson.databind.ext.javatime.ser.LocalDateTimeSerializer;
+import tools.jackson.databind.module.SimpleModule;
 
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -19,31 +20,30 @@ import java.time.format.DateTimeFormatter;
 public class JacksonConfigs {
 
     @Bean
-    public Jackson2ObjectMapperBuilder jacksonBuilder() {
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+    public JsonMapperBuilderCustomizer jacksonBuilder() {
+        return builder -> {
+            builder.defaultDateFormat(new SimpleDateFormat("dd.MM.yyyy"));
 
-        builder.simpleDateFormat("dd.MM.yyyy");
+            // Jackson 3 ima java.time podrsku ugradjenu; modul sluzi samo za sopstvene formate
+            SimpleModule javaTimeModule = new SimpleModule();
 
-        JavaTimeModule javaTimeModule = new JavaTimeModule();
-
-        //LOCALDATE
-//        javaTimeModule.addSerializer(LocalDate.class,
-//                new LocalDateSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
-//        javaTimeModule.addDeserializer(LocalDate.class,
-//                new LocalDateDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
-
-
-        //LOCALDATETIME
-//        javaTimeModule.addSerializer(LocalDateTime.class,
-//                new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
-//        javaTimeModule.addDeserializer(LocalDateTime.class,
-//                new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
-
-        builder.modulesToInstall(javaTimeModule);
+            //LOCALDATE
+//            javaTimeModule.addSerializer(LocalDate.class,
+//                    new LocalDateSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
+//            javaTimeModule.addDeserializer(LocalDate.class,
+//                    new LocalDateDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
 
 
-        builder.featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+            //LOCALDATETIME
+//            javaTimeModule.addSerializer(LocalDateTime.class,
+//                    new LocalDateTimeSerializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
+//            javaTimeModule.addDeserializer(LocalDateTime.class,
+//                    new LocalDateTimeDeserializer(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")));
 
-        return builder;
+            builder.addModule(javaTimeModule);
+
+
+            builder.disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS);
+        };
     }
 }
