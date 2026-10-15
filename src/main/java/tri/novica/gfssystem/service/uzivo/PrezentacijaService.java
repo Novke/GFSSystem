@@ -19,6 +19,7 @@ import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
 import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
+import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.validation.SlajdPP;
@@ -253,6 +254,19 @@ public class PrezentacijaService {
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
         return SlajdMapper.uDetails(s, platnoJson);
+    }
+
+    /** Potezi svih CRTEZ slojeva slajda, redom slojeva; prazno za INFO i PITANJE. Samo čitanje, bez zaključavanja. */
+    @Transactional(readOnly = true)
+    public List<PoteziSloja> poteziSlajda(Long id) {
+        Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
+        Platno p = platnoJson.izKolone(s.getPlatno());
+        if (p == null || p.slojevi() == null) return List.of();
+        return p.slojevi().stream()
+                .filter(CrtezSloj.class::isInstance)
+                .map(CrtezSloj.class::cast)
+                .map(c -> new PoteziSloja(c.id(), c.medijId(), c.sirina(), c.visina(), c.potezi()))
+                .toList();
     }
 
     public void obrisiSlajd(Long id) {

@@ -375,6 +375,33 @@ class PrezentacijaServiceDbTest {
         assertNull(((tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) citano.slojevi().get(6)).potezi());
     }
 
+    /** CRTEZ c1 iz {@link PlatnoTestPodaci#ispravno} sa zadatom veličinom i potezima. */
+    static Platno saCrtezom(Platno p, double sirina, double visina, List<tri.novica.gfssystem.dto.uzivo.platno.Potez> potezi) {
+        List<tri.novica.gfssystem.dto.uzivo.platno.Sloj> slojevi = new ArrayList<>(p.slojevi());
+        tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj c = (tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj) slojevi.get(6);
+        slojevi.set(6, new tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj(c.id(), c.naziv(), c.x(), c.y(), sirina, visina,
+                c.rotacija(), c.providnost(), c.zakljucan(), c.senka(), c.medijId(), potezi));
+        return new Platno(p.verzija(), p.pozadina(), slojevi, p.animacije());
+    }
+
+    @Test
+    void poteziPosleIzmeneVelicine() {
+        Long id = nova("Platno potezi").id();
+        List<tri.novica.gfssystem.dto.uzivo.platno.Potez> potezi = List.of(
+                new tri.novica.gfssystem.dto.uzivo.platno.Potez("#FF0000", 2.0, List.of(0.0, 0.0, 10.0, 5.0)));
+        Platno pre = saCrtezom(PlatnoTestPodaci.ispravno(slikaId, slikaId), 100.0, 50.0, potezi);
+        SlajdDetails d = service.dodajSlajd(id, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(pre)), null);
+        assertEquals(List.of(new PoteziSloja("c1", slikaId, 100.0, 50.0, potezi)), service.poteziSlajda(d.id()));
+
+        List<tri.novica.gfssystem.dto.uzivo.platno.Potez> skalirani = List.of(
+                new tri.novica.gfssystem.dto.uzivo.platno.Potez("#FF0000", 2.0, List.of(0.0, 0.0, 20.0, 10.0)));
+        Platno posle = saCrtezom(PlatnoTestPodaci.ispravno(slikaId, slikaId), 200.0, 100.0, skalirani);
+        service.izmeniSlajd(d.id(), new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null,
+                PlatnoTestPodaci.cvor(posle)));
+        assertEquals(List.of(new PoteziSloja("c1", slikaId, 200.0, 100.0, skalirani)), service.poteziSlajda(d.id()));
+    }
+
     // ---------------------------------------------------------------- uvoz
 
     SlajdCmd platnoCmd(String medijId) {
