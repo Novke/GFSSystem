@@ -3,11 +3,13 @@ package tri.novica.gfssystem.service.uzivo;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
+import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.entity.uzivo.Pitanje;
 import tri.novica.gfssystem.entity.uzivo.PitanjeOpcija;
+import tri.novica.gfssystem.entity.uzivo.PrelazSlajda;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
 
 import java.util.ArrayList;
@@ -31,7 +33,12 @@ public final class SlajdMapper {
 
     private static SlajdDetails uDetails(Slajd s, Platno platno) {
         return new SlajdDetails(s.getId(), s.getRb(), s.getTip(), s.getNaslov(), s.getSadrzaj(), uInfo(s.getSlika()),
-                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()), platno);
+                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()), platno, uPrelaz(s.getPrelaz()));
+    }
+
+    /** {@code null} kad prelaza nema (i za embeddable bez efekta, npr. ručno upisan red). */
+    public static Prelaz uPrelaz(PrelazSlajda p) {
+        return p == null || p.getEfekat() == null ? null : new Prelaz(p.getEfekat(), p.getSmer(), p.getTrajanjeMs());
     }
 
     /** {@code null} za {@code null}; opcije po {@code rb} (i kad kolekcija nije učitana sa {@code @OrderBy}). */

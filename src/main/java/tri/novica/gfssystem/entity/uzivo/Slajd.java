@@ -34,6 +34,9 @@ public class Slajd {
     /** JSON dokument platna (spec 4.3), samo za PLATNO; čita/piše {@code PlatnoJson}. */
     @Column(columnDefinition = "mediumtext")
     private String platno;
+    /** Prelaz pri ulasku na slajd (faza 5); sve kolone null = bez prelaza (Hibernate tada vraća null). */
+    @Embedded
+    private PrelazSlajda prelaz;
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "pitanje_id")
     private Pitanje pitanje;

@@ -71,7 +71,7 @@ class UcesnikOdgovorDbTest {
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
                 new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koja sila?", null, null,
                         List.of(new OpcijaCmd("Gravitacija", true), new OpcijaCmd("Trenje", false)),
-                        null, null, null, null, null, null, null, null), null), null);
+                        null, null, null, null, null, null, null, null), null, null), null);
         return prezentacijaService.detalji(p.id());
     }
 
@@ -231,7 +231,7 @@ class UcesnikOdgovorDbTest {
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
                 new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koja sila?", null, 20,
                         List.of(new OpcijaCmd("Gravitacija", true), new OpcijaCmd("Trenje", false)),
-                        null, null, null, null, null, null, null, null), null), null);
+                        null, null, null, null, null, null, null, null), null, null), null);
         Long tacna = prezentacijaService.detalji(p.id()).slajdovi().get(0).pitanje().opcije().get(0).id();
         IzvodjenjeInfo info = izvodjenjeService.pokreni(p.id(), new PokreniCmd(false, null, null));
         Long id = info.id();

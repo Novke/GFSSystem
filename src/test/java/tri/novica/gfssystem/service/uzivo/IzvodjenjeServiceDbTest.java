@@ -89,9 +89,9 @@ class IzvodjenjeServiceDbTest {
     PrezentacijaDetails prezentacijaSaPlatnom() {
         PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Platno uživo", null, null));
         prezentacije.add(p.id());
-        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, null), null);
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, null, null), null);
         prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PLATNO, "Platno", null, null, null, false, null,
-                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(slikaId, crtezId))), null);
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(slikaId, crtezId)), null), null);
         prezentacijaService.dodajSlajd(p.id(), pitanje(TipPitanja.JEDAN_TACAN, null), null);
         return prezentacijaService.detalji(p.id());
     }
@@ -158,13 +158,13 @@ class IzvodjenjeServiceDbTest {
         assertEquals(2, k(id, TipKomande.SLEDECI).korak());
 
         prezentacijaService.izmeniSlajd(platnoId, new SlajdCmd(TipSlajda.PLATNO, "Platno", null, null, null, false, null,
-                PlatnoTestPodaci.cvor(PlatnoTestPodaci.sKlikovima(1))));
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.sKlikovima(1)), null));
         NastavnickoStanje st = stanjeService.nastavnicko(id);
         assertEquals(1, st.korak());
         assertEquals(1, st.brojStavki());
         assertNull(st.faza());
 
-        prezentacijaService.izmeniSlajd(platnoId, new SlajdCmd(TipSlajda.INFO, "Info", null, null, null, false, null, null));
+        prezentacijaService.izmeniSlajd(platnoId, new SlajdCmd(TipSlajda.INFO, "Info", null, null, null, false, null, null, null));
         st = stanjeService.nastavnicko(id);
         assertEquals(0, st.korak());
         assertEquals(0, st.brojStavki());
@@ -196,7 +196,7 @@ class IzvodjenjeServiceDbTest {
     PrezentacijaDetails prezentacija(Integer sekunde) {
         PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Statika uživo", null, null));
         prezentacije.add(p.id());
-        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", "- a\n- b", null, null, true, null, null), null);
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", "- a\n- b", null, null, true, null, null, null), null);
         prezentacijaService.dodajSlajd(p.id(), pitanje(TipPitanja.JEDAN_TACAN, sekunde), null);
         prezentacijaService.dodajSlajd(p.id(), pitanje(TipPitanja.ANKETA, null), null);
         return prezentacijaService.detalji(p.id());
@@ -205,7 +205,7 @@ class IzvodjenjeServiceDbTest {
     static SlajdCmd pitanje(TipPitanja tip, Integer sekunde) {
         return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, new PitanjeCmd(tip, "Koja sila?", null,
                 sekunde, List.of(new OpcijaCmd("F", true), new OpcijaCmd("M", false)), null, null, null, null, null,
-                null, null, null), null);
+                null, null, null), null, null);
     }
 
     NastavnickoStanje k(Long id, TipKomande tip) {
@@ -365,7 +365,7 @@ class IzvodjenjeServiceDbTest {
     void pokreniBezPitanjaNikadNeCuva() {
         PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Samo info", null, null));
         prezentacije.add(p.id());
-        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, null), null);
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null, null, null), null);
         IzvodjenjeInfo info = service.pokreni(p.id(), new PokreniCmd(true, grupa.getId(), null));
         assertFalse(info.cuvanje());
     }
@@ -415,7 +415,7 @@ class IzvodjenjeServiceDbTest {
                 }));
         assertTrue(drziSlajd.await(10, TimeUnit.SECONDS));
         CompletableFuture<SlajdDetails> izmena = CompletableFuture.supplyAsync(() ->
-                prezentacijaService.izmeniSlajd(slajdId, new SlajdCmd(TipSlajda.INFO, "Uvod 2", "- a", null, null, true, null, null)));
+                prezentacijaService.izmeniSlajd(slajdId, new SlajdCmd(TipSlajda.INFO, "Uvod 2", "- a", null, null, true, null, null, null)));
         Thread.sleep(1500);   // izmena sada čeka na red slajda
 
         Throwable zakljucano = null;

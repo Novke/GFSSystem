@@ -4,10 +4,13 @@ import org.springframework.http.HttpStatus;
 import tools.jackson.databind.JsonNode;
 import tri.novica.gfssystem.dto.uzivo.OpcijaCmd;
 import tri.novica.gfssystem.dto.uzivo.PitanjeCmd;
+import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.SlajdCmd;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
+import tri.novica.gfssystem.entity.uzivo.SmerPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TekstPrikaz;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
+import tri.novica.gfssystem.entity.uzivo.TipPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
 
@@ -27,6 +30,10 @@ public final class SlajdPP {
     public static final String BEZ_PLATNA = "Platno slajd mora imati dokument platna.";
     public static final String TACNO = "Tačno";
     public static final String NETACNO = "Netačno";
+    public static final int MIN_PRELAZ_MS = 100;
+    public static final int MAX_PRELAZ_MS = 5000;
+    public static final int PODRAZUMEVANO_PRELAZ_MS = 500;
+    public static final String PRELAZ_TRAJANJE = "Trajanje prelaza mora biti od 0,1 do 5 sekundi.";
 
     private static final int MAX_NASLOV = 300;
     private static final int MAX_SADRZAJ = 20_000;
@@ -47,16 +54,25 @@ public final class SlajdPP {
      * Kopija sa podrazumevanim vrednostima: tekstovi bez razmaka na krajevima, prazan string {@code null}; INFO bez
      * pitanja; polja koja ne važe za tip pitanja su {@code null} (opcije prazna lista); ANKETA bez tačnih,
      * TACNO_NETACNO sa tekstovima "Tačno"/"Netačno", KRATAK_TEKST podrazumevano OBLAK, BROJ odstupanje 0 APSOLUTNO.
+     * Prelaz (svaki tip) po {@link #normalizuj(Prelaz)}.
      */
     public static SlajdCmd normalizuj(SlajdCmd cmd) {
         if (cmd == null) return null;
         JsonNode platno = cmd.platno() == null || cmd.platno().isNull() || cmd.platno().isMissingNode() ? null : cmd.platno();
         if (cmd.tip() == TipSlajda.PLATNO) {
-            return new SlajdCmd(cmd.tip(), null, null, null, prazanUNull(cmd.beleske()), false, null, platno);
+            return new SlajdCmd(cmd.tip(), null, null, null, prazanUNull(cmd.beleske()), false, null, platno,
+                    normalizuj(cmd.prelaz()));
         }
         PitanjeCmd pitanje = cmd.tip() == TipSlajda.INFO ? null : normalizuj(cmd.pitanje());
         return new SlajdCmd(cmd.tip(), prazanUNull(cmd.naslov()), prazanUNull(cmd.sadrzaj()), prazanUNull(cmd.slikaId()),
-                prazanUNull(cmd.beleske()), cmd.postepeno(), pitanje, null);
+                prazanUNull(cmd.beleske()), cmd.postepeno(), pitanje, null, normalizuj(cmd.prelaz()));
+    }
+
+    /** Bez efekta -> bez prelaza; FADE nema smer; GURANJE/BRISANJE bez smera -> DESNO; bez trajanja -> 500 ms. */
+    public static Prelaz normalizuj(Prelaz p) {
+        if (p == null || p.efekat() == null) return null;
+        SmerPrelaza smer = p.efekat() == TipPrelaza.FADE ? null : Objects.requireNonNullElse(p.smer(), SmerPrelaza.DESNO);
+        return new Prelaz(p.efekat(), smer, Objects.requireNonNullElse(p.trajanjeMs(), PODRAZUMEVANO_PRELAZ_MS));
     }
 
     private static PitanjeCmd normalizuj(PitanjeCmd p) {
@@ -101,6 +117,11 @@ public final class SlajdPP {
         }
         if (duzina(cmd.beleske()) > MAX_BELESKE) {
             throw greska("Beleške mogu imati najviše 20000 znakova.");
+        }
+        // prelaz važi za svaki tip; normalizovan prelaz uvek ima trajanje (null samo pre normalizuj)
+        if (cmd.prelaz() != null && cmd.prelaz().trajanjeMs() != null
+                && (cmd.prelaz().trajanjeMs() < MIN_PRELAZ_MS || cmd.prelaz().trajanjeMs() > MAX_PRELAZ_MS)) {
+            throw greska(PRELAZ_TRAJANJE);
         }
         if (cmd.tip() == TipSlajda.PLATNO) {
             if (cmd.platno() == null) {

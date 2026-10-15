@@ -403,6 +403,8 @@ public class PrezentacijaService {
         s.setSlika(medij(n.slikaId()));
         s.setBeleske(n.beleske());
         s.setPostepeno(n.postepeno());
+        Prelaz pr = n.prelaz();
+        s.setPrelaz(pr == null ? null : new PrelazSlajda(pr.efekat(), pr.smer(), pr.trajanjeMs()));
         if (n.tip() != TipSlajda.PITANJE) {
             s.setPitanje(null);
             return;
@@ -455,6 +457,8 @@ public class PrezentacijaService {
         k.setBeleske(s.getBeleske());
         k.setPlatno(s.getPlatno());
         k.setPostepeno(s.isPostepeno());
+        PrelazSlajda p = s.getPrelaz();
+        k.setPrelaz(p == null ? null : new PrelazSlajda(p.getEfekat(), p.getSmer(), p.getTrajanjeMs()));
         k.setPitanje(s.getPitanje() == null ? null : kopija(s.getPitanje()));
         return k;
     }
