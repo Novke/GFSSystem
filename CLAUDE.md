@@ -113,9 +113,9 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   snapshot (up to 4 snapshots/s with the current and next slide, a drawing may have 20 000 points), so the audience window
   and the console fetch strokes once per slide; `sirina`/`visina` is the layer size the points belong to (the front scales
   them to the size in the snapshot). The snapshot stays without strokes.
-- **Formulas are not interpreted on the server:** question and option texts with `$...$` (and `\$`) are stored and
-  copied into the round snapshot (`PitanjeSnimak`) verbatim (`PitanjeSnimakTest.snimakCuvaFormuleDoslovno`); the front
-  renders them.
+- **Formulas are not interpreted on the server:** the round snapshot (`PitanjeSnimak.od`) copies question and option
+  texts with `$...$` (and `\$`) verbatim, also through the JSON round trip (`PitanjeSnimakTest.snimakCuvaFormuleDoslovno`);
+  there is no LaTeX check on the server, the front renders them.
 - **Import of many slides** (PowerPoint import, phase 2): `POST /prezentacije/{id}/slajdovi/uvoz` (`UvozSlajdovaCmd{posle, slajdovi}`, 1-200 slides, every slide validated before the lock, error `Slajd N: ...`, one transaction, 201 with the whole `PrezentacijaDetails`). `config/UvozConfig` answers 413 for `Content-Length` > 10 MB on that path (Spring/Tomcat have no JSON body limit; chunked requests are stopped by the frontend nginx `client_max_body_size 11m`). `FormatBroja.ARAPSKI` = `1 2 3` without punctuation (`arabicPlain`).
 - **Steps:** `TokIzvodjenja.brojKoraka` = gradual INFO list items, or for PLATNO the number of animations with trigger KLIK;
   `NastavnickoStanje.brojStavki` is that step count (name kept for the old frontend). If an edit during a run lowers the
