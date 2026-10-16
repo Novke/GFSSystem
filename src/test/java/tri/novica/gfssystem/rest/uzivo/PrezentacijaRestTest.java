@@ -13,9 +13,11 @@ import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.service.uzivo.PlatnoJson;
 import tri.novica.gfssystem.service.uzivo.PlatnoTestPodaci;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
+import tri.novica.gfssystem.entity.uzivo.SmerPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
 import tri.novica.gfssystem.entity.uzivo.Tema;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
+import tri.novica.gfssystem.entity.uzivo.TipPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja;
@@ -38,7 +40,7 @@ class PrezentacijaRestTest {
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final PrezentacijaDetails DETAILS = new PrezentacijaDetails(1L, "Uvod", null, new PredmetKratko(7L, "Statika"),
             0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of());
-    static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null, null);
+    static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null, null, null);
 
     @Autowired MockMvc mvc;
     @MockitoBean PrezentacijaService service;
@@ -156,7 +158,7 @@ class PrezentacijaRestTest {
         mvc.perform(post("/prezentacije/1/slajdovi").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"tip\":\"INFO\",\"naslov\":\"A\"}"))
            .andExpect(status().isCreated());
-        verify(service).dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, "A", null, null, null, false, null, null), null);
+        verify(service).dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, "A", null, null, null, false, null, null, null), null);
     }
 
     @Test
@@ -175,6 +177,44 @@ class PrezentacijaRestTest {
         mvc.perform(delete("/slajdovi/9")).andExpect(status().isNoContent());
         verify(service).obrisiSlajd(9L);
         mvc.perform(post("/slajdovi/9/dupliraj")).andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(9));
+    }
+
+    @Test
+    void prelazSlajdaKrozPut() throws Exception {
+        SlajdDetails saPrelazom = new SlajdDetails(7L, 1, TipSlajda.INFO, "Uvod", null, null, null, false, null, null,
+                new Prelaz(TipPrelaza.GURANJE, SmerPrelaza.DOLE, 600));
+        when(service.izmeniSlajd(eq(7L), any())).thenReturn(saPrelazom);
+
+        mvc.perform(put("/slajdovi/7").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tip":"INFO","naslov":"Uvod","prelaz":{"efekat":"GURANJE","smer":"DOLE","trajanjeMs":600}}"""))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.prelaz.efekat").value("GURANJE"))
+           .andExpect(jsonPath("$.prelaz.smer").value("DOLE"))
+           .andExpect(jsonPath("$.prelaz.trajanjeMs").value(600));
+        ArgumentCaptor<SlajdCmd> cmd = ArgumentCaptor.forClass(SlajdCmd.class);
+        verify(service).izmeniSlajd(eq(7L), cmd.capture());
+        assertEquals(new Prelaz(TipPrelaza.GURANJE, SmerPrelaza.DOLE, 600), cmd.getValue().prelaz());
+    }
+
+    @Test
+    void teloBezPrelazaJeBezPrelazaIOdgovorImaPrelazNull() throws Exception {
+        when(service.izmeniSlajd(eq(7L), any())).thenReturn(SLAJD);
+        mvc.perform(put("/slajdovi/7").contentType(MediaType.APPLICATION_JSON).content("{\"tip\":\"INFO\",\"naslov\":\"Uvod\"}"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$", org.hamcrest.Matchers.hasKey("prelaz")))
+           .andExpect(jsonPath("$.prelaz").value(org.hamcrest.Matchers.nullValue()));
+        ArgumentCaptor<SlajdCmd> cmd = ArgumentCaptor.forClass(SlajdCmd.class);
+        verify(service).izmeniSlajd(eq(7L), cmd.capture());
+        assertNull(cmd.getValue().prelaz());
+    }
+
+    @Test
+    void nepoznatEfekatPrelazaJe400() throws Exception {
+        mvc.perform(put("/slajdovi/7").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tip\":\"INFO\",\"prelaz\":{\"efekat\":\"KOCKA\"}}"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value("Neispravan format podataka."));
+        verify(service, never()).izmeniSlajd(any(), any());
     }
 
     @Test
@@ -217,7 +257,7 @@ class PrezentacijaRestTest {
     @Test
     void platnoSlajdProlaziKaoSirovJsonINazadKaoDokument() throws Exception {
         Platno platno = PlatnoTestPodaci.ispravno();
-        SlajdDetails platnoSlajd = new SlajdDetails(9L, 1, TipSlajda.PLATNO, null, null, null, null, false, null, platno);
+        SlajdDetails platnoSlajd = new SlajdDetails(9L, 1, TipSlajda.PLATNO, null, null, null, null, false, null, platno, null);
         when(service.dodajSlajd(eq(1L), any(), isNull())).thenReturn(platnoSlajd);
         String telo = "{\"tip\":\"PLATNO\",\"platno\":" + new PlatnoJson().zapisi(platno) + "}";
 

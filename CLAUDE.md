@@ -113,6 +113,18 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   snapshot (up to 4 snapshots/s with the current and next slide, a drawing may have 20 000 points), so the audience window
   and the console fetch strokes once per slide; `sirina`/`visina` is the layer size the points belong to (the front scales
   them to the size in the snapshot). The snapshot stays without strokes.
+- **Slide transition** (phase 5; `V10__prelaz_slajda.sql`, the plan said V9 but V9 was already `grupe.wa_link`):
+  `Slajd.prelaz` is an `@Embedded PrelazSlajda` (nullable columns `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`;
+  all null = no transition, Hibernate then returns null) and belongs to the slide, not to the canvas document, so it works
+  for every slide type (INFO, PITANJE, PLATNO). DTO `Prelaz(TipPrelaza efekat, SmerPrelaza smer, Integer trajanjeMs)` is
+  the last component of `SlajdCmd` and `SlajdDetails` (and so of `NastavnickoStanje.trenutniSlajd`/`sledeciSlajd`);
+  `null` = no transition. `TipPrelaza` FADE|GURANJE|BRISANJE, `SmerPrelaza` LEVO|DESNO|GORE|DOLE (the side the new slide
+  comes from). `SlajdPP.normalizuj(Prelaz)`: no `efekat` -> whole transition null; FADE -> `smer` null; GURANJE/BRISANJE
+  without `smer` -> DESNO; no `trajanjeMs` -> 500. `SlajdPP.proveri`: `trajanjeMs` outside 100..5000 -> 400
+  `Trajanje prelaza mora biti od 0,1 do 5 sekundi.` (checked before the type branches, also for PLATNO). Duplicating a
+  slide or a presentation copies it, import keeps it. A `PUT` without `prelaz` clears it (full replacement, like
+  `platno`), so the old frontend, which does not send it, removes a transition on save (it also never shows one). The
+  server only stores it; the frontend plays it (audience window only, one slide forward).
 - **Formulas are not interpreted on the server:** the round snapshot (`PitanjeSnimak.od`) copies question and option
   texts with `$...$` (and `\$`) verbatim, also through the JSON round trip (`PitanjeSnimakTest.snimakCuvaFormuleDoslovno`);
   there is no LaTeX check on the server, the front renders them.
@@ -215,12 +227,12 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4 and V6-V9 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4 and V6-V10 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
-  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. **Next free version: `V10`.**
+  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. **Next free version: `V11`.**
 - `sql/views.sql` is historical, the view lives in `V1`.
 - `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
   (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history). Run

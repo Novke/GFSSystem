@@ -214,6 +214,29 @@ class NastavnickoStanjeTest {
     }
 
     @Test
+    void snimakNosiPrelazTrenutnogISledecegSlajda() {
+        s2.setPrelaz(new PrelazSlajda(TipPrelaza.GURANJE, SmerPrelaza.LEVO, 700));
+        s3.setPrelaz(new PrelazSlajda(TipPrelaza.FADE, null, 300));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        assertNotNull(st.trenutniSlajd().prelaz());
+        assertEquals(new Prelaz(TipPrelaza.GURANJE, SmerPrelaza.LEVO, 700), st.trenutniSlajd().prelaz());
+        assertEquals(new Prelaz(TipPrelaza.FADE, null, 300), st.sledeciSlajd().prelaz());
+    }
+
+    @Test
+    void slajdBezPrelazaUSnimkuImaPrelazNull() {
+        // Hibernate vraća null za @Embedded kad su sve kolone null; i prazan embeddable (efekat null) je bez prelaza
+        s3.setPrelaz(new PrelazSlajda(null, null, null));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        assertNull(st.trenutniSlajd().prelaz());
+        assertNull(st.sledeciSlajd().prelaz());
+    }
+
+    @Test
     void projektorDobijaJavneProjekcije() {
         // L i Space dok je pitanje otvoreno: konzola vidi sve uživo, projektor samo ono što vide telefoni
         NastavnickoStanje st = service.nastavnicko(IZ);
