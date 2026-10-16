@@ -13,7 +13,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import tools.jackson.databind.node.ObjectNode;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.dto.uzivo.platno.Potez;
+import tri.novica.gfssystem.dto.uzivo.platno.Pozadina;
 import tri.novica.gfssystem.dto.uzivo.platno.TekstSloj;
 import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.entity.Grupa;
@@ -1007,5 +1010,67 @@ class PrezentacijaServiceTest {
         assertEquals(1, kopije.size());
         assertEquals(s.getPlatno(), kopije.get(0).getPlatno());
         assertEquals(PlatnoTestPodaci.ispravno(), d.slajdovi().get(0).platno());
+    }
+
+    // --- potezi crteža (faza 5, B1) ---
+
+    static final Potez POTEZ = new Potez("#FF0000", 2.0, List.of(0.0, 0.0, 10.0, 5.0));
+
+    /** PLATNO sa TEKST t1, CRTEZ c1 (m1, 100 x 50, jedan potez) i CRTEZ c2 bez poteza, upisan pravo u kolonu. */
+    Slajd platnoSaCrtezimaUBazi() {
+        Platno platno = new Platno(1, new Pozadina("#FFFFFF", null), List.of(
+                PlatnoTestPodaci.tekst("t1"),
+                new CrtezSloj("c1", null, 10.0, 20.0, 100.0, 50.0, 0.0, 1.0, false, null, "m1", List.of(POTEZ)),
+                new CrtezSloj("c2", null, 0.0, 0.0, 300.0, 200.0, 0.0, 0.5, false, null, "m2", null)), List.of());
+        Slajd s = new Slajd();
+        s.setPrezentacija(prez);
+        s.setRb(1);
+        s.setTip(TipSlajda.PLATNO);
+        s.setPlatno(platnoJson.zapisi(platno));
+        dodeliId(s);
+        baza.add(s);
+        return s;
+    }
+
+    @Test
+    void poteziVracaSamoCrteze() {
+        Slajd s = platnoSaCrtezimaUBazi();
+        assertEquals(List.of(
+                new PoteziSloja("c1", "m1", 100.0, 50.0, List.of(POTEZ)),
+                new PoteziSloja("c2", "m2", 300.0, 200.0, null)), service.poteziSlajda(s.getId()));
+    }
+
+    @Test
+    void poteziInfoSlajdaSuPrazni() {
+        Slajd s = infoUBazi("Uvod", 1);
+        assertEquals(List.of(), service.poteziSlajda(s.getId()));
+        Slajd p = pitanjeUBazi(2, TipPitanja.JEDAN_TACAN, "a", "b");
+        assertEquals(List.of(), service.poteziSlajda(p.getId()));
+    }
+
+    @Test
+    void poteziPlatnaBezCrtezaSuPrazni() {
+        Slajd s = new Slajd();
+        s.setPrezentacija(prez);
+        s.setRb(1);
+        s.setTip(TipSlajda.PLATNO);
+        s.setPlatno(platnoJson.zapisi(PlatnoTestPodaci.sKlikovima(1)));
+        dodeliId(s);
+        baza.add(s);
+        assertEquals(List.of(), service.poteziSlajda(s.getId()));
+    }
+
+    @Test
+    void poteziNepostojecegSlajdaJe404() {
+        greska(404, PrezentacijaService.SLAJD_NIJE_PRONADJEN, () -> service.poteziSlajda(999L));
+    }
+
+    @Test
+    void poteziNeZakljucavaju() {
+        Slajd s = platnoSaCrtezimaUBazi();
+        service.poteziSlajda(s.getId());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+        verify(slajdRepository, never()).save(any());
+        verifyNoInteractions(promene, promeneProvider);
     }
 }

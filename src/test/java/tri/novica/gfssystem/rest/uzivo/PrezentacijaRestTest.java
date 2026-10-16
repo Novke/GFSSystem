@@ -300,4 +300,32 @@ class PrezentacijaRestTest {
                         .content("{\"posle\":null,\"slajdovi\":[{\"tip\":\"INFO\",\"naslov\":\"X\"}]}"))
            .andExpect(status().isNotFound());
     }
+
+    @Test
+    void poteziSlajdaVraca200ISlojeve() throws Exception {
+        when(service.poteziSlajda(7L)).thenReturn(List.of(new PoteziSloja("c1", "m1", 100.0, 50.0,
+                List.of(new tri.novica.gfssystem.dto.uzivo.platno.Potez("#FF0000", 2.0, List.of(0.0, 0.0, 10.0, 5.0)))),
+                new PoteziSloja("c2", "m2", 300.0, 200.0, null)));
+        mvc.perform(get("/slajdovi/7/potezi"))
+           .andExpect(status().isOk())
+           .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+           .andExpect(jsonPath("$[0].slojId").value("c1"))
+           .andExpect(jsonPath("$[0].medijId").value("m1"))
+           .andExpect(jsonPath("$[0].sirina").value(100.0))
+           .andExpect(jsonPath("$[0].visina").value(50.0))
+           .andExpect(jsonPath("$[0].potezi[0].boja").value("#FF0000"))
+           .andExpect(jsonPath("$[0].potezi[0].tacke[2]").value(10.0))
+           // ugovor 3: crtež bez poteza izlazi kao "potezi": null (ključ postoji), i pod globalnim NON_NULL bi ovo palo
+           .andExpect(jsonPath("$[1].slojId").value("c2"))
+           .andExpect(jsonPath("$[1]").value(org.hamcrest.Matchers.hasKey("potezi")))
+           .andExpect(jsonPath("$[1].potezi").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void poteziNepostojecegSlajdaJe404() throws Exception {
+        when(service.poteziSlajda(99L)).thenThrow(new SystemException("Slajd nije pronađen.", HttpStatus.NOT_FOUND));
+        mvc.perform(get("/slajdovi/99/potezi"))
+           .andExpect(status().isNotFound())
+           .andExpect(jsonPath("$.reason").value("Slajd nije pronađen."));
+    }
 }
