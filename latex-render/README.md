@@ -20,10 +20,10 @@ Telo je JSON do `RENDER_MAX_BODY` (60 MB), sa `Content-Length` ili `Transfer-Enc
 ```
 
 - `format`: `svg` ili `pdf`. `tex`: ceo dokument (omot, preambula i telo sklapa backend, `LatexDokument`), UTF-8, do 2 MB.
-- `prilozi` (može da izostane): svaki postaje fajl `<ime>.<ekstenzija>` pored dokumenta, pa ga LaTeX zove sa
-  `\includegraphics{<ime>}`. `ime` po `^[a-z0-9_-]{1,60}$` (osim `dokument`, rezervisano), `ekstenzija` je `pdf`, `png`,
-  `jpg`, `jpeg` ili `webp`, `sadrzaj` je base64, isti fajl dvaput je 400. pdflatex ne ume WebP: `\includegraphics` nalazi
-  samo `pdf`, `png`, `jpg` i `jpeg`, pa WebP prilog daje grešku "File ... not found".
+- `prilozi` (može da izostane, najviše 20): svaki postaje fajl `<ime>.<ekstenzija>` pored dokumenta, pa ga LaTeX zove
+  sa `\includegraphics{<ime>}`. `ime` po `^[a-z0-9_-]{1,60}$` (osim `dokument`, rezervisano), `ekstenzija` je `pdf`,
+  `png`, `jpg` ili `jpeg`, `sadrzaj` je base64, isti fajl dvaput je 400. WebP nije LaTeX prilog (pdflatex ga ne
+  uključuje), pa je `webp` 400.
 - `timeoutSekunde` (može da izostane, podrazumevano 20): rok za ceo prevod, sveden na 5 do `RENDER_MAX_TIMEOUT`.
 
 Odgovor je uvek 200 kad je zahtev ispravan:
@@ -39,13 +39,15 @@ Odgovor je uvek 200 kad je zahtev ispravan:
   prvi red `! ...`; za `Emergency stop.` uzima se red `! ...` pre njega (npr. `LaTeX Error: File ... not found.`).
   Najviše 300 znakova.
 - Poruke servisa: `Prekoračeno vreme kompajliranja (N s).`, `Prevelik izlaz.` (izlaz iznad `RENDER_MAX_OUTPUT` ili
-  fajl iznad 64 MB), `Dokument nema nijednu stranu.`, `Pretvaranje PDF-a u SVG nije uspelo.`,
+  fajl iznad 64 MB), `Dokument nema stranica.` (nema strana, ili `dokument.pdf` nije PDF koji je napravio pdflatex, npr.
+  dokument ga sam napiše kroz `\openout`), `Pretvaranje PDF-a u SVG nije uspelo.`,
   `Prekoračeno vreme pretvaranja u SVG.`, `LaTeX nije uspeo, vidi log.`
 
-Ostali statusi (telo `{"greska": "..."}`): **400** `Neispravan zahtev.` (nije JSON objekat, pogrešan tip polja, `format`,
-prazan ili prevelik `tex`, neispravan prilog, nejasna `Content-Length`/`Transfer-Encoding` zaglavlja), **413**
-`Prevelik zahtev.` (telo iznad `RENDER_MAX_BODY`; uz `Expect: 100-continue` odbija se pre slanja tela), **404**
-nepoznata putanja, **405** pogrešan metod (zaglavlje `Allow`), **500** `Greška servisa.` (npr. pun `/tmp`).
+Ostali statusi (telo `{"greska": "..."}`): **400** `Neispravan zahtev.` (nije JSON objekat ili je preduboko ugnežđen,
+pogrešan tip polja, `format`, prazan ili prevelik `tex`, neispravan prilog ili više od 20 priloga, nejasna
+`Content-Length`/`Transfer-Encoding` zaglavlja, chunked telo u više od 100 000 delova), **413** `Prevelik zahtev.` (telo
+iznad `RENDER_MAX_BODY`; uz `Expect: 100-continue` odbija se pre slanja tela), **404** nepoznata putanja, **405**
+pogrešan metod (zaglavlje `Allow`), **500** `Greška servisa.` (npr. pun `/tmp`).
 
 ### `GET /zdravlje`
 
@@ -58,9 +60,11 @@ nepoznata putanja, **405** pogrešan metod (zaglavlje `Allow`), **500** `Greška
   sa okruženjem `openin_any=p openout_any=p shell_escape=f TEXMFVAR=/tmp/texmf-var TEXMFCONFIG=/tmp/texmf-config
   TEXMFHOME=/nonexistent HOME=/tmp PATH=/usr/bin:/bin`, `max_print_line=1000` (poruka greške u jednom redu) i
   `MKTEXPK=MKTEXTFM=MKTEXMF=MKTEXTEX=MKTEXFMT=0` (bez mktex skripti i METAFONT-a; EC fontovi su Type1 iz `cm-super`).
+  Zato fontovi koji u TeX Live-u postoje samo kao METAFONT izvor (bez Type1) ne rade: prevod pada sa `Font ... not found`.
 - Ograničenja procesa kroz `prlimit` (bez `preexec_fn`, koji nije bezbedan uz niti): CPU = preostali rok (tvrdo + 5 s),
   1 GB adresnog prostora, 64 MB po fajlu, bez core fajla. Po isteku roka ubija se cela grupa procesa.
 - Drugi prolaz samo kad log traži (`Rerun to get ...`), u istom roku. stdout pdflatex-a ide u fajl, ne u memoriju servera.
+  Posle prolaza `dokument.pdf` mora da počinje sa `%PDF-`, a log ne sme da kaže `No pages of output`.
 - SVG: `pdftocairo -svg dokument.pdf dokument.svg` (glifovi kao putanje, slike kao `data:` URI, bez fontova i skripti),
   najviše 20 s i ne više od 5 s posle roka prevoda, pa odgovor stiže pre nego što Java klijent odustane (rok + 10 s).
 - Najviše 4 prevoda istovremeno (`BoundedSemaphore`); peti čeka. `/zdravlje` ne čeka.
@@ -91,7 +95,9 @@ bash latex-render/test/smoke.sh   # build + kontejner sa izolacijom kao u compos
 Smoke proverava: `primer.tex` (omot i podrazumevana preambula iz `LatexDokument.java`, TikZ automat, `enumitem`,
 `booktabs`, `amsmath`/`amssymb`, PNG prilog) u SVG i PDF, isto telo poslato chunked, `primer-greska.tex` (`ok=false`,
 linija 14 = treća linija tela), `zabranjeno.tex` (`ok=false`, nema izlaza `id` ni sadržaja `/etc/passwd`, nema `/tmp/x`
-u kontejneru), da posle zahteva u `/tmp` nema radnih direktorijuma, 400, 413 (70 MB), 404, 405 i `/zdravlje`.
+u kontejneru), `bez-strana.tex` (sam napiše `dokument.pdf`: `Dokument nema stranica.`), da posle zahteva u `/tmp` nema
+radnih direktorijuma, 400 (loš i preduboko ugnežđen JSON, `format: png`, ime `../slika`, WebP prilog, 21 prilog), 413
+(70 MB), 404, 405 i `/zdravlje`.
 
 Ručno, na portu na koji backend sa `dev` profilom već gleda (`gfs.latex.url` = `http://localhost:8800`):
 
@@ -112,7 +118,10 @@ Oko 1,3 GB raspakovan (oko 400 MB kompresovan), build oko 3 minuta (TeX Live iz 
 
 | Promenljiva | Podrazumevano | Značenje |
 |---|---|---|
-| `RENDER_PORT` | `8800` | port servera (sluša na `0.0.0.0` u kontejneru) |
-| `RENDER_MAX_TIMEOUT` | `60` | gornja granica za `timeoutSekunde` (s) |
-| `RENDER_MAX_OUTPUT` | `5242880` | najveći SVG ili PDF u odgovoru (B), iznad je `Prevelik izlaz.` |
-| `RENDER_MAX_BODY` | `62914560` | najveće telo zahteva (B), iznad je 413 |
+| `RENDER_PORT` | `8800` | port servera (sluša na `0.0.0.0` u kontejneru; i healthcheck ga čita), 1 do 65535 |
+| `RENDER_MAX_TIMEOUT` | `60` | gornja granica za `timeoutSekunde` (s), najmanje 5 |
+| `RENDER_MAX_OUTPUT` | `5242880` | najveći SVG ili PDF u odgovoru (B), iznad je `Prevelik izlaz.`; najmanje 65536 |
+| `RENDER_MAX_BODY` | `62914560` | najveće telo zahteva (B), iznad je 413; najmanje 1048576 |
+
+Vrednost van opsega ili koja nije ceo broj: server ispiše poruku na stderr i izađe sa kodom 2 (kontejner ne radi pogrešno
+podešen).

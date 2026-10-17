@@ -32,5 +32,5 @@ ENV RENDER_PORT=8800 \
     RENDER_MAX_BODY=62914560
 EXPOSE 8800
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-    CMD python3 -I -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8800/zdravlje', timeout=2).status==200 else 1)"
+    CMD python3 -I -c "import os,sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:%s/zdravlje' % os.environ.get('RENDER_PORT', '8800'), timeout=2).status == 200 else 1)"
 CMD ["python3", "-I", "/srv/server.py"]

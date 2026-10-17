@@ -2,7 +2,8 @@
 # Smoke test render servisa gfs-latex (spec banke 3.1): izgradi image, pokrene kontejner sa izolacijom iz compose-a
 # (read-only, tmpfs /tmp, bez capability-ja, no-new-privileges, ograničenja memorije/CPU/procesa) i proveri API:
 # SVG i PDF primera sa podrazumevanom preambulom (TikZ automat + priloženi PNG), telo poslato kao chunked (tako šalje
-# Java klijent), grešku sa linijom, zabranjene komande (\write18, \input van radnog dir-a), 400/404/413 i zdravlje.
+# Java klijent), grešku sa linijom, zabranjene komande (\write18, \input van radnog dir-a), dokument bez strana koji
+# sam napiše dokument.pdf, 400/404/405/413 i zdravlje.
 # Pokretanje iz bilo kog direktorijuma: bash latex-render/test/smoke.sh (treba docker, curl, python3). Izlaz != 0 na grešku.
 set -euo pipefail
 
@@ -112,6 +113,11 @@ elif mod == "zabranjeno":
     if not re.search(r"not found|openin_any|Not reading", g["poruka"] + "\n" + log):
         ne("nema poruke o nepostojećem fajlu ili openin_any zabrani: %r" % g["poruka"])
     print(g["poruka"])
+elif mod == "poruka":
+    g, log = neuspeh_sa_greskom()
+    if g["poruka"] != sys.argv[3]:
+        ne("poruka je %r, očekivano %r" % (g["poruka"], sys.argv[3]))
+    print(g["poruka"])
 elif mod == "odbijeno":
     if not isinstance(o, dict) or not isinstance(o.get("greska"), str):
         ne("telo odbijenog zahteva nije {\"greska\": \"...\"}: %r" % (o,))
@@ -213,6 +219,12 @@ rez=$(proveri zabranjeno "$TMP/o.json") || pad "zabranjeno.tex: $rez"
 docker exec "$IME" sh -c 'test ! -e /tmp/x' || pad "zabranjeno.tex: \\write18 je napravio /tmp/x u kontejneru"
 uspeh "zabranjeno.tex -> ok=false bez izlaza shell komande i bez /etc/passwd: $rez"
 
+zahtev "$TEST_DIR/bez-strana.tex" pdf "$TMP/bez-strana.json"
+status=$(posalji "$TMP/bez-strana.json" "$TMP/o.json")
+ocekuj_status "$status" 200 "bez-strana.tex"
+rez=$(proveri poruka "$TMP/o.json" "Dokument nema stranica.") || pad "bez-strana.tex: $rez"
+uspeh "bez-strana.tex (sam napiše dokument.pdf) -> ok=false: $rez"
+
 ostatak=$(docker exec "$IME" sh -c 'ls -A /tmp' | grep -vxE 'texmf-var|texmf-config' || true)
 [[ -z "$ostatak" ]] || pad "radni direktorijumi nisu obrisani posle zahteva: $ostatak"
 uspeh "posle zahteva u /tmp nema radnih direktorijuma"
@@ -227,7 +239,17 @@ ocekuj_status "$status" 400 "format png"
 printf '{"format":"svg","tex":"x","prilozi":[{"ime":"../slika","ekstenzija":"png","sadrzaj":""}]}' >"$TMP/los.json"
 status=$(posalji "$TMP/los.json" "$TMP/o.json")
 ocekuj_status "$status" 400 "ime priloga sa putanjom"
-uspeh "neispravan JSON, format png, ime priloga ../slika -> 400 ($rez)"
+printf '{"format":"svg","tex":"x","prilozi":[{"ime":"slika","ekstenzija":"webp","sadrzaj":""}]}' >"$TMP/los.json"
+status=$(posalji "$TMP/los.json" "$TMP/o.json")
+ocekuj_status "$status" 400 "WebP prilog"
+python3 -I -c 'import json; print(json.dumps({"format": "svg", "tex": "x", "prilozi": [
+    {"ime": "s%d" % i, "ekstenzija": "png", "sadrzaj": ""} for i in range(21)]}))' >"$TMP/los.json"
+status=$(posalji "$TMP/los.json" "$TMP/o.json")
+ocekuj_status "$status" 400 "21 prilog"
+python3 -I -c 'print("[" * 100000 + "]" * 100000)' >"$TMP/los.json"
+status=$(posalji "$TMP/los.json" "$TMP/o.json")
+ocekuj_status "$status" 400 "preduboko ugnežđen JSON"
+uspeh "neispravan JSON, format png, ime priloga ../slika, WebP prilog, 21 prilog, dubok JSON -> 400 ($rez)"
 
 head -c $((70 * 1024 * 1024)) /dev/zero >"$TMP/veliko.json"
 status=$(posalji "$TMP/veliko.json" "$TMP/o.json")

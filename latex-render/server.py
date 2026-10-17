@@ -23,21 +23,27 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 
-def _broj_iz_okruzenja(ime, podrazumevano):
+MIN_TIMEOUT = 5
+
+
+def _broj_iz_okruzenja(ime, podrazumevano, najmanje, najvise=None):
+    """Ceo broj iz env-a u [najmanje, najvise]; inače poruka na stderr i izlaz 2 (kontejner se ne pokreće pogrešno)."""
     vrednost = os.environ.get(ime, "").strip()
     if not vrednost:
         return podrazumevano
-    if not vrednost.isdigit():
-        raise SystemExit("%s mora biti pozitivan ceo broj" % ime)
-    return int(vrednost)
+    broj = int(vrednost) if vrednost.isdigit() else None
+    if broj is None or broj < najmanje or (najvise is not None and broj > najvise):
+        opseg = "od %d do %d" % (najmanje, najvise) if najvise is not None else "najmanje %d" % najmanje
+        sys.stderr.write("gfs-latex: %s=%r, a mora biti ceo broj %s\n" % (ime, vrednost, opseg))
+        sys.exit(2)
+    return broj
 
 
-PORT = _broj_iz_okruzenja("RENDER_PORT", 8800)
-MAX_TIMEOUT = _broj_iz_okruzenja("RENDER_MAX_TIMEOUT", 60)
-MAX_IZLAZ = _broj_iz_okruzenja("RENDER_MAX_OUTPUT", 5 * 1024 * 1024)
-MAX_TELO = _broj_iz_okruzenja("RENDER_MAX_BODY", 60 * 1024 * 1024)
+PORT = _broj_iz_okruzenja("RENDER_PORT", 8800, 1, 65535)
+MAX_TIMEOUT = _broj_iz_okruzenja("RENDER_MAX_TIMEOUT", 60, MIN_TIMEOUT)
+MAX_IZLAZ = _broj_iz_okruzenja("RENDER_MAX_OUTPUT", 5 * 1024 * 1024, 64 * 1024)
+MAX_TELO = _broj_iz_okruzenja("RENDER_MAX_BODY", 60 * 1024 * 1024, 1024 * 1024)
 
-MIN_TIMEOUT = 5
 PODRAZUMEVANI_TIMEOUT = 20
 SVG_TIMEOUT = 20
 # pdftocairo deli rok kompajliranja uz ovu rezervu: ceo odgovor stiže pre nego što Java klijent odustane (rok + 10 s)
@@ -52,7 +58,10 @@ NAJVECI_FAJL = 64 * 1024 ** 2
 SOKET_TIMEOUT = 30
 
 FORMATI = frozenset({"svg", "pdf"})
-EKSTENZIJE = frozenset({"pdf", "png", "jpg", "jpeg", "webp"})
+# Samo ono što pdflatex ume da uključi (\includegraphics); WebP nije LaTeX prilog.
+EKSTENZIJE = frozenset({"pdf", "png", "jpg", "jpeg"})
+NAJVISE_PRILOGA = 20
+NAJVISE_CHUNKOVA = 100_000
 IME_PRILOGA = re.compile(r"[a-z0-9_-]{1,60}")
 DOKUMENT = "dokument"
 
@@ -110,7 +119,7 @@ def procitaj_zahtev(telo):
     """JSON telo -> (format, tex u UTF-8, {fajl: bajtovi}, rok u s); OdbijenZahtev(400) za sve što ne odgovara."""
     try:
         z = json.loads(telo)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):  # RecursionError: preduboko ugnežđen JSON
         raise OdbijenZahtev(400, NEISPRAVAN)
     if not isinstance(z, dict):
         raise OdbijenZahtev(400, NEISPRAVAN)
@@ -136,7 +145,7 @@ def procitaj_zahtev(telo):
     prilozi = z.get("prilozi")
     if prilozi is None:
         prilozi = []
-    if not isinstance(prilozi, list):
+    if not isinstance(prilozi, list) or len(prilozi) > NAJVISE_PRILOGA:
         raise OdbijenZahtev(400, NEISPRAVAN)
     fajlovi = {}
     for p in prilozi:
@@ -191,6 +200,14 @@ def kraj_fajla(put):
         return ""
 
 
+def pocinje_kao_pdf(put):
+    try:
+        with open(put, "rb") as f:
+            return f.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
 def poslednje_linije(tekst):
     return "\n".join(tekst.splitlines()[-NAJVISE_LINIJA_LOGA:])
 
@@ -222,13 +239,11 @@ def neuspeh(linija, poruka, log):
 
 
 def neuspeh_procesa(kod, log, rok):
-    """Proces je završio sa kodom != 0 ili bez izlaza: uzrok iz signala (rlimit) ili iz loga."""
+    """Proces je završio sa kodom != 0: uzrok iz signala (rlimit) ili iz loga."""
     if kod == -signal.SIGXCPU:
         return neuspeh(None, "Prekoračeno vreme kompajliranja (%d s)." % rok, log)
     if kod == -signal.SIGXFSZ:
         return neuspeh(None, "Prevelik izlaz.", log)
-    if kod == 0 and "No pages of output" in log:
-        return neuspeh(None, "Dokument nema nijednu stranu.", log)
     linija, poruka = greska_iz_loga(log)
     return neuspeh(linija, poruka, log)
 
@@ -261,8 +276,11 @@ def renderuj(format_, tex, prilozi, rok):
             except subprocess.TimeoutExpired:
                 return neuspeh(None, istek, procitaj_log())
             log = procitaj_log()
-            if kod != 0 or not os.path.isfile(pdf):
+            if kod != 0:
                 return neuspeh_procesa(kod, log, rok)
+            # Bez strana pdflatex ne piše PDF, a dokument.pdf je mogao da napiše sam dokument (\openout).
+            if "No pages of output" in log or not pocinje_kao_pdf(pdf):
+                return neuspeh(None, "Dokument nema stranica.", log)
             if "Rerun to get" not in log:
                 break
 
@@ -378,8 +396,8 @@ class Rukovalac(BaseHTTPRequestHandler):
             if len(telo) != duzina:
                 raise OdbijenZahtev(400, NEISPRAVAN)
             return telo
-        delovi, ukupno = [], 0
-        while True:
+        telo = bytearray()  # chunked: jedan bafer koji raste, bez liste delova i spajanja na kraju
+        for _ in range(NAJVISE_CHUNKOVA + 1):
             red = self.rfile.readline(1026)
             velicina = red.split(b";", 1)[0].strip()
             if not red.endswith(b"\n") or not re.fullmatch(rb"[0-9a-fA-F]{1,15}", velicina):
@@ -387,16 +405,17 @@ class Rukovalac(BaseHTTPRequestHandler):
             velicina = int(velicina, 16)
             if velicina == 0:
                 break
-            ukupno += velicina
-            if ukupno > MAX_TELO:
+            if len(telo) + velicina > MAX_TELO:
                 raise OdbijenZahtev(413, PREVELIK)
             deo = self.rfile.read(velicina)
             if len(deo) != velicina or self.rfile.readline(3) not in (b"\r\n", b"\n"):
                 raise OdbijenZahtev(400, NEISPRAVAN)
-            delovi.append(deo)
+            telo += deo
+        else:
+            raise OdbijenZahtev(400, NEISPRAVAN)  # više od NAJVISE_CHUNKOVA delova
         for _ in range(64):  # trailer zaglavlja do prazne linije
             if self.rfile.readline(8194) in (b"\r\n", b"\n", b""):
-                return b"".join(delovi)
+                return telo
         raise OdbijenZahtev(400, NEISPRAVAN)
 
     def _nedozvoljeno(self):
