@@ -713,7 +713,7 @@ class VarijantaServiceTest {
         VarijantaDetails a = service.kreiraj(grupa.getId(), cmd("Prva.", null, List.of(new PrilogCmd("skica", PNG))));
         VarijantaDetails b = service.kreiraj(grupa.getId(), cmd("Druga.", null, List.of()));
         varijante.forEach(v -> v.setRenderHash(null));
-        when(medijService.ucitaj(PNG)).thenThrow(new java.io.UncheckedIOException(new java.io.IOException("/var/lib/gfs/x")));
+        when(medijService.ucitaj(PNG)).thenThrow(new IllegalStateException("/var/lib/gfs/x"));
 
         assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
         assertEquals("Render nije uspeo.", varijanta(a.id()).getRenderGreska());
@@ -722,6 +722,57 @@ class VarijantaServiceTest {
         when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenThrow(new RenderNedostupan());
         ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
         assertNull(varijanta(b.id()).getRenderHash());
+    }
+
+    @Test
+    void renderujSvePrekidaNaGreskamaOkruzenjaBezSpustanjaAktivnihVarijanti() {
+        VarijantaDetails aktivna = service.kreiraj(grupa.getId(), cmd("Aktivna.", null, List.of()));
+        service.odobri(aktivna.id());
+        VarijantaDetails druga = service.kreiraj(grupa.getId(), cmd("Druga.", null, List.of()));
+        List<RuntimeException> okruzenje = List.of(
+                new java.io.UncheckedIOException(new java.io.IOException("No space left on device")),   // SVG nije upisan
+                new org.springframework.dao.DataAccessResourceFailureException("baza ne radi"),
+                new jakarta.persistence.PersistenceException("flush"),
+                new org.springframework.transaction.CannotCreateTransactionException("nema konekcije"));
+        clearInvocations(latexRender);
+        for (RuntimeException greska : okruzenje) {
+            varijante.forEach(v -> v.setRenderHash(null));
+            doThrow(greska).when(medijService).sacuvajRender(any(), anyString());
+
+            assertSame(greska, assertThrows(RuntimeException.class, () -> service.renderujSve(7L)));
+
+            Varijanta a = varijanta(aktivna.id());
+            assertEquals(StatusVarijante.AKTIVNA, a.getStatus(), greska.getClass().getSimpleName());
+            assertEquals(RenderStatus.OK, a.getRenderStatus());
+            assertNull(a.getRenderGreska());
+            assertEquals(RenderStatus.OK, varijanta(druga.id()).getRenderStatus());
+            assertNull(varijanta(druga.id()).getRenderGreska());
+            verify(latexRender, atLeastOnce()).renderuj(anyString(), contains("Aktivna."), anyList());
+            verify(latexRender, never()).renderuj(anyString(), contains("Druga."), anyList());   // petlja stala na prvoj
+            clearInvocations(latexRender);
+        }
+    }
+
+    @Test
+    void renderujSveNeUpisujeGreskuKadJeVarijantuUMedjuvremenuRenderovaoNeko() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Osvežena.", null, List.of(new PrilogCmd("skica", PNG))));
+        service.odobri(d.id());
+        String hash = varijanta(d.id()).getRenderHash();
+        varijanta(d.id()).setRenderHash(null);   // zastarela: kandidat za render
+        // dok ova petlja čita prilog (bez ključa), istovremeni upis je renderovao isti sadržaj; prilog je zatim pao
+        when(medijService.ucitaj(PNG)).thenAnswer(inv -> {
+            varijanta(d.id()).setRenderHash(hash);
+            varijanta(d.id()).setRenderStatus(RenderStatus.OK);
+            throw new SystemException("Slika nije pronađena.", HttpStatus.NOT_FOUND);
+        });
+
+        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+
+        Varijanta v = varijanta(d.id());
+        assertEquals(RenderStatus.OK, v.getRenderStatus());
+        assertEquals(StatusVarijante.AKTIVNA, v.getStatus());
+        assertNull(v.getRenderGreska());
+        assertEquals(hash, v.getRenderHash());
     }
 
     @Test

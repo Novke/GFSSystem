@@ -60,8 +60,6 @@ class BankaRepositoryDbTest {
 
     @AfterEach
     void tearDown() {
-        jdbc.update("update varijante set render_svg_id = null, render_resenje_svg_id = null where grupa_id in "
-                + "(select id from grupe_zadataka where predmet_id = ?)", predmet.getId());
         jdbc.update("delete from varijanta_prilozi where varijanta_id in (select v.id from varijante v "
                 + "join grupe_zadataka g on g.id = v.grupa_id where g.predmet_id = ?)", predmet.getId());
         jdbc.update("delete from varijante where grupa_id in (select id from grupe_zadataka where predmet_id = ?)",
@@ -138,13 +136,14 @@ class BankaRepositoryDbTest {
         assertEquals(1, varijantaRepository.countByGrupaId(podgrupa.getId()));
 
         // CASCADE: brisanje varijante u bazi briše njene priloge (JPA put je pokriven orphanRemoval-om)
+        Long prilogId = varijanta.getPrilozi().get(0).getId();
+        assertTrue(prilogRepository.existsById(prilogId));
         assertEquals(1, jdbc.queryForObject("select count(*) from varijanta_prilozi where varijanta_id = ?",
                 Integer.class, varijanta.getId()));
-        jdbc.update("update varijante set render_svg_id = null where id = ?", varijanta.getId());
         jdbc.update("delete from varijante where id = ?", varijanta.getId());
         assertEquals(0, jdbc.queryForObject("select count(*) from varijanta_prilozi where varijanta_id = ?",
                 Integer.class, varijanta.getId()));
-        assertEquals(0, prilogRepository.count());
+        assertFalse(prilogRepository.existsById(prilogId));
 
         // vrsta medija: učitana kao RENDER_SVG, a red upisan bez kolone dobija SLIKA
         assertEquals(VrstaMedija.RENDER_SVG, medijRepository.findById(render.getId()).orElseThrow().getVrsta());

@@ -1,12 +1,15 @@
 package tri.novica.gfssystem.service.banka;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +27,7 @@ import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
 
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -56,9 +60,11 @@ import java.util.stream.Stream;
  * <p>
  * <b>Zaključavanje</b> (ugovor iz {@link GrupaZadatakaService}): pre dodavanja ili izmene varijante red grupe
  * ({@code GrupaZadatakaRepository.findByIdForUpdate}), pa red varijante ({@code findByIdForUpdate}); drži najviše jednu
- * grupu, nikad ne zaključava predmet i nikad ne upisuje kolone {@code grupe_zadataka}. Svaka transakcija ovog servisa
- * počinje praznim persistence context-om ({@code EntityManager.clear}): uz {@code open-in-view} isti EntityManager traje
- * ceo HTTP zahtev, pa bi ključ inače vratio entitet pročitan pre njega.
+ * grupu, nikad ne zaključava predmet i nikad ne upisuje kolone {@code grupe_zadataka}. Kratke transakcije
+ * koje servis sam otvara ({@code citaj} i {@code pisi}, kroz {@code TransactionTemplate}) počinju praznim persistence
+ * context-om ({@code EntityManager.clear}): uz {@code open-in-view} isti EntityManager traje ceo HTTP zahtev, pa bi ključ
+ * inače vratio entitet pročitan pre njega. Metode vođene anotacijom ({@code obrisi}, {@code odobri}, {@code arhiviraj},
+ * {@code vratiUNacrt}) ne čiste context.
  * <p>
  * Izmene rade u READ COMMITTED, kao {@link GrupaZadatakaService}. Grupa bez težine ne prima varijante (409), kao što ni
  * {@code GrupaZadatakaService.izmeni} ne dozvoljava grupu sa varijantama bez težine.
@@ -304,10 +310,12 @@ public class VarijantaService {
      * zaključanog sadržaja sa trenutnom preambulom jednak renderovanom (inače se rezultat odbacuje i varijanta ostaje
      * zastarela). Prvo zastarele (heš sadržaja se razlikuje od poslednjeg rendera ili render čeka), pa one čiji je
      * poslednji render istog sadržaja pao; najviše {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle
-     * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Loša varijanta ne zaustavlja petlju: svaki izuzetak osim {@link RenderNedostupan}
-     * (npr. prilog bez fajla, komanda koju je deny-lista u međuvremenu zabranila) se upisuje kao {@code GRESKA} sa porukom
-     * izuzetka i hešom njenog sadržaja (AKTIVNA pada u NACRT), pa se ide dalje. 503 servisa prekida poziv; već upisane
-     * ostaju. {@code renderovano} broji samo uspele ({@code OK}) rendere; {@code preostalo} samo zastarele koje nisu stigle
+     * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Loša varijanta ne zaustavlja petlju: {@link SystemException} (npr. prilog bez fajla,
+     * komanda koju je deny-lista u međuvremenu zabranila) i drugi {@link RuntimeException} se upisuju kao {@code GRESKA} sa
+     * porukom izuzetka (ili opštom) i hešom njenog sadržaja (AKTIVNA pada u NACRT), pa se ide dalje; upis se preskače ako je
+     * varijanta u međuvremenu već uspešno renderovana istim sadržajem. Greške okruženja prekidaju poziv bez ikakvog
+     * označavanja: 503 servisa ({@link RenderNedostupan}), {@link DataAccessException}, {@link PersistenceException},
+     * {@link TransactionException} i {@link UncheckedIOException} (npr. pun disk pri upisu SVG-a); već upisane ostaju. {@code renderovano} broji samo uspele ({@code OK}) rendere; {@code preostalo} samo zastarele koje nisu stigle
      * na red, pa front koji zove dok je {@code preostalo > 0} uvek stane.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -363,12 +371,23 @@ public class VarijantaService {
         try {
             RenderVarijante.Ishod ishod = renderVarijante.renderuj(ulaz.preambula(), ulaz.tekst(), ulaz.resenje(), ulaz.prilozi());
             return Boolean.TRUE.equals(pisi(() -> upisiAkoIsti(id, hash, ishod)));
-        } catch (RenderNedostupan e) {
-            throw e;
         } catch (RuntimeException e) {
+            if (jeInfrastrukturna(e)) {
+                throw e;   // pun disk ili pad baze ne sme da spusti sve aktivne varijante u NACRT
+            }
             oznaciGresku(id, hash, e);
             return false;
         }
+    }
+
+    /**
+     * Greška okruženja, ne varijante: render servis ({@link RenderNedostupan}), baza ({@link DataAccessException},
+     * {@link PersistenceException}, {@link TransactionException}) ili disk pri upisu SVG-a ({@link UncheckedIOException}).
+     * Prekida render cele banke; varijanta se zbog nje ne označava kao {@code GRESKA}.
+     */
+    private static boolean jeInfrastrukturna(RuntimeException e) {
+        return e instanceof RenderNedostupan || e instanceof DataAccessException || e instanceof PersistenceException
+                || e instanceof TransactionException || e instanceof UncheckedIOException;
     }
 
     private Ulaz ulazAkoTreba(Varijanta v) {
@@ -402,7 +421,10 @@ public class VarijantaService {
         RenderVarijante.Ishod greska = new RenderVarijante.Ishod(false, null, null, new RenderGreskaInfo(null, poruka), null);
         try {
             pisi(() -> {
-                zakljucajAkoPostoji(id).filter(v -> hash(ulaz(v)).equals(hash)).ifPresent(v -> primeniRender(v, hash, greska));
+                zakljucajAkoPostoji(id)
+                        .filter(v -> hash(ulaz(v)).equals(hash))
+                        .filter(v -> !(hash.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK))   // neko ju je u međuvremenu uspešno renderovao
+                        .ifPresent(v -> primeniRender(v, hash, greska));
                 return null;
             });
         } catch (RuntimeException e) {

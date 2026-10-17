@@ -24,8 +24,9 @@ import java.util.Objects;
  * funkcija preambule), pa varijante postaju zastarele i ponovo se renderuju kroz {@code VarijantaService.renderujSve}.
  * Ista vrednost ne dira ništa (ni red predmeta ni keš). Poništavanje je u istoj transakciji, posle upisa preambule i
  * pre povratka; metoda ne učitava varijante, pa u persistence context-u nema starih entiteta koje bulk update ne bi
- * osvežio. Render u toku sa starom preambulom ne može da upiše stari heš: {@code VarijantaService} pod ključem ponovo
- * proverava heš sa trenutnom preambulom.
+ * osvežio. Zastareli heš se uvek prepoznaje kao zastareo (heš sadrži preambulu iz koje je nastao): render koji je počeo sa
+ * starom preambulom može da upiše stari heš, ali ga {@code VarijantaService} pod ključem poredi sa trenutnom
+ * preambulom, a {@code renderuj-sve} svaku takvu varijantu renderuje ponovo.
  * <p>
  * <b>Zaključavanje:</b> red predmeta ({@code PredmetRepository.findByIdForUpdate}), prvi u redosledu predmet -> grupa ->
  * varijanta iz {@link GrupaZadatakaService}; izmena stabla i promena preambule istog predmeta idu redom. Ništa drugo se ne
