@@ -113,7 +113,7 @@ class VarijantaServiceTest {
             }
             return v;
         });
-        doAnswer(inv -> varijante.remove(inv.<Varijanta>getArgument(0))).when(varijantaRepository).delete(any());
+        doAnswer(inv -> varijante.remove(inv.<Varijanta>getArgument(0))).when(varijantaRepository).delete(any(Varijanta.class));
         when(varijantaRepository.lista(anyLong(), any())).thenAnswer(inv -> varijante.stream()
                 .filter(v -> v.getGrupa().getId().equals(inv.getArgument(0)))
                 .filter(v -> inv.getArgument(1) == null || v.getStatus() == inv.getArgument(1))
@@ -445,7 +445,7 @@ class VarijantaServiceTest {
 
         assertTrue(varijante.isEmpty());
         InOrder redosled = inOrder(varijantaRepository, medijService);
-        redosled.verify(varijantaRepository).delete(any());
+        redosled.verify(varijantaRepository).delete(any(Varijanta.class));
         redosled.verify(varijantaRepository).flush();
         redosled.verify(medijService).obrisi("svg-1");
         redosled.verify(medijService).obrisi("svg-2");
