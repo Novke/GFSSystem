@@ -1,5 +1,8 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +56,7 @@ class GrupaZadatakaServiceDbTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transakcije;
     @Autowired Clock clock;
+    @Autowired EntityManagerFactory emf;
     @Value("${gfs.mediji.dir}") String medijiDir;
 
     Predmet predmet;
@@ -245,6 +249,13 @@ class GrupaZadatakaServiceDbTest {
         assertEquals(poljaPre, jdbc.queryForObject("select polja from grupe_zadataka where id = ?", String.class, g.id()));
         assertEquals("AKTIVNA", jdbc.queryForObject("select status from varijante where id = ?", String.class, v.getId()));
 
+        // bez polja (null): šema i odgovori ostaju, menjaju se samo naziv i težina
+        GrupaDetails bezPolja = service.izmeni(g.id(), izmena("2 u 10", 3, null));
+        assertEquals(3, bezPolja.tezina());
+        assertEquals(poljaPre, jdbc.queryForObject("select polja from grupe_zadataka where id = ?", String.class, g.id()));
+        assertEquals("AKTIVNA", jdbc.queryForObject("select status from varijante where id = ?", String.class, v.getId()));
+        assertEquals("{\"a\":{\"broj\":45.0}}", jdbc.queryForObject("select odgovori from varijante where id = ?", String.class, v.getId()));
+
         // dodato polje: varijanta u nacrt, vrednost postojećeg ostaje
         GrupaDetails d = service.izmeni(g.id(), izmena("2 → 10", 2, List.of(a, b)));
         assertEquals(List.of(1, 0, 1), List.of(d.brojVarijanti(), d.brojAktivnih(), d.brojNacrta()));
@@ -255,6 +266,33 @@ class GrupaZadatakaServiceDbTest {
         service.izmeni(g.id(), izmena("2 → 10", 2, List.of(b)));
         assertEquals("{}", jdbc.queryForObject("select odgovori from varijante where id = ?", String.class, v.getId()));
         assertEquals(List.of(b.kljuc()), service.detalji(g.id()).polja().stream().map(Polje::kljuc).toList());
+    }
+
+    /** Carry-forward Task 1 (EAGER roditelj): stablo od 29 grupa u 4 nivoa je stalan broj upita, ne N+1. */
+    @Test
+    void stabloJeNajvise4UpitaBezObziraNaBrojGrupa() {
+        GrupaDetails r = koren("R");
+        for (int i = 0; i < 4; i++) {
+            GrupaDetails a = podgrupa(r, "A" + i);
+            for (int j = 0; j < 3; j++) {
+                GrupaDetails b = podgrupa(a, "B" + j);
+                varijanta(podgrupa(b, "C").id(), StatusVarijante.AKTIVNA, RenderStatus.OK, "{}");
+            }
+        }
+        Statistics statistika = emf.unwrap(SessionFactory.class).getStatistics();
+        boolean bila = statistika.isStatisticsEnabled();
+        statistika.setStatisticsEnabled(true);
+        try {
+            statistika.clear();
+            List<GrupaCvor> stablo = service.stablo(predmet.getId(), Namena.PREDAVANJE);
+            long upita = statistika.getPrepareStatementCount();
+
+            assertEquals(12, stablo.get(0).brojAktivnih());
+            assertTrue(statistika.getEntityLoadCount() >= 29, "statistika mora da broji");
+            assertTrue(upita >= 1 && upita <= 4, "stablo: " + upita + " SQL upita");
+        } finally {
+            statistika.setStatisticsEnabled(bila);
+        }
     }
 
     @Test

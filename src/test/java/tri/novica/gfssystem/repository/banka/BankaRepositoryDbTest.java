@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -175,15 +176,11 @@ class BankaRepositoryDbTest {
         assertEquals(List.of(podgrupa.getId()),
                 grupaRepository.findByRoditeljIdOrderByRb(koren.getId()).stream().map(GrupaZadataka::getId).toList());
 
-        // jedinstvenost naziva: id null (nova grupa) vidi svaku istoimenu, svoj id se isključuje
-        assertTrue(grupaRepository.existsByPredmetIdAndRoditeljIsNullAndNamenaAndNazivAndIdNot(
-                predmet.getId(), Namena.PREDAVANJE, "Statika", null));
-        assertFalse(grupaRepository.existsByPredmetIdAndRoditeljIsNullAndNamenaAndNazivAndIdNot(
-                predmet.getId(), Namena.PREDAVANJE, "Statika", koren.getId()));
-        assertFalse(grupaRepository.existsByPredmetIdAndRoditeljIsNullAndNamenaAndNazivAndIdNot(
-                predmet.getId(), Namena.PREDAVANJE, "Grede", null));
-        assertTrue(grupaRepository.existsByRoditeljIdAndNazivAndIdNot(koren.getId(), "Grede", null));
-        assertFalse(grupaRepository.existsByRoditeljIdAndNazivAndIdNot(koren.getId(), "Grede", podgrupa.getId()));
+        // koreni jedne namene po rb i id predmeta pre zaključavanja (GrupaZadatakaService)
+        assertEquals(List.of(drugiKoren.getId(), koren.getId()), grupaRepository.findByPredmetIdAndNamenaAndRoditeljIsNullOrderByRb(
+                predmet.getId(), Namena.PREDAVANJE).stream().map(GrupaZadataka::getId).toList());
+        assertEquals(Optional.of(predmet.getId()), grupaRepository.findPredmetId(podgrupa.getId()));
+        assertTrue(grupaRepository.findPredmetId(-1L).isEmpty());
 
         // varijante: po grupi, po statusu, brojači, zaključavanje i upiti po predmetu
         assertEquals(1, varijantaRepository.findByGrupaIdOrderByRb(podgrupa.getId()).size());

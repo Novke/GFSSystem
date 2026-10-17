@@ -37,6 +37,10 @@ public class GrupaZadatakaRest {
         return grupaZadatakaService.detalji(id);
     }
 
+    /**
+     * Puna zamena naziva, opisa, težine i uputstva; bez {@code polja} (ili {@code null}) šema i odgovori varijanti ostaju,
+     * {@code "polja": []} briše šemu.
+     */
     @PutMapping("/grupe/{id}")
     @ResponseStatus(HttpStatus.OK)
     public GrupaDetails izmeni(@PathVariable Long id, @RequestBody GrupaCmd cmd) {

@@ -37,11 +37,16 @@ import java.util.stream.Stream;
  * redovi varijanti. Svaka izmena stabla prvo zaključa red predmeta ({@code PredmetRepository.findByIdForUpdate}), pa
  * izmene jednog stabla (braća, {@code rb}, dubina, premeštanje) idu redom, a više redova grupa odjednom drži samo ko
  * drži red predmeta (među njima nema ciklusa). Red grupe se zaključava kad grupa dobija dete (kreiraj, premesti) ili se
- * menja/briše; {@code VarijantaService} mora da zaključa isti red pre dodavanja ili izmene varijante (najviše jednu
- * grupu, pa tek onda varijante), da se list/unutrašnji i šema polja ne trkaju sa ovim izmenama. Koreni nemaju red
- * roditelja, zato ključ predmeta. Pre zaključavanja se čita samo id predmeta ({@code findPredmetId}): entitet učitan pre zaključavanja
- * Hibernate ne osvežava. Izmene rade u READ COMMITTED (kao {@code PrezentacijaService}): čitanje posle čekanja na ključ
- * vidi ono što je prethodnik upisao.
+ * menja/briše. Koreni nemaju red roditelja, zato ključ predmeta. Pre zaključavanja se čita samo id predmeta
+ * ({@code findPredmetId}): entitet učitan pre zaključavanja Hibernate ne osvežava. Izmene rade u READ COMMITTED (kao
+ * {@code PrezentacijaService}): čitanje posle čekanja na ključ vidi ono što je prethodnik upisao. Ključ predmeta traje
+ * koliko i izmena stabla i za to vreme kratko zadržava i upise drugih tabela sa FK na taj predmet (InnoDB pri upisu
+ * deteta uzima deljeni ključ reda roditelja: novo predavanje, test, prezentacija tog predmeta).
+ * <p>
+ * <b>Ugovor za {@code VarijantaService}:</b> nikad ne upisuje kolone {@code grupe_zadataka} (ni {@code izmenjeno}):
+ * redove grupa piše samo ovaj servis, pod ključem predmeta. Pre dodavanja ili izmene varijante zaključa red njene grupe
+ * ({@code GrupaZadatakaRepository.findByIdForUpdate}), pa tek onda varijantu; drži najviše jednu grupu i nikad ne
+ * zaključava predmet posle grupe. Tako se pravilo list/unutrašnji i odgovori naspram šeme polja ne trkaju sa ovim izmenama.
  */
 @Service
 @RequiredArgsConstructor
@@ -167,8 +172,9 @@ public class GrupaZadatakaService {
     }
 
     /**
-     * Puna zamena naziva, opisa, težine, uputstva i šeme polja (predmet, roditelj i namena se ne menjaju). Promena šeme
-     * prilagođava varijante grupe (vidi {@link #prilagodiVarijante}); grupa sa varijantama mora imati težinu.
+     * Puna zamena naziva, opisa, težine i uputstva (predmet, roditelj i namena se ne menjaju); {@code polja == null}
+     * ostavlja šemu i varijante netaknute, a brisanje šeme traži {@code []}. Promena šeme prilagođava varijante grupe
+     * (vidi {@link #prilagodiVarijante}); grupa sa varijantama mora imati težinu.
      */
     public GrupaDetails izmeni(Long id, GrupaCmd cmd) {
         Sadrzaj s = proveren(cmd);
@@ -178,7 +184,7 @@ public class GrupaZadatakaService {
         proveriNaziv(braca(predmetId, g.getNamena(), g.getRoditelj()), s.naziv(), id);
 
         List<Polje> stara = PoljaJson.izKolone(g.getPolja());
-        boolean novaSema = !stara.equals(s.polja());
+        boolean novaSema = s.polja() != null && !stara.equals(s.polja());
         List<Varijanta> varijante = novaSema ? varijantaRepository.findByGrupaIdForUpdate(id) : List.of();
         long brojVarijanti = novaSema ? varijante.size() : varijantaRepository.countByGrupaId(id);
         if (brojVarijanti > 0 && s.tezina() == null) {
@@ -312,7 +318,8 @@ public class GrupaZadatakaService {
      * Prilagođava odgovore varijanti novoj šemi, tek pošto su varijante zaključane. Promena tipa postojećeg polja je 409
      * dok grupa ima AKTIVNIH varijanti (ništa se ne upisuje). Inače svaka varijanta zadržava samo vrednosti koje i u
      * novoj šemi važe ({@code BankaPP.proveriOdgovore} za to polje): uklonjeno polje, promenjen tip i uklonjena opcija
-     * brišu vrednost. Varijanta kojoj posle toga fali vrednost (npr. dodato polje) postaje NACRT; render se ne dira.
+     * brišu vrednost (u svakoj varijanti, i arhiviranoj). AKTIVNA varijanta kojoj posle toga fali vrednost (npr. dodato
+     * polje) postaje NACRT; NACRT i ARHIVIRANA zadržavaju status. Render se ne dira.
      */
     private void prilagodiVarijante(List<Varijanta> varijante, List<Polje> stara, List<Polje> nova) {
         Map<String, TipPolja> stariTipovi = new HashMap<>();
@@ -340,7 +347,7 @@ public class GrupaZadatakaService {
                 v.setOdgovori(PoljaJson.uJson(vazeci));
                 izmenjena = true;
             }
-            if (vazeci.size() < nova.size() && v.getStatus() != StatusVarijante.NACRT) {
+            if (vazeci.size() < nova.size() && v.getStatus() == StatusVarijante.AKTIVNA) {
                 v.setStatus(StatusVarijante.NACRT);
                 izmenjena = true;
             }
@@ -361,7 +368,7 @@ public class GrupaZadatakaService {
 
     // ---------------------------------------------------------------- pomoćno
 
-    /** Proverena i normalizovana komanda; sve se proverava pre zaključavanja. */
+    /** Proverena i normalizovana komanda; sve se proverava pre zaključavanja. {@code polja} null = nisu poslata. */
     private record Sadrzaj(String naziv, String opis, Integer tezina, String uputstvo, List<Polje> polja, String poljaJson) {
     }
 
@@ -376,6 +383,9 @@ public class GrupaZadatakaService {
         if (opis != null && opis.codePointCount(0, opis.length()) > MAX_OPIS) {
             throw new SystemException(NEISPRAVAN_OPIS, HttpStatus.BAD_REQUEST);
         }
+        if (cmd.polja() == null) {
+            return new Sadrzaj(naziv, opis, cmd.tezina(), uputstvo, null, null);
+        }
         List<Polje> polja = BankaPP.normalizujPolja(cmd.polja());
         BankaPP.proveriPolja(polja);
         String json = PoljaJson.uJson(polja);
@@ -385,12 +395,15 @@ public class GrupaZadatakaService {
         return new Sadrzaj(naziv, opis, cmd.tezina(), uputstvo, polja, json);
     }
 
+    /** Upisuje sadržaj; bez poslatih polja kolona ostaje (nova grupa: {@code "[]"}). */
     private static void primeni(GrupaZadataka g, Sadrzaj s) {
         g.setNaziv(s.naziv());
         g.setOpis(s.opis());
         g.setTezina(s.tezina());
         g.setUputstvo(s.uputstvo());
-        g.setPolja(s.poljaJson());
+        if (s.poljaJson() != null) {
+            g.setPolja(s.poljaJson());
+        }
     }
 
     private Long predmetGrupe(Long grupaId) {

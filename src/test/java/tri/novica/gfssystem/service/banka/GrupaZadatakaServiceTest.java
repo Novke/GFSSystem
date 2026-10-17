@@ -506,21 +506,24 @@ class GrupaZadatakaServiceTest {
     }
 
     @Test
-    void promenaTipaBezAktivnihBriseVrednostIVracaUNacrt() {
+    void promenaTipaBezAktivnihBriseVrednostAStatusOstaje() {
         GrupaZadataka list = koren("2 → 10", 1);
         list.setTezina(2);
         list.setPolja(sema(BROJ_A));
         Varijanta arhivirana = varijanta(list, StatusVarijante.ARHIVIRANA, RenderStatus.OK, ODGOVOR_A);
+        Varijanta nacrt = varijanta(list, StatusVarijante.NACRT, RenderStatus.OK, ODGOVOR_A);
 
         service.izmeni(list.getId(), izmena("2 → 10", 2, List.of(TEKST_A)));
 
         assertEquals("{}", arhivirana.getOdgovori());
-        assertEquals(StatusVarijante.NACRT, arhivirana.getStatus());
+        assertEquals(StatusVarijante.ARHIVIRANA, arhivirana.getStatus());
         assertEquals(SADA, arhivirana.getIzmenjeno());
+        assertEquals("{}", nacrt.getOdgovori());
+        assertEquals(StatusVarijante.NACRT, nacrt.getStatus());
     }
 
     @Test
-    void dodatoPoljeVracaSveVarijanteUNacrtBezDiranjaRendera() {
+    void dodatoPoljeVracaAktivneUNacrtAArhiviraneOstajuBezDiranjaRendera() {
         GrupaZadataka list = koren("2 → 10", 1);
         list.setTezina(2);
         list.setPolja(sema(BROJ_A));
@@ -530,16 +533,20 @@ class GrupaZadatakaServiceTest {
 
         GrupaDetails d = service.izmeni(list.getId(), izmena("2 → 10", 2, List.of(BROJ_A, TEKST_B)));
 
+        assertEquals(StatusVarijante.NACRT, aktivna.getStatus());
+        assertEquals(StatusVarijante.ARHIVIRANA, arhivirana.getStatus());
+        assertEquals(StatusVarijante.NACRT, nacrt.getStatus());
         for (Varijanta v : List.of(aktivna, arhivirana, nacrt)) {
-            assertEquals(StatusVarijante.NACRT, v.getStatus());
             assertEquals(ODGOVOR_A, v.getOdgovori());
         }
         assertEquals(RenderStatus.OK, aktivna.getRenderStatus());
         assertEquals(RenderStatus.GRESKA, arhivirana.getRenderStatus());
         assertEquals("linija 3: Undefined control sequence", arhivirana.getRenderGreska());
         assertEquals(SADA, aktivna.getIzmenjeno());
-        assertEquals(SADA.minusDays(2), nacrt.getIzmenjeno());   // ništa se nije promenilo
-        assertEquals(List.of(3, 0, 3, 1), List.of(d.brojVarijanti(), d.brojAktivnih(), d.brojNacrta(), d.brojGresaka()));
+        // ništa se nije promenilo
+        assertEquals(SADA.minusDays(2), arhivirana.getIzmenjeno());
+        assertEquals(SADA.minusDays(2), nacrt.getIzmenjeno());
+        assertEquals(List.of(3, 0, 2, 1), List.of(d.brojVarijanti(), d.brojAktivnih(), d.brojNacrta(), d.brojGresaka()));
     }
 
     @Test
@@ -572,6 +579,31 @@ class GrupaZadatakaServiceTest {
         assertEquals(StatusVarijante.NACRT, druga.getStatus());
         assertEquals("{\"c\":{\"tacna\":1}}", prva.getOdgovori());
         assertEquals(StatusVarijante.AKTIVNA, prva.getStatus());
+    }
+
+    @Test
+    void izmenaBezPoljaNeMenjaSemuNiVarijanteAPraznaListaBriseSemu() {
+        GrupaZadataka list = koren("2 → 10", 1);
+        list.setTezina(2);
+        list.setPolja(sema(BROJ_A));
+        String polja = list.getPolja();
+        Varijanta aktivna = varijanta(list, StatusVarijante.AKTIVNA, RenderStatus.OK, ODGOVOR_A);
+
+        GrupaDetails d = service.izmeni(list.getId(), izmena("2 u 10", 3, null));
+
+        assertEquals(polja, list.getPolja());
+        assertEquals(BankaPP.normalizujPolja(List.of(BROJ_A)), d.polja());
+        assertEquals("2 u 10", d.naziv());
+        assertEquals(3, d.tezina());
+        assertEquals(ODGOVOR_A, aktivna.getOdgovori());
+        assertEquals(StatusVarijante.AKTIVNA, aktivna.getStatus());
+        verify(varijantaRepository, never()).findByGrupaIdForUpdate(anyLong());
+
+        // eksplicitno [] briše šemu i vrednosti; bez polja varijanti ništa ne fali, pa ostaje aktivna
+        service.izmeni(list.getId(), izmena("2 u 10", 3, List.of()));
+        assertEquals("[]", list.getPolja());
+        assertEquals("{}", aktivna.getOdgovori());
+        assertEquals(StatusVarijante.AKTIVNA, aktivna.getStatus());
     }
 
     @Test

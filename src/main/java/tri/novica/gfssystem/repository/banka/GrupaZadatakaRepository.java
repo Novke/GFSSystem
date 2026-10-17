@@ -33,10 +33,4 @@ public interface GrupaZadatakaRepository extends JpaRepository<GrupaZadataka, Lo
     long countByRoditeljId(Long roditeljId);
 
     List<GrupaZadataka> findByRoditeljIdOrderByRb(Long roditeljId);
-
-    /** Naziv među braćom; {@code id} null (nova grupa) vidi svaku istoimenu, inače se izmenjena grupa isključuje. */
-    boolean existsByRoditeljIdAndNazivAndIdNot(Long roditeljId, String naziv, Long id);
-
-    /** Isto za korene (nemaju roditelja), u okviru predmeta i namene. */
-    boolean existsByPredmetIdAndRoditeljIsNullAndNamenaAndNazivAndIdNot(Long predmetId, Namena namena, String naziv, Long id);
 }
