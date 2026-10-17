@@ -111,6 +111,22 @@ public final class PoljaJson {
         }
     }
 
+    /**
+     * {@link #odgovori} za polje komande ({@code VarijantaCmd.odgovori}), iz istog razloga kao {@link StrogaPolja};
+     * JSON {@code null} ostaje {@code null}.
+     */
+    public static final class StrogiOdgovori extends ValueDeserializer<Map<String, OdgovorPolja>> {
+        @Override
+        public Map<String, OdgovorPolja> deserialize(JsonParser p, DeserializationContext ctxt) {
+            String json = ctxt.readTree(p).toString();
+            try {
+                return odgovori(json);
+            } catch (SystemException e) {
+                return ctxt.reportInputMismatch(this, PORUKA);
+            }
+        }
+    }
+
     private static <T> T procitaj(JsonMapper mapper, String json, TypeReference<T> tip) {
         if (json == null || json.isBlank()) {
             throw greska();
