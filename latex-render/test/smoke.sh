@@ -174,7 +174,7 @@ docker build -t "$IME" "$SERVIS_DIR"
 docker rm -f "$IME" >/dev/null 2>&1 || true
 # Bez --network none: ne ide uz -p. Bez --rm: posle pada kontejnera docker logs još radi; trap ga briše.
 docker run -d --read-only --tmpfs /tmp:size=256m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true \
-  --memory 768m --cpus 1 --pids-limit 128 -p 127.0.0.1:18800:8800 --name "$IME" "$IME" >/dev/null
+  --memory 1g --cpus 1 --pids-limit 128 -p 127.0.0.1:18800:8800 --name "$IME" "$IME" >/dev/null
 
 for _ in $(seq 1 60); do
   if curl -fsS --max-time 2 -o "$TMP/zdravlje" "$URL/zdravlje" 2>/dev/null; then break; fi

@@ -75,7 +75,7 @@ pogrešan metod (zaglavlje `Allow`), **500** `Greška servisa.` (npr. pun `/tmp`
 Servis je prvi sloj; deny-lista u backendu (`LatexPravila`) je samo rana pomoć. Prava granica je kontejner. Compose
 (wrapper repo GFS-deploy, servis `latex`, kontejner `gfs-latex` i `gfs-staging-latex`) ga pokreće sa: mreža
 `gfs-latex-net` sa `internal: true` (samo backend i latex, bez izlaza na internet), `read_only: true`,
-`tmpfs: /tmp:size=256m,mode=1777`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `mem_limit: 768m`,
+`tmpfs: /tmp:size=256m,mode=1777`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `mem_limit: 1g`,
 `cpus: 1.0`, `pids_limit: 128`, bez `volumes`, bez `env_file`, bez portova na hostu (`GFS_LATEX_URL=http://latex:8800`).
 
 - **Može:** da čita TeX Live stablo i fajlove svog radnog direktorijuma, da piše u svoj radni direktorijum (u `/tmp`),
