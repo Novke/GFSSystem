@@ -153,4 +153,73 @@ class LatexPravilaTest {
     void podrazumevanaPreambulaProlaziProveruPreambule() {
         assertThat(preambula(LatexDokument.PODRAZUMEVANA_PREAMBULA)).isEmpty();
     }
+
+    // --- proširenje: komande koje čitaju fajlove ili uključuju PDF ---
+
+    @Test
+    void requirePackageJeZabranjenUTeluAliNeUPreambuli() {
+        assertThat(telo("\\RequirePackage{tikz}")).contains("\\RequirePackage");
+        assertThat(preambula("\\RequirePackage{tikz}")).isEmpty();
+        assertThat(telo("\\RequirePackages")).isEmpty();
+    }
+
+    @Test
+    void inputIfFileExistsJeZabranjenUTeluIPreambuli() {
+        assertThat(telo("\\InputIfFileExists{/etc/passwd}{}{}")).contains("\\InputIfFileExists");
+        assertThat(preambula("\\InputIfFileExists{x.cfg}{}{}")).contains("\\InputIfFileExists");
+    }
+
+    @Test
+    void lstinputlistingJeZabranjenUTeluIPreambuli() {
+        assertThat(telo("\\lstinputlisting{/etc/passwd}")).contains("\\lstinputlisting");
+        assertThat(telo("\\lstinputlisting[language=C]{x.c}")).contains("\\lstinputlisting");
+        assertThat(preambula("\\lstinputlisting{x}")).contains("\\lstinputlisting");
+    }
+
+    @Test
+    void verbatiminputJeZabranjenUTeluIPreambuli() {
+        assertThat(telo("\\verbatiminput{/etc/passwd}")).contains("\\verbatiminput");
+        assertThat(telo("\\verbatiminput*{x}")).contains("\\verbatiminput");
+        assertThat(preambula("\\verbatiminput{x}")).contains("\\verbatiminput");
+    }
+
+    @Test
+    void hrefSaFileSemomJeZabranjenUTeluIPreambuli() {
+        assertThat(telo("\\href{file:///etc/passwd}{tekst}")).contains("\\href{file:");
+        assertThat(telo("\\href{FILE:x}{tekst}")).contains("\\href{file:");
+        assertThat(preambula("\\href{file:x}{t}")).contains("\\href{file:");
+        assertThat(telo("\\href{https://trif.rs}{tekst}")).isEmpty();
+        assertThat(telo("\\href{https://trif.rs/file:x}{tekst}")).isEmpty();
+    }
+
+    @Test
+    void atInputJeCeoImeSaAt() {
+        assertThat(telo("\\makeatletter\\@input{x}")).contains("\\@input");
+        assertThat(preambula("\\makeatletter\\@input{x}")).contains("\\@input");
+        assertThat(telo("\\makeatletter\\@inputx{x}")).isEmpty();
+        assertThat(telo("\\makeatletter\\@input@x{x}")).isEmpty();
+        assertThat(telo("\\@ input")).isEmpty();
+    }
+
+    @Test
+    void inputAtPathJeZabranjenUTeluSaSvojimImenom() {
+        assertThat(telo("\\makeatletter\\def\\input@path{{/etc/}}")).contains("\\input@path");
+        assertThat(telo("\\input@path")).contains("\\input@path");
+    }
+
+    @Test
+    void inputAtPathUPreambuliHvataObicanInput() {
+        assertThat(preambula("\\makeatletter\\def\\input@path{{/etc/}}")).contains("\\input");
+    }
+
+    @Test
+    void includepdfJeZabranjenIZaImePrilogaUTeluIPreambuli() {
+        assertThat(telo("\\includepdf{dijagram}")).contains("\\includepdf");
+        assertThat(telo("\\includepdf[pages=-]{/etc/x}")).contains("\\includepdf");
+        assertThat(preambula("\\includepdf{dijagram}")).contains("\\includepdf");
+        assertThat(telo("\\includepdfmerge{x.pdf,1}")).contains("\\includepdfmerge");
+        assertThat(preambula("\\includepdfmerge{x.pdf,1}")).contains("\\includepdfmerge");
+        assertThat(telo("\\includepdfx{dijagram}")).isEmpty();
+        assertThat(telo("\\includegraphics{dijagram}")).isEmpty();
+    }
 }
