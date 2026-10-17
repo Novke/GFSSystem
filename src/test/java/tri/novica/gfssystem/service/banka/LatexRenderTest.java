@@ -10,7 +10,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import tri.novica.gfssystem.config.LatexRenderConfig;
 import tri.novica.gfssystem.dto.banka.RenderGreskaInfo;
 import tri.novica.gfssystem.dto.banka.RenderOdgovor;
 import tri.novica.gfssystem.dto.banka.RenderPrilog;
@@ -20,6 +19,8 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -180,6 +181,40 @@ class LatexRenderTest {
     }
 
     @Test
+    void telo4xxSeDekodiraKaoUtf8() {
+        server.expect(requestTo(URL + "/render")).andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.TEXT_PLAIN).body("Neispravan zahtev: čšžđć".getBytes(StandardCharsets.UTF_8)));
+
+        RenderOdgovor o = render.renderuj("svg", "x", List.of());
+
+        assertThat(o.greska().poruka()).isEqualTo("Neispravan zahtev: čšžđć");
+    }
+
+    @Test
+    void uspehBezSadrzajaJeNedostupan() {
+        server.expect(requestTo(URL + "/render")).andRespond(withSuccess("{\"ok\":true}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\" \"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\"PHN2Zy8+\"}", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> render.renderuj("svg", "x", List.of())).isInstanceOf(RenderNedostupan.class);
+        assertThatThrownBy(() -> render.renderuj("svg", "x", List.of())).isInstanceOf(RenderNedostupan.class);
+        // traženi je pdf, a stigao je samo svg
+        assertThatThrownBy(() -> render.renderuj("pdf", "x", List.of())).isInstanceOf(RenderNedostupan.class);
+    }
+
+    @Test
+    void neuspehBezGreskeJeNedostupan() {
+        server.expect(requestTo(URL + "/render")).andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":false,\"log\":\"! x\"}", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> render.renderuj("svg", "x", List.of())).isInstanceOf(RenderNedostupan.class);
+        assertThatThrownBy(() -> render.renderuj("svg", "x", List.of())).isInstanceOf(RenderNedostupan.class);
+    }
+
+    @Test
     void status413BezTelaDajePodrazumevanuPoruku() {
         server.expect(requestTo(URL + "/render")).andRespond(withStatus(HttpStatus.CONTENT_TOO_LARGE));
 
@@ -215,13 +250,14 @@ class LatexRenderTest {
         assertThat(render.zdrav()).isFalse();
     }
 
-    /** Stvarna veza (stdlib HttpServer) kroz builder iz {@link LatexRenderConfig}: prenos, timeout, odbijena veza. */
+    /** Stvarna veza (stdlib HttpServer) kroz javni konstruktor kakav koristi Spring: prenos, timeout, odbijena veza. */
     @Nested
     class StvarnaVeza {
         private HttpServer http;
         private String url;
         private final AtomicReference<String> primljeno = new AtomicReference<>();
         private final AtomicReference<String> contentType = new AtomicReference<>();
+        private final CountDownLatch otpusti = new CountDownLatch(1);
 
         @BeforeEach
         void pokreni() throws IOException {
@@ -231,11 +267,12 @@ class LatexRenderTest {
 
         @AfterEach
         void zaustavi() {
+            otpusti.countDown();
             http.stop(0);
         }
 
         private LatexRender klijent(int timeoutSekunde) {
-            return new LatexRender(new LatexRenderConfig().latexRestClientBuilder(timeoutSekunde), url, timeoutSekunde);
+            return new LatexRender(url, timeoutSekunde);
         }
 
         @Test
@@ -262,7 +299,7 @@ class LatexRenderTest {
         void sporServisPrekoReadTimeoutaJeNedostupan() {
             http.createContext("/render", ex -> {
                 try {
-                    Thread.sleep(3000);
+                    otpusti.await(5, TimeUnit.SECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
