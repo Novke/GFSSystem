@@ -23,6 +23,13 @@ public interface GrupaZadatakaRepository extends JpaRepository<GrupaZadataka, Lo
     @Query("select g from GrupaZadataka g where g.id = :id")
     Optional<GrupaZadataka> findByIdForUpdate(@Param("id") Long id);
 
+    /** Samo id predmeta, pre zaključavanja: entitet učitan pre {@code findByIdForUpdate} Hibernate posle ne osvežava. */
+    @Query("select g.predmet.id from GrupaZadataka g where g.id = :id")
+    Optional<Long> findPredmetId(@Param("id") Long id);
+
+    /** Koreni stabla predmeta i namene, po {@code rb}. */
+    List<GrupaZadataka> findByPredmetIdAndNamenaAndRoditeljIsNullOrderByRb(Long predmetId, Namena namena);
+
     long countByRoditeljId(Long roditeljId);
 
     List<GrupaZadataka> findByRoditeljIdOrderByRb(Long roditeljId);

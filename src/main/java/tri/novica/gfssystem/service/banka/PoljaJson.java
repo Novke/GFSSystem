@@ -3,10 +3,13 @@ package tri.novica.gfssystem.service.banka;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.Nulls;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
 import tools.jackson.core.StreamReadFeature;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.cfg.CoercionAction;
 import tools.jackson.databind.cfg.CoercionInputShape;
 import tools.jackson.databind.cfg.EnumFeature;
@@ -89,6 +92,23 @@ public final class PoljaJson {
 
     public static String uJson(Map<String, OdgovorPolja> odgovori) {
         return zapisi(odgovori == null ? new LinkedHashMap<>() : odgovori);
+    }
+
+    /**
+     * {@link #polja} za polje komande ({@code @JsonDeserialize(using = PoljaJson.StrogaPolja.class)}): aplikacioni mapper
+     * bi nepoznato svojstvo polja tiho preskočio. Greška je 400 {@code Neispravan format podataka.} kroz
+     * {@code ApiExceptionHandler}; za JSON {@code null} se ne poziva, pa ostaje {@code null}.
+     */
+    public static final class StrogaPolja extends ValueDeserializer<List<Polje>> {
+        @Override
+        public List<Polje> deserialize(JsonParser p, DeserializationContext ctxt) {
+            String json = ctxt.readTree(p).toString();
+            try {
+                return polja(json);
+            } catch (SystemException e) {
+                return ctxt.reportInputMismatch(this, PORUKA);
+            }
+        }
     }
 
     private static <T> T procitaj(JsonMapper mapper, String json, TypeReference<T> tip) {

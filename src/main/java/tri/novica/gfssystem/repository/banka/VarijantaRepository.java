@@ -26,6 +26,11 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long> {
     @Query("select v from Varijanta v where v.id = :id")
     Optional<Varijanta> findByIdForUpdate(@Param("id") Long id);
 
+    /** Sve varijante grupe, zaključane (posle reda grupe): promena šeme grupe i brisanje grupe. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from Varijanta v where v.grupa.id = :grupaId order by v.rb, v.id")
+    List<Varijanta> findByGrupaIdForUpdate(@Param("grupaId") Long grupaId);
+
     long countByGrupaId(Long grupaId);
 
     long countByGrupaIdAndStatus(Long grupaId, StatusVarijante status);
