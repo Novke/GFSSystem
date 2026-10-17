@@ -222,4 +222,31 @@ class LatexPravilaTest {
         assertThat(telo("\\includepdfx{dijagram}")).isEmpty();
         assertThat(telo("\\includegraphics{dijagram}")).isEmpty();
     }
+
+    // --- @@input, @iinput i ^^ notacija ---
+
+    @Test
+    void dvostrukiAtInputJeCeoImeSaAt() {
+        assertThat(telo("\\makeatletter\\@@input{/etc/passwd}")).contains("\\@@input");
+        assertThat(preambula("\\makeatletter\\@@input{/etc/passwd}")).contains("\\@@input");
+        assertThat(telo("\\makeatletter\\@@inputx{x}")).isEmpty();
+        assertThat(telo("\\makeatletter\\@@input@x{x}")).isEmpty();
+    }
+
+    @Test
+    void atIinputJeCeoImeSaAt() {
+        assertThat(telo("\\makeatletter\\@iinput{/etc/passwd}")).contains("\\@iinput");
+        assertThat(preambula("\\makeatletter\\@iinput{/etc/passwd}")).contains("\\@iinput");
+        assertThat(telo("\\makeatletter\\@iinputx{x}")).isEmpty();
+        assertThat(telo("\\makeatletter\\@iinput@x{x}")).isEmpty();
+    }
+
+    @Test
+    void nizKapaKapaJeZabranjenUTeluIPreambuli() {
+        assertThat(telo("\\inp^^75t{/etc/passwd}")).contains("^^");
+        assertThat(preambula("\\inp^^75t{/etc/passwd}")).contains("^^");
+        assertThat(telo("tekst ^^M")).contains("^^");
+        assertThat(telo("$x^2 + y^{2}$ i $z^\\alpha$")).isEmpty();
+        assertThat(telo("$x^ ^2$")).isEmpty();
+    }
 }

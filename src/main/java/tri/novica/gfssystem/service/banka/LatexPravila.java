@@ -20,6 +20,9 @@ import java.util.regex.Pattern;
  * <p>
  * PDF prilog ide samo kroz {@code \includegraphics}; {@code \includepdf} i {@code \includepdfmerge} (pdfpages) su zabranjeni
  * i sa imenom priloga.
+ * <p>
+ * Lista ne zaustavlja namerno zamaskiranje komande (promenjeni katkodovi i slično); zato je zabranjen bar niz {@code ^^}
+ * ({@code \inp^^75t} je {@code \input}), ali prava granica je kontejner.
  */
 public final class LatexPravila {
     /** {@code samoTelo}: pravilo važi za telo varijante, ali ne i za preambulu predmeta. */
@@ -40,12 +43,14 @@ public final class LatexPravila {
             rec("\\input", false), rec("\\include", false), rec("\\openin", false), rec("\\openout", false),
             rec("\\read", false), rec("\\write", false), rec("\\immediate", false), rec("\\csname", false),
             rec("\\directlua", false),
-            rec("\\InputIfFileExists", false), recSaAt("\\@input", false),
+            rec("\\InputIfFileExists", false), recSaAt("\\@input", false), recSaAt("\\@@input", false),
+            recSaAt("\\@iinput", false),
             rec("\\lstinputlisting", false), rec("\\verbatiminput", false),
             rec("\\includepdf", false), rec("\\includepdfmerge", false),
             new Pravilo("\\includegraphics", LatexPravila::losIncludegraphics, false),
             pravilo("\\url{file:", "\\\\url\\s*\\{\\s*file:", Pattern.CASE_INSENSITIVE, false),
             pravilo("\\href{file:", "\\\\href\\s*\\{\\s*file:", Pattern.CASE_INSENSITIVE, false),
+            pravilo("^^", Pattern.quote("^^"), 0, false),
             rec("\\usepackage", true), rec("\\RequirePackage", true), rec("\\documentclass", true),
             pravilo("\\begin{document}", "\\\\begin\\s*\\{\\s*document\\s*\\}", 0, true),
             pravilo("\\end{document}", "\\\\end\\s*\\{\\s*document\\s*\\}", 0, true),
