@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.entity.uzivo.Medij;
+import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 
@@ -17,21 +18,26 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * Slike slajdova i pitanja: bajtovi su fajl {@code <gfs.mediji.dir>/<uuid>}, metapodaci red u {@code mediji}.
- * Prihvata samo PNG, JPEG, GIF i WebP, prepoznate po prvim bajtovima (zaglavlje i ekstenziju šalje klijent, pa se ne
- * koriste). Javno se servira samo id u kanonskom UUID obliku, pa putanja na disku ne može izaći iz direktorijuma.
+ * Fajlovi iz {@code mediji}: bajtovi su fajl {@code <gfs.mediji.dir>/<uuid>}, metapodaci red u tabeli. Tri vrste
+ * ({@link VrstaMedija}): slike slajdova i pitanja ({@link #sacuvaj}: PNG, JPEG, GIF, WebP), prilozi zadataka banke
+ * ({@link #sacuvajPrilog}: PNG, JPEG, PDF) i SVG koji je renderovao LaTeX ({@link #sacuvajRender}). Tip se prepoznaje po
+ * prvim bajtovima (zaglavlje i ekstenziju šalje klijent, pa se ne koriste). Javno se servira samo id u kanonskom UUID
+ * obliku, pa putanja na disku ne može izaći iz direktorijuma.
  */
 @Service
 @Slf4j
 public class MedijService {
 
     public static final String NEDOZVOLJEN_TIP = "Dozvoljene su samo slike PNG, JPEG, GIF i WebP.";
+    public static final String NEDOZVOLJEN_PRILOG = "Dozvoljeni prilozi: PNG, JPEG i PDF.";
     public static final String PRAZAN_FAJL = "Fajl je prazan.";
     public static final String NIJE_PRONADJENA = "Slika nije pronađena.";
 
@@ -39,8 +45,18 @@ public class MedijService {
     private static final Pattern UUID_OBLIK =
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
-    /** Sadržaj za serviranje: {@code mime} i {@code velicina} iz baze, bajtovi sa diska. */
-    public record Fajl(String mime, long velicina, Resource sadrzaj) {
+    /** Sadržaj za serviranje: {@code mime}, {@code velicina} i {@code vrsta} iz baze, bajtovi sa diska. */
+    public record Fajl(String mime, long velicina, Resource sadrzaj, VrstaMedija vrsta) {
+    }
+
+    /** Prepoznat tip fajla po bajtovima. */
+    private record Tip(String mime, VrstaMedija vrsta) {
+    }
+
+    /** Upisuje sadržaj u (novi) fajl i vraća broj upisanih bajtova. */
+    @FunctionalInterface
+    private interface Upis {
+        long upisi(Path cilj) throws IOException;
     }
 
     private final MedijRepository medijRepository;
@@ -68,36 +84,68 @@ public class MedijService {
         return tmp != null && putanja.equals(Path.of(tmp, "gfs-mediji").toAbsolutePath().normalize());
     }
 
+    /** Slika slajda ili pitanja (PNG, JPEG, GIF, WebP); vrsta {@code SLIKA}. PDF ovuda ne ulazi: vidi {@link #sacuvajPrilog}. */
     public MedijInfo sacuvaj(MultipartFile fajl) {
+        return sacuvaj(fajl, MedijService::tipSlike, NEDOZVOLJEN_TIP);
+    }
+
+    /**
+     * Prilog zadatka banke: PNG i JPEG (vrsta {@code SLIKA}) ili PDF (vrsta {@code PRILOG_PDF}, javno se ne servira).
+     * Bez GIF-a i WebP-a: LaTeX ih ne može uključiti.
+     */
+    public MedijInfo sacuvajPrilog(MultipartFile fajl) {
+        return sacuvaj(fajl, MedijService::tipPriloga, NEDOZVOLJEN_PRILOG);
+    }
+
+    /** SVG koji je renderovao LaTeX kontejner (vrsta {@code RENDER_SVG}); bajtove daje server, ne klijent. */
+    public MedijInfo sacuvajRender(byte[] svg, String naziv) {
+        if (svg == null || svg.length == 0) {
+            throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
+        }
+        return upisi(naziv(naziv), new Tip("image/svg+xml", VrstaMedija.RENDER_SVG), cilj -> {
+            Files.write(cilj, svg, StandardOpenOption.CREATE_NEW);
+            return svg.length;
+        });
+    }
+
+    private MedijInfo sacuvaj(MultipartFile fajl, Function<byte[], Tip> prepoznaj, String nedozvoljeno) {
         if (fajl == null || fajl.isEmpty()) {
             throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
         }
-        String mime = mime(zaglavlje(fajl));
-        if (mime == null) {
-            throw new SystemException(NEDOZVOLJEN_TIP, HttpStatus.BAD_REQUEST);
+        Tip tip = prepoznaj.apply(zaglavlje(fajl));
+        if (tip == null) {
+            throw new SystemException(nedozvoljeno, HttpStatus.BAD_REQUEST);
         }
+        return upisi(naziv(fajl.getOriginalFilename()), tip, cilj -> {
+            try (InputStream in = fajl.getInputStream()) {
+                return Files.copy(in, cilj);
+            }
+        });
+    }
 
+    private MedijInfo upisi(String naziv, Tip tip, Upis upis) {
         Medij medij = new Medij();
         medij.setId(UUID.randomUUID().toString());
-        medij.setNaziv(naziv(fajl.getOriginalFilename()));
-        medij.setMime(mime);
+        medij.setNaziv(naziv);
+        medij.setMime(tip.mime());
+        medij.setVrsta(tip.vrsta());
         medij.setKreirano(LocalDateTime.now(clock));
 
         Path cilj = dir.resolve(medij.getId());
-        try (InputStream in = fajl.getInputStream()) {
-            medij.setVelicina(Files.copy(in, cilj));
+        try {
+            medij.setVelicina(upis.upisi(cilj));
         } catch (IOException e) {
-            obrisi(cilj);
+            obrisiFajl(cilj);
             throw new UncheckedIOException(e);
         }
         try {
             medijRepository.save(medij);
         } catch (RuntimeException e) {
-            obrisi(cilj);   // fajl bez reda se nikad ne bi servirao
+            obrisiFajl(cilj);   // fajl bez reda se nikad ne bi servirao
             throw e;
         }
-        log.info("Slika sačuvana: id={}, mime={}, velicina={}", medij.getId(), mime, medij.getVelicina());
-        return new MedijInfo(medij.getId(), medij.getNaziv(), mime, medij.getVelicina());
+        log.info("Medij sačuvan: id={}, vrsta={}, mime={}, velicina={}", medij.getId(), tip.vrsta(), tip.mime(), medij.getVelicina());
+        return new MedijInfo(medij.getId(), medij.getNaziv(), tip.mime(), medij.getVelicina());
     }
 
     public Fajl ucitaj(String id) {
@@ -110,7 +158,25 @@ public class MedijService {
             log.warn("Slika {} postoji u bazi, ali ne i na disku", id);
             throw nijePronadjena();
         }
-        return new Fajl(medij.getMime(), medij.getVelicina(), new FileSystemResource(putanja));
+        return new Fajl(medij.getMime(), medij.getVelicina(), new FileSystemResource(putanja), medij.getVrsta());
+    }
+
+    /** Ceo sadržaj u memoriji (za slanje priloga renderu, do 10 MB); 404 kao {@link #ucitaj}. */
+    public byte[] bajtovi(String id) {
+        try {
+            return ucitaj(id).sadrzaj().getContentAsByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Briše red i fajl; nepoznat id, id koji nije UUID i fajl koji ne postoji nisu greška. */
+    public void obrisi(String id) {
+        if (!jeUuid(id)) {
+            return;
+        }
+        medijRepository.deleteById(id);   // nepostojeći red se tiho preskače
+        obrisiFajl(dir.resolve(id));
     }
 
     public boolean postoji(String id) {
@@ -133,15 +199,34 @@ public class MedijService {
         }
     }
 
-    /** Mime po magic bajtovima ili {@code null} kad fajl nije dozvoljena slika. */
-    private static String mime(byte[] b) {
-        if (pocinje(b, 0, 0x89, 0x50, 0x4E, 0x47)) return "image/png";
-        if (pocinje(b, 0, 0xFF, 0xD8, 0xFF)) return "image/jpeg";
+    /** Slika po magic bajtovima (PNG, JPEG, GIF, WebP) ili {@code null}. */
+    private static Tip tipSlike(byte[] b) {
+        Tip tip = pngIliJpeg(b);
+        if (tip != null) return tip;
         // GIF87a, GIF89a
-        if (pocinje(b, 0, 0x47, 0x49, 0x46, 0x38, 0x37, 0x61) || pocinje(b, 0, 0x47, 0x49, 0x46, 0x38, 0x39, 0x61)) return "image/gif";
+        if (pocinje(b, 0, 0x47, 0x49, 0x46, 0x38, 0x37, 0x61) || pocinje(b, 0, 0x47, 0x49, 0x46, 0x38, 0x39, 0x61)) return slika("image/gif");
         // RIFF????WEBP
-        if (pocinje(b, 0, 0x52, 0x49, 0x46, 0x46) && pocinje(b, 8, 0x57, 0x45, 0x42, 0x50)) return "image/webp";
+        if (pocinje(b, 0, 0x52, 0x49, 0x46, 0x46) && pocinje(b, 8, 0x57, 0x45, 0x42, 0x50)) return slika("image/webp");
         return null;
+    }
+
+    /** Prilog po magic bajtovima (PNG, JPEG, PDF) ili {@code null}. */
+    private static Tip tipPriloga(byte[] b) {
+        Tip tip = pngIliJpeg(b);
+        if (tip != null) return tip;
+        // %PDF-
+        if (pocinje(b, 0, 0x25, 0x50, 0x44, 0x46, 0x2D)) return new Tip("application/pdf", VrstaMedija.PRILOG_PDF);
+        return null;
+    }
+
+    private static Tip pngIliJpeg(byte[] b) {
+        if (pocinje(b, 0, 0x89, 0x50, 0x4E, 0x47)) return slika("image/png");
+        if (pocinje(b, 0, 0xFF, 0xD8, 0xFF)) return slika("image/jpeg");
+        return null;
+    }
+
+    private static Tip slika(String mime) {
+        return new Tip(mime, VrstaMedija.SLIKA);
     }
 
     private static boolean pocinje(byte[] b, int od, int... ocekivano) {
@@ -160,7 +245,7 @@ public class MedijService {
                 : naziv;
     }
 
-    private static void obrisi(Path putanja) {
+    private static void obrisiFajl(Path putanja) {
         try {
             Files.deleteIfExists(putanja);
         } catch (IOException e) {

@@ -12,6 +12,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import tri.novica.gfssystem.advice.UploadExceptionHandler;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
+import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 
@@ -43,7 +44,7 @@ class MedijRestTest {
 
     @Test
     void getVracaBajtoveSaNosniffIImmutable() throws Exception {
-        when(service.ucitaj(ID)).thenReturn(new MedijService.Fajl("image/png", PNG.length, new ByteArrayResource(PNG)));
+        when(service.ucitaj(ID)).thenReturn(new MedijService.Fajl("image/png", PNG.length, new ByteArrayResource(PNG), VrstaMedija.SLIKA));
         mvc.perform(get("/public/mediji/" + ID))
            .andExpect(status().isOk())
            .andExpect(content().contentType("image/png"))
