@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.PlatformTransactionManager;
 import tri.novica.gfssystem.dto.banka.*;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
@@ -180,13 +181,13 @@ class VarijantaServiceTest {
     }
 
     static RenderOdgovor uspeh() {
-        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(SVG), null, null, null, 9L);
+        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(SVG), null, null, null, 9L, false);
     }
 
     static RenderOdgovor neuspeh(int linijaUTelu, String poruka) {
         int linija = POMAK + linijaUTelu;
         return new RenderOdgovor(false, null, null, new RenderGreskaInfo(linija, poruka),
-                "(./dokument.tex\n./dokument.tex:" + linija + ": " + poruka + "\n", null);
+                "(./dokument.tex\n./dokument.tex:" + linija + ": " + poruka + "\n", null, false);
     }
 
     static VarijantaCmd cmd(String tekst, String resenje, List<PrilogCmd> prilozi) {
@@ -541,9 +542,51 @@ class VarijantaServiceTest {
             redosled.verify(grupaRepository).findByIdForUpdate(grupa.getId());
             redosled.verify(varijantaRepository).findByIdForUpdate(d.id());
         }
-        verify(varijantaRepository, never()).findById(anyLong());   // varijanta se ne čita pre ključa
         verify(predmetRepository, never()).findByIdForUpdate(any());
         verify(grupaRepository, never()).save(any());
+    }
+
+    @Test
+    void renderJePreKljucaAPoslePraznogKontekstaSeZakljucava() {
+        service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        InOrder kreiranje = inOrder(latexRender, em, grupaRepository);
+        kreiranje.verify(latexRender, times(2)).renderuj(anyString(), anyString(), anyList());
+        kreiranje.verify(em).clear();
+        kreiranje.verify(grupaRepository).findByIdForUpdate(grupa.getId());
+        Long id = varijante.get(0).getId();
+        clearInvocations(latexRender, em, grupaRepository, varijantaRepository);
+
+        service.izmeni(id, cmd("Pretvori 1100."));
+        service.render(id);
+        service.dupliraj(id);
+
+        InOrder redosled = inOrder(latexRender, em, grupaRepository);
+        for (int i = 0; i < 3; i++) {
+            redosled.verify(latexRender, times(2)).renderuj(anyString(), anyString(), anyList());
+            redosled.verify(em).clear();
+            redosled.verify(grupaRepository).findByIdForUpdate(grupa.getId());
+        }
+        verify(latexRender, times(6)).renderuj(anyString(), anyString(), anyList());   // ni jedan render pod ključem
+    }
+
+    @Test
+    void promenjenaPreambulaIzmedjuCitanjaIKljucaRenderujePodKljucem() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        AtomicInteger poziv = new AtomicInteger();
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenAnswer(inv -> {
+            if (poziv.incrementAndGet() == 1) {
+                predmet.setLatexPreambula("\\usepackage{amsmath}");   // izmena preambule dok se renderuje bez ključa
+            }
+            return uspeh();
+        });
+
+        VarijantaDetails i = service.izmeni(d.id(), cmd("Pretvori 1100."));
+
+        assertEquals(4, poziv.get(), "dva dela pre ključa i ponovo oba pod ključem");
+        verify(latexRender, times(2)).renderuj(eq("svg"), contains("\\usepackage{amsmath}"), anyList());
+        assertEquals(new RenderVarijante(latexRender, medijService).hash("\\usepackage{amsmath}", "Pretvori 1100.", "$11$",
+                List.of(new PrilogCmd("skica", PNG))), varijanta(d.id()).getRenderHash());
+        assertEquals(RenderStatus.OK, i.renderStatus());
     }
 
     // ---------------------------------------------------------------- proba
@@ -623,7 +666,7 @@ class VarijantaServiceTest {
 
         RenderujSveInfo r = service.renderujSve(7L);
 
-        assertEquals(new RenderujSveInfo(2, 0), r);
+        assertEquals(new RenderujSveInfo(1, 0), r);   // pala se ponavlja, ali renderovano broji samo uspele
         verify(latexRender, never()).renderuj(anyString(), contains("Sveža."), anyList());
         verify(latexRender, times(1)).renderuj(anyString(), contains("Zastarela."), anyList());
         verify(latexRender, times(1)).renderuj(anyString(), contains("$11$"), anyList());   // rešenje samo zastarele: neuspeloj pada tekst
@@ -631,9 +674,71 @@ class VarijantaServiceTest {
         assertNotNull(varijanta(zastarela.id()).getRenderHash());
         assertEquals(RenderStatus.OK, varijanta(sveza.id()).getRenderStatus());
         assertEquals(RenderStatus.GRESKA, varijanta(neuspela.id()).getRenderStatus());
-        // svaka varijanta u svojoj transakciji, sveže pročitana posle ključa
-        verify(em, times(2)).clear();
         ocekujGresku(404, "Predmet nije pronađen.", () -> service.renderujSve(8L));
+    }
+
+    @Test
+    void renderujSvePreskaceLosuVarijantuIUpisujeJojGreskuINastavlja() {
+        VarijantaDetails losa = service.kreiraj(grupa.getId(), cmd("Sa prilogom."));
+        service.odobri(losa.id());
+        VarijantaDetails zabranjena = service.kreiraj(grupa.getId(), cmd("Biće zabranjena.", null, List.of()));
+        VarijantaDetails dobra = service.kreiraj(grupa.getId(), cmd("Dobra.", null, List.of()));
+        varijante.forEach(v -> v.setRenderHash(null));
+        // fajl priloga je nestao sa diska; tekst sa komandom koju je deny-lista u međuvremenu zabranila
+        when(medijService.ucitaj(PNG)).thenThrow(new SystemException("Slika nije pronađena.", HttpStatus.NOT_FOUND));
+        varijanta(zabranjena.id()).setTekst("\\write18{ls}");
+        clearInvocations(latexRender);
+
+        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
+
+        Varijanta l = varijanta(losa.id());
+        assertEquals(RenderStatus.GRESKA, l.getRenderStatus());
+        assertEquals(StatusVarijante.NACRT, l.getStatus());
+        assertEquals("Slika nije pronađena.", l.getRenderGreska());
+        assertNotNull(l.getRenderHash());
+        assertEquals("svg-1", l.getRenderSvg().getId());   // stari SVG ostaje
+        VarijantaDetails ld = service.detalji(losa.id());
+        assertEquals(new RenderGreskaInfo(null, "Slika nije pronađena."), ld.renderGreska());
+        assertNull(ld.renderDeo());
+        assertEquals("Komanda \\write18 nije dozvoljena.", varijanta(zabranjena.id()).getRenderGreska());
+        assertEquals(RenderStatus.OK, varijanta(dobra.id()).getRenderStatus());
+        verify(latexRender, times(1)).renderuj(anyString(), anyString(), anyList());
+
+        // obe su sada pale istog sadržaja: ne drže preostalo, a ponavljaju se bez prekida petlje
+        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+    }
+
+    @Test
+    void renderujSveNeocekivanaGreskaDajeOpstuPorukuANedostupanServisPrekida() {
+        VarijantaDetails a = service.kreiraj(grupa.getId(), cmd("Prva.", null, List.of(new PrilogCmd("skica", PNG))));
+        VarijantaDetails b = service.kreiraj(grupa.getId(), cmd("Druga.", null, List.of()));
+        varijante.forEach(v -> v.setRenderHash(null));
+        when(medijService.ucitaj(PNG)).thenThrow(new java.io.UncheckedIOException(new java.io.IOException("/var/lib/gfs/x")));
+
+        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
+        assertEquals("Render nije uspeo.", varijanta(a.id()).getRenderGreska());
+
+        varijante.forEach(v -> v.setRenderHash(null));
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenThrow(new RenderNedostupan());
+        ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
+        assertNull(varijanta(b.id()).getRenderHash());
+    }
+
+    @Test
+    void renderujSveOdbacujeRenderKadSeSadrzajPromeniPreKljuca() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pre.", null, List.of()));
+        varijanta(d.id()).setRenderHash(null);
+        when(latexRender.renderuj(eq("svg"), contains("Pre."), anyList())).thenAnswer(inv -> {
+            varijanta(d.id()).setTekst("Posle.");   // istovremena izmena dok se renderuje bez ključa
+            return uspeh();
+        });
+        clearInvocations(medijService);
+
+        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+
+        assertNull(varijanta(d.id()).getRenderHash(), "rezultat za stari sadržaj se ne upisuje");
+        verify(medijService, never()).sacuvajRender(any(), anyString());
+        verify(latexRender, never()).renderuj(anyString(), contains("Posle."), anyList());   // bez rendera pod ključem
     }
 
     @Test

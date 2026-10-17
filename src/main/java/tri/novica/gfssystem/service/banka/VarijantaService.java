@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.Semaphore;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -46,16 +47,21 @@ import java.util.stream.Stream;
  * {@link MedijService#obrisi} briše fajl odmah, a red pri flush-u, posle upisa koji ga više ne pominje; pad commit-a posle
  * toga ostavlja red medija bez fajla (servira se kao 404), što se prihvata.
  * <p>
+ * <b>Render pre ključa</b> (upis u tri koraka): (1) provera komande i kratka transakcija samo za čitanje (pravila grupe i
+ * odgovora, preambula, sadržaj koji se renderuje), bez ključa; (2) render, van transakcije i bez ijednog ključa; (3) kratka
+ * transakcija pod ključem: ponovo pravila grupe i odgovora, heš zaključanog sadržaja sa trenutnom preambulom, upis
+ * {@code render_hash} onoga što je zaista renderovano, novi SVG mediji i brisanje starih. Ako se ulaz između (1) i (3)
+ * promenio (preambula, istovremeni upis), izmena, duplikat i prisilan render renderuju ponovo pod ključem (retko), a
+ * render cele banke rezultat odbacuje. Odluka "isti heš i OK, bez rendera" se donosi u (1) i ponovo proverava u (3).
+ * <p>
  * <b>Zaključavanje</b> (ugovor iz {@link GrupaZadatakaService}): pre dodavanja ili izmene varijante red grupe
  * ({@code GrupaZadatakaRepository.findByIdForUpdate}), pa red varijante ({@code findByIdForUpdate}); drži najviše jednu
- * grupu, nikad ne zaključava predmet i nikad ne upisuje kolone {@code grupe_zadataka}. Pre ključa se čita samo id grupe
- * ({@code findGrupaId}) i proverava sadržaj komande; šema polja grupe se čita posle ključa. Ključevi traju i dok render
- * radi (do dva poziva servisa), pa drugi upis iste grupe čeka.
+ * grupu, nikad ne zaključava predmet i nikad ne upisuje kolone {@code grupe_zadataka}. Svaka transakcija ovog servisa
+ * počinje praznim persistence context-om ({@code EntityManager.clear}): uz {@code open-in-view} isti EntityManager traje
+ * ceo HTTP zahtev, pa bi ključ inače vratio entitet pročitan pre njega.
  * <p>
- * Izmene rade u READ COMMITTED, kao {@link GrupaZadatakaService}. Proba radi bez transakcije (ne drži vezu ka bazi dok
- * renderuje); render cele banke radi svaku varijantu u zasebnoj transakciji, pa ključ grupe traje samo dok se ta
- * varijanta renderuje. Grupa bez težine ne prima varijante (409), kao što ni {@code GrupaZadatakaService.izmeni} ne
- * dozvoljava grupu sa varijantama bez težine.
+ * Izmene rade u READ COMMITTED, kao {@link GrupaZadatakaService}. Grupa bez težine ne prima varijante (409), kao što ni
+ * {@code GrupaZadatakaService.izmeni} ne dozvoljava grupu sa varijantama bez težine.
  */
 @Service
 @RequiredArgsConstructor
@@ -70,6 +76,8 @@ public class VarijantaService {
     static final String ODGOVORI_PREVELIKI = "Odgovori su preveliki.";
     static final String PREVISE_PRILOGA = "Najviše 10 priloga.";
     static final String REZERVISANO_IME = "Ime priloga 'dokument' je rezervisano.";
+    /** Render cele banke: greška koja nije SystemException (poruka izuzetka nije za nastavnika). */
+    static final String RENDER_PAO = "Render nije uspeo.";
 
     static final int MAX_PROBA = 4;
     /** Render cele banke: najviše ovoliko varijanti po pozivu ... */
@@ -117,49 +125,64 @@ public class VarijantaService {
     // ---------------------------------------------------------------- upis
 
     /**
-     * Nova varijanta na kraj grupe ({@code rb} = najveći + 1), NACRT, {@code izvor} iz komande ili RUCNO; render odmah.
-     * Grupa mora biti list (409 za grupu sa podgrupama) sa težinom (409), odgovori moraju pokriti šemu polja grupe.
+     * Nova varijanta na kraj grupe ({@code rb} = najveći + 1), NACRT, {@code izvor} iz komande ili RUCNO; render odmah,
+     * pre ključa. Grupa mora biti list (409 za grupu sa podgrupama) sa težinom (409), odgovori moraju pokriti šemu polja
+     * grupe; proverava se pre rendera i ponovo pod ključem.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VarijantaDetails kreiraj(Long grupaId, VarijantaCmd cmd) {
         Sadrzaj s = proveren(cmd);
-        GrupaZadataka g = zakljucajGrupu(grupaId);
-        if (grupaRepository.countByRoditeljId(grupaId) > 0) {
-            throw new SystemException(IMA_PODGRUPE, HttpStatus.CONFLICT);
-        }
-        if (g.getTezina() == null) {
-            throw new SystemException(GrupaZadatakaService.TEZINA_OBAVEZNA, HttpStatus.CONFLICT);
-        }
-        proveriOdgovore(g, s.odgovori());
-
-        LocalDateTime sada = sada();
-        Varijanta v = new Varijanta();
-        v.setGrupa(g);
-        v.setRb(varijantaRepository.maxRb(grupaId) + 1);
-        primeni(v, s);
-        v.setStatus(StatusVarijante.NACRT);
-        v.setIzvor(cmd.izvor() == null ? IzvorVarijante.RUCNO : cmd.izvor());
-        v.setRenderStatus(RenderStatus.CEKA);
-        v.setKreirano(sada);
-        v.setIzmenjeno(sada);
-        v = varijantaRepository.save(v);   // id je deo naziva SVG medija
-        renderujAkoTreba(v, false);
-        log.info("Varijanta kreirana: id={}, grupa={}, izvor={}, render={}", v.getId(), grupaId, v.getIzvor(), v.getRenderStatus());
-        return details(v);
+        String preambula = citaj(() -> {
+            GrupaZadataka g = grupaRepository.findById(grupaId).orElseThrow(VarijantaService::grupaNijePronadjena);
+            proveriZaNovu(g, s);
+            return g.getPredmet().getLatexPreambula();
+        });
+        Prerender pre = renderuj(new Ulaz(preambula, s.tekst(), s.resenje(), s.priloziCmd()));
+        return pisi(() -> {
+            GrupaZadataka g = zakljucajGrupu(grupaId);
+            proveriZaNovu(g, s);
+            LocalDateTime sada = sada();
+            Varijanta v = new Varijanta();
+            v.setGrupa(g);
+            v.setRb(varijantaRepository.maxRb(grupaId) + 1);
+            primeni(v, s);
+            v.setStatus(StatusVarijante.NACRT);
+            v.setIzvor(cmd.izvor() == null ? IzvorVarijante.RUCNO : cmd.izvor());
+            v.setRenderStatus(RenderStatus.CEKA);
+            v.setKreirano(sada);
+            v.setIzmenjeno(sada);
+            Varijanta nova = varijantaRepository.save(v);   // id je deo naziva SVG medija
+            primeniPosleKljuca(nova, pre, false);
+            log.info("Varijanta kreirana: id={}, grupa={}, izvor={}, render={}", nova.getId(), grupaId, nova.getIzvor(),
+                    nova.getRenderStatus());
+            return details(nova);
+        });
     }
 
     /**
      * Puna zamena naziva, teksta, rešenja, odgovora i priloga (izvor ostaje). Renderuje samo kad se ulaz rendera
      * promenio ili poslednji render nije uspeo; AKTIVNA ostaje AKTIVNA samo ako render prođe.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VarijantaDetails izmeni(Long id, VarijantaCmd cmd) {
         Sadrzaj s = proveren(cmd);
-        Varijanta v = zakljucaj(id);
-        proveriOdgovore(v.getGrupa(), s.odgovori());
-        primeni(v, s);
-        v.setIzmenjeno(sada());
-        boolean renderovano = renderujAkoTreba(v, false);
-        log.info("Varijanta izmenjena: id={}, render={} ({})", id, v.getRenderStatus(), renderovano ? "nov" : "keš");
-        return details(v);
+        Procitano procitano = citaj(() -> {
+            Varijanta v = varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena);
+            proveriOdgovore(v.getGrupa(), s.odgovori());
+            return new Procitano(v.getGrupa().getPredmet().getLatexPreambula(), v.getRenderHash(), v.getRenderStatus());
+        });
+        Ulaz ulaz = new Ulaz(procitano.preambula(), s.tekst(), s.resenje(), s.priloziCmd());
+        boolean kesVazi = hash(ulaz).equals(procitano.renderHash()) && procitano.renderStatus() == RenderStatus.OK;
+        Prerender pre = kesVazi ? null : renderuj(ulaz);
+        return pisi(() -> {
+            Varijanta v = zakljucaj(id);
+            proveriOdgovore(v.getGrupa(), s.odgovori());
+            primeni(v, s);
+            v.setIzmenjeno(sada());
+            boolean renderovano = primeniPosleKljuca(v, pre, false);
+            log.info("Varijanta izmenjena: id={}, render={} ({})", id, v.getRenderStatus(), renderovano ? "nov" : "keš");
+            return details(v);
+        });
     }
 
     /** Briše varijantu (prilozi kaskadom; mediji priloga ostaju, duplikat ih može deliti), pa njene SVG medije. */
@@ -201,46 +224,54 @@ public class VarijantaService {
         return details(v);
     }
 
-    /** Render bez obzira na keš (npr. posle pada servisa ili izmene paketa u kontejneru). */
+    /** Render bez obzira na keš (npr. posle pada servisa ili izmene paketa u kontejneru), pre ključa kao upis. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VarijantaDetails render(Long id) {
-        Varijanta v = zakljucaj(id);
-        renderujAkoTreba(v, true);
-        log.info("Varijanta renderovana: id={}, render={}", id, v.getRenderStatus());
-        return details(v);
+        Prerender pre = renderuj(citaj(() -> ulaz(varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena))));
+        return pisi(() -> {
+            Varijanta v = zakljucaj(id);
+            primeniPosleKljuca(v, pre, true);
+            log.info("Varijanta renderovana: id={}, render={}", id, v.getRenderStatus());
+            return details(v);
+        });
     }
 
     /**
      * Kopija na kraj iste grupe: NACRT, isti naziv, sadržaj, odgovori, izvor i prilozi (isti mediji), sopstveni render
-     * (SVG medij pripada jednoj varijanti, pa se ne deli).
+     * (SVG medij pripada jednoj varijanti, pa se ne deli). Kopira se zaključano stanje izvorne varijante.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VarijantaDetails dupliraj(Long id) {
-        Varijanta izvor = zakljucaj(id);
-        GrupaZadataka g = izvor.getGrupa();
-        LocalDateTime sada = sada();
-        Varijanta k = new Varijanta();
-        k.setGrupa(g);
-        k.setRb(varijantaRepository.maxRb(g.getId()) + 1);
-        k.setNaziv(izvor.getNaziv());
-        k.setTekst(izvor.getTekst());
-        k.setResenje(izvor.getResenje());
-        k.setOdgovori(izvor.getOdgovori());
-        primeniPriloge(k, izvor.getPrilozi().stream().map(p -> new Prilog(p.getIme(), p.getMedij())).toList());
-        k.setStatus(StatusVarijante.NACRT);
-        k.setIzvor(izvor.getIzvor());
-        k.setRenderStatus(RenderStatus.CEKA);
-        k.setKreirano(sada);
-        k.setIzmenjeno(sada);
-        k = varijantaRepository.save(k);
-        renderujAkoTreba(k, false);
-        log.info("Varijanta duplirana: id={} -> {}, render={}", id, k.getId(), k.getRenderStatus());
-        return details(k);
+        Prerender pre = renderuj(citaj(() -> ulaz(varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena))));
+        return pisi(() -> {
+            Varijanta izvor = zakljucaj(id);
+            GrupaZadataka g = izvor.getGrupa();
+            LocalDateTime sada = sada();
+            Varijanta k = new Varijanta();
+            k.setGrupa(g);
+            k.setRb(varijantaRepository.maxRb(g.getId()) + 1);
+            k.setNaziv(izvor.getNaziv());
+            k.setTekst(izvor.getTekst());
+            k.setResenje(izvor.getResenje());
+            k.setOdgovori(izvor.getOdgovori());
+            primeniPriloge(k, izvor.getPrilozi().stream().map(p -> new Prilog(p.getIme(), p.getMedij())).toList());
+            k.setStatus(StatusVarijante.NACRT);
+            k.setIzvor(izvor.getIzvor());
+            k.setRenderStatus(RenderStatus.CEKA);
+            k.setKreirano(sada);
+            k.setIzmenjeno(sada);
+            Varijanta kopija = varijantaRepository.save(k);
+            primeniPosleKljuca(kopija, pre, false);
+            log.info("Varijanta duplirana: id={} -> {}, render={}", id, kopija.getId(), kopija.getRenderStatus());
+            return details(kopija);
+        });
     }
 
     // ---------------------------------------------------------------- render bez čuvanja i cela banka
 
     /**
-     * Render bez čuvanja, sa preambulom predmeta, za pregled u editoru (i za Claude-a kroz MCP). Ista pravila teksta,
-     * rešenja i priloga kao upis; najviše {@value #MAX_PROBA} istovremeno (429 preko toga).
+     * Render bez čuvanja, sa preambulom predmeta, za pregled u editoru (i za Claude-a kroz MCP), bez transakcije. Ista
+     * pravila teksta, rešenja i priloga kao upis; najviše {@value #MAX_PROBA} istovremeno (429 preko toga).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RenderProbaInfo proba(RenderProbaCmd cmd) {
@@ -268,20 +299,23 @@ public class VarijantaService {
     }
 
     /**
-     * Ponovni render banke predmeta (posle izmene preambule): sinhrono, redom, svaka varijanta u svojoj transakciji
-     * (ključ grupe pa varijante, kao upis), bez ključa predmeta. Prvo zastarele (heš sadržaja se razlikuje od poslednjeg
-     * rendera ili render čeka), pa one čiji je poslednji render istog sadržaja pao; najviše
-     * {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle {@link #MAX_TRAJANJE_RENDERA_SVIH}. {@code preostalo}
-     * broji samo zastarele koje nisu stigle na red: pala varijanta istog sadržaja bi pala opet, pa front koji zove dok
-     * je {@code preostalo > 0} uvek stane. 503 servisa prekida poziv; već renderovane ostaju upisane.
+     * Ponovni render banke predmeta (posle izmene preambule): sinhrono, redom, bez ključa predmeta. Svaka varijanta se
+     * čita i renderuje bez ključa, a upisuje u kratkoj transakciji pod ključem grupe pa varijante, samo ako je heš
+     * zaključanog sadržaja sa trenutnom preambulom jednak renderovanom (inače se rezultat odbacuje i varijanta ostaje
+     * zastarela). Prvo zastarele (heš sadržaja se razlikuje od poslednjeg rendera ili render čeka), pa one čiji je
+     * poslednji render istog sadržaja pao; najviše {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle
+     * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Loša varijanta ne zaustavlja petlju: svaki izuzetak osim {@link RenderNedostupan}
+     * (npr. prilog bez fajla, komanda koju je deny-lista u međuvremenu zabranila) se upisuje kao {@code GRESKA} sa porukom
+     * izuzetka i hešom njenog sadržaja (AKTIVNA pada u NACRT), pa se ide dalje. 503 servisa prekida poziv; već upisane
+     * ostaju. {@code renderovano} broji samo uspele ({@code OK}) rendere; {@code preostalo} samo zastarele koje nisu stigle
+     * na red, pa front koji zove dok je {@code preostalo > 0} uvek stane.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RenderujSveInfo renderujSve(Long predmetId) {
         if (predmetId == null) {
             throw new SystemException(GrupaZadatakaService.PREDMET_OBAVEZAN, HttpStatus.BAD_REQUEST);
         }
-        TransactionTemplate tx = transakcija();
-        Kandidati kandidati = tx.execute(status -> kandidati(predmetId));
+        Kandidati kandidati = citaj(() -> kandidati(predmetId));
         Instant rok = clock.instant().plus(MAX_TRAJANJE_RENDERA_SVIH);
         int obradjeno = 0;
         int renderovano = 0;
@@ -290,7 +324,7 @@ public class VarijantaService {
                 break;
             }
             obradjeno++;
-            if (Boolean.TRUE.equals(tx.execute(status -> renderujPoKljucu(id)))) {
+            if (renderujJednu(id)) {
                 renderovano++;
             }
         }
@@ -304,14 +338,13 @@ public class VarijantaService {
     }
 
     private Kandidati kandidati(Long predmetId) {
-        Predmet predmet = predmetRepository.findById(predmetId).orElseThrow(VarijantaService::predmetNijePronadjen);
+        predmetRepository.findById(predmetId).orElseThrow(VarijantaService::predmetNijePronadjen);
         List<Varijanta> sve = new ArrayList<>(varijantaRepository.svePredmeta(predmetId));
         sve.sort(Comparator.comparing(Varijanta::getId));
         List<Long> zastarele = new ArrayList<>();
         List<Long> pale = new ArrayList<>();
         for (Varijanta v : sve) {
-            String hash = renderVarijante.hash(predmet.getLatexPreambula(), v.getTekst(), v.getResenje(), prilozi(v));
-            if (!hash.equals(v.getRenderHash()) || v.getRenderStatus() == RenderStatus.CEKA) {
+            if (!hash(ulaz(v)).equals(v.getRenderHash()) || v.getRenderStatus() == RenderStatus.CEKA) {
                 zastarele.add(v.getId());
             } else if (v.getRenderStatus() != RenderStatus.OK) {
                 pale.add(v.getId());
@@ -320,25 +353,109 @@ public class VarijantaService {
         return new Kandidati(Stream.concat(zastarele.stream(), pale.stream()).toList(), zastarele.size());
     }
 
-    /** Jedna varijanta cele banke, u svojoj transakciji; {@code false} kad je u međuvremenu nestala ili je već sveža. */
-    private boolean renderujPoKljucu(Long id) {
-        // isti EntityManager traje ceo HTTP zahtev (open-in-view): bez ovoga bi ključ vratio entitet pročitan pre njega
-        em.clear();
-        Optional<Varijanta> v = zakljucajAkoPostoji(id);
-        return v.isPresent() && renderujAkoTreba(v.get(), false);
+    /** Jedna varijanta cele banke; {@code true} samo kad je upisan uspeo render. */
+    private boolean renderujJednu(Long id) {
+        Ulaz ulaz = citaj(() -> varijantaRepository.findById(id).map(this::ulazAkoTreba).orElse(null));
+        if (ulaz == null) {
+            return false;   // nestala ili ju je neko u međuvremenu renderovao
+        }
+        String hash = hash(ulaz);
+        try {
+            RenderVarijante.Ishod ishod = renderVarijante.renderuj(ulaz.preambula(), ulaz.tekst(), ulaz.resenje(), ulaz.prilozi());
+            return Boolean.TRUE.equals(pisi(() -> upisiAkoIsti(id, hash, ishod)));
+        } catch (RenderNedostupan e) {
+            throw e;
+        } catch (RuntimeException e) {
+            oznaciGresku(id, hash, e);
+            return false;
+        }
+    }
+
+    private Ulaz ulazAkoTreba(Varijanta v) {
+        Ulaz ulaz = ulaz(v);
+        return hash(ulaz).equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK ? null : ulaz;
+    }
+
+    /** Pod ključem: upis rendera samo za isti ulaz i kad ga u međuvremenu niko drugi nije osvežio. */
+    private boolean upisiAkoIsti(Long id, String hash, RenderVarijante.Ishod ishod) {
+        Optional<Varijanta> zakljucana = zakljucajAkoPostoji(id);
+        if (zakljucana.isEmpty()) {
+            return false;
+        }
+        Varijanta v = zakljucana.get();
+        String sada = hash(ulaz(v));
+        if (!sada.equals(hash) || (sada.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK)) {
+            return false;
+        }
+        primeniRender(v, hash, ishod);
+        return ishod.ok();
+    }
+
+    /** Greška pre ili posle rendera jedne varijante cele banke: upisuje se kao GRESKA (bez dela), u novoj transakciji. */
+    private void oznaciGresku(Long id, String hash, RuntimeException uzrok) {
+        String poruka = uzrok instanceof SystemException && uzrok.getMessage() != null ? uzrok.getMessage() : RENDER_PAO;
+        if (uzrok instanceof SystemException) {
+            log.warn("Render banke: varijanta {} nije renderovana: {}", id, poruka);
+        } else {
+            log.warn("Render banke: varijanta {} nije renderovana", id, uzrok);
+        }
+        RenderVarijante.Ishod greska = new RenderVarijante.Ishod(false, null, null, new RenderGreskaInfo(null, poruka), null);
+        try {
+            pisi(() -> {
+                zakljucajAkoPostoji(id).filter(v -> hash(ulaz(v)).equals(hash)).ifPresent(v -> primeniRender(v, hash, greska));
+                return null;
+            });
+        } catch (RuntimeException e) {
+            log.warn("Render banke: greška varijante {} nije upisana", id, e);
+        }
     }
 
     // ---------------------------------------------------------------- render i SVG mediji
 
-    /** Renderuje kad je {@code prisilno} ili keš ne važi; vraća da li je renderovano. */
-    private boolean renderujAkoTreba(Varijanta v, boolean prisilno) {
-        String preambula = v.getGrupa().getPredmet().getLatexPreambula();
-        List<PrilogCmd> prilozi = prilozi(v);
-        String hash = renderVarijante.hash(preambula, v.getTekst(), v.getResenje(), prilozi);
+    /** Ulaz rendera: preambula predmeta, tekst, rešenje i prilozi (po imenu kao u heš-u). */
+    private record Ulaz(String preambula, String tekst, String resenje, List<PrilogCmd> prilozi) {
+    }
+
+    /** Render urađen pre ključa: heš ulaza i ishod. */
+    private record Prerender(String hash, RenderVarijante.Ishod ishod) {
+    }
+
+    /** Stanje varijante pročitano pre ključa za odluku o kešu izmene. */
+    private record Procitano(String preambula, String renderHash, RenderStatus renderStatus) {
+    }
+
+    private static Ulaz ulaz(Varijanta v) {
+        return new Ulaz(v.getGrupa().getPredmet().getLatexPreambula(), v.getTekst(), v.getResenje(), prilozi(v));
+    }
+
+    private String hash(Ulaz u) {
+        return renderVarijante.hash(u.preambula(), u.tekst(), u.resenje(), u.prilozi());
+    }
+
+    /** Render van transakcije i bez ključa. */
+    private Prerender renderuj(Ulaz u) {
+        return new Prerender(hash(u), renderVarijante.renderuj(u.preambula(), u.tekst(), u.resenje(), u.prilozi()));
+    }
+
+    /**
+     * Pod ključem: heš zaključanog sadržaja sa trenutnom preambulom. Isti heš i {@code OK} (bez {@code prisilno}) =
+     * ništa; render pre ključa za isti heš se upisuje; inače (preambula ili sadržaj promenjeni posle čitanja, retko) render
+     * pod ključem. Vraća da li je render upisan.
+     */
+    private boolean primeniPosleKljuca(Varijanta v, Prerender pre, boolean prisilno) {
+        Ulaz ulaz = ulaz(v);
+        String hash = hash(ulaz);
         if (!prisilno && hash.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK) {
             return false;
         }
-        primeniRender(v, hash, renderVarijante.renderuj(preambula, v.getTekst(), v.getResenje(), prilozi));
+        RenderVarijante.Ishod ishod;
+        if (pre != null && hash.equals(pre.hash())) {
+            ishod = pre.ishod();
+        } else {
+            log.info("Varijanta {}: ulaz rendera se promenio posle čitanja, render pod ključem", v.getId());
+            ishod = renderVarijante.renderuj(ulaz.preambula(), ulaz.tekst(), ulaz.resenje(), ulaz.prilozi());
+        }
+        primeniRender(v, hash, ishod);
         return true;
     }
 
@@ -374,9 +491,12 @@ public class VarijantaService {
 
     // ---------------------------------------------------------------- provera komande
 
-    /** Proverena komanda; sve se proverava pre zaključavanja, osim odgovora naspram šeme grupe. */
+    /** Proverena komanda, pre svake transakcije; odgovori naspram šeme grupe se proveravaju u transakcijama. */
     private record Sadrzaj(String naziv, String tekst, String resenje, Map<String, OdgovorPolja> odgovori, String odgovoriJson,
                            List<Prilog> prilozi) {
+        List<PrilogCmd> priloziCmd() {
+            return prilozi.stream().map(p -> new PrilogCmd(p.ime(), p.medij().getId())).toList();
+        }
     }
 
     private record Prilog(String ime, Medij medij) {
@@ -439,17 +559,30 @@ public class VarijantaService {
         };
     }
 
-    /** Odgovori naspram šeme polja grupe; zove se posle ključa grupe. Grupa bez polja prima samo prazne odgovore. */
+    /** Nova varijanta: grupa je list (409) sa težinom (409), odgovori po šemi grupe (400). */
+    private void proveriZaNovu(GrupaZadataka g, Sadrzaj s) {
+        if (grupaRepository.countByRoditeljId(g.getId()) > 0) {
+            throw new SystemException(IMA_PODGRUPE, HttpStatus.CONFLICT);
+        }
+        if (g.getTezina() == null) {
+            throw new SystemException(GrupaZadatakaService.TEZINA_OBAVEZNA, HttpStatus.CONFLICT);
+        }
+        proveriOdgovore(g, s.odgovori());
+    }
+
+    /** Odgovori naspram šeme polja grupe. Grupa bez polja prima samo prazne odgovore. */
     private static void proveriOdgovore(GrupaZadataka g, Map<String, OdgovorPolja> odgovori) {
         BankaPP.proveriOdgovore(BankaPP.normalizujPolja(PoljaJson.izKolone(g.getPolja())), odgovori);
     }
 
-    private static void primeni(Varijanta v, Sadrzaj s) {
+    /** Sadržaj komande u varijantu; mediji priloga (pročitani pre transakcije) kao reference u tekućem kontekstu. */
+    private void primeni(Varijanta v, Sadrzaj s) {
         v.setNaziv(s.naziv());
         v.setTekst(s.tekst());
         v.setResenje(s.resenje());
         v.setOdgovori(s.odgovoriJson());
-        primeniPriloge(v, s.prilozi());
+        primeniPriloge(v, s.prilozi().stream()
+                .map(p -> new Prilog(p.ime(), medijRepository.getReferenceById(p.medij().getId()))).toList());
     }
 
     /**
@@ -481,7 +614,7 @@ public class VarijantaService {
 
     // ---------------------------------------------------------------- zaključavanje
 
-    /** Red grupe pa red varijante (404 kad je nema); pre ključa samo id grupe. */
+    /** Red grupe pa red varijante (404 kad je nema); pre ključa samo id grupe (skalar). */
     private Varijanta zakljucaj(Long id) {
         return zakljucajAkoPostoji(id).orElseThrow(VarijantaService::nijePronadjena);
     }
@@ -498,9 +631,26 @@ public class VarijantaService {
         return grupaRepository.findByIdForUpdate(grupaId).orElseThrow(VarijantaService::grupaNijePronadjena);
     }
 
-    private TransactionTemplate transakcija() {
+    /** Kratka transakcija samo za čitanje, bez ključeva. */
+    private <T> T citaj(Supplier<T> posao) {
+        return transakcija(true).execute(status -> {
+            em.clear();
+            return posao.get();
+        });
+    }
+
+    /** Kratka transakcija za upis (ključevi grupa pa varijanta). */
+    private <T> T pisi(Supplier<T> posao) {
+        return transakcija(false).execute(status -> {
+            em.clear();   // open-in-view: bez ovoga bi ključ vratio entitet pročitan ranije u istom zahtevu
+            return posao.get();
+        });
+    }
+
+    private TransactionTemplate transakcija(boolean samoCitanje) {
         TransactionTemplate tx = new TransactionTemplate(transakcije);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        tx.setReadOnly(samoCitanje);
         return tx;
     }
 

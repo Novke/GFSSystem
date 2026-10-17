@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.orm.jpa.EntityManagerHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.banka.*;
@@ -40,7 +41,8 @@ import static org.mockito.Mockito.*;
 /**
  * {@link VarijantaService} nad pravom MySQL bazom (Flyway V1..V11, kao CI) sa lažnim {@link LatexRender} beanom koji
  * vraća fiksni SVG: upis reda, priloga i SVG medija (red i fajl), keš po hešu, brisanje SVG medija i fajlova,
- * zaključavanje (grupa pa varijanta, drugi upis čeka prvi) i render cele banke u zasebnim transakcijama. Bez
+ * zaključavanje (grupa pa varijanta; render van transakcije i bez ključa, pa upis koji ne renderuje ne čeka tuđi render)
+ * i render cele banke u zasebnim transakcijama, uz preskakanje loše varijante. Bez
  * {@code @Transactional}: svaki poziv servisa se zaista commit-uje, pa test čisti za sobom kroz JDBC.
  */
 @SpringBootTest
@@ -99,7 +101,7 @@ class VarijantaServiceDbTest {
     }
 
     static RenderOdgovor uspeh() {
-        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(SVG), null, null, null, 7L);
+        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(SVG), null, null, null, 7L, false);
     }
 
     VarijantaCmd cmd(String tekst) {
@@ -226,24 +228,80 @@ class VarijantaServiceDbTest {
 
         CompletableFuture<VarijantaDetails> prvi = CompletableFuture.supplyAsync(() -> service.izmeni(d.id(), cmd("Prvi upis.")));
         assertTrue(uRenderu.await(10, TimeUnit.SECONDS));
-        CompletableFuture<VarijantaDetails> drugi = CompletableFuture.supplyAsync(() -> service.izmeni(d.id(), cmd("Drugi upis.")));
-        Thread.sleep(1000);
-        assertFalse(drugi.isDone(), "drugi upis čeka ključ dok prvi renderuje");
-        assertEquals("Početni tekst.", red(d.id()).get("tekst"));
+        // render ide pre ključa: drugi upis prolazi ceo dok prvi još renderuje
+        VarijantaDetails r = CompletableFuture.supplyAsync(() -> service.izmeni(d.id(), cmd("Drugi upis.")))
+                .get(30, TimeUnit.SECONDS);
+        assertEquals("Drugi upis.", red(d.id()).get("tekst"));
+        assertFalse(prvi.isDone());
 
         pusti.countDown();
         VarijantaDetails p = prvi.get(30, TimeUnit.SECONDS);
-        VarijantaDetails r = drugi.get(30, TimeUnit.SECONDS);
 
         assertEquals("Prvi upis.", p.tekst());
         assertEquals("Drugi upis.", r.tekst());
         Map<String, Object> red = red(d.id());
-        assertEquals("Drugi upis.", red.get("tekst"));
+        assertEquals("Prvi upis.", red.get("tekst"), "pobeđuje poslednji upis pod ključem");
         assertEquals("OK", red.get("render_status"));
-        assertEquals(r.svgId(), red.get("render_svg_id"));
+        assertEquals(p.svgId(), red.get("render_svg_id"));
+        assertEquals(service.detalji(d.id()).svgId(), p.svgId());
         assertNotEquals(p.svgId(), r.svgId());
-        assertFalse(medijRepository.existsById(p.svgId()), "SVG prvog upisa briše drugi, posle svog rendera");
+        assertFalse(medijRepository.existsById(r.svgId()), "SVG drugog upisa briše prvi, pod ključem");
+        assertFalse(postojiFajl(r.svgId()));
         assertFalse(medijRepository.existsById(d.svgId()));
+        assertTrue(postojiFajl(p.svgId()));
+    }
+
+    @Test
+    void renderKlijentSeNeZoveUTransakcijiNiDokSeDrziKljucGrupe() {
+        List<String> prekrsaji = Collections.synchronizedList(new ArrayList<>());
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenAnswer(inv -> {
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                prekrsaji.add("transakcija aktivna");
+            }
+            try {
+                // posebna transakcija i veza: ključ grupe mora biti slobodan
+                TransactionTemplate nova = new TransactionTemplate(transakcije);
+                nova.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                nova.executeWithoutResult(tx ->
+                        jdbc.queryForList("select id from grupe_zadataka where id = ? for update nowait", grupa.id()));
+            } catch (RuntimeException e) {
+                prekrsaji.add("ključ grupe zauzet: " + e.getClass().getSimpleName());
+            }
+            return uspeh();
+        });
+
+        VarijantaDetails d = service.kreiraj(grupa.id(), cmd("Prva."));
+        service.izmeni(d.id(), cmd("Prva, izmenjena."));
+        service.render(d.id());
+        VarijantaDetails k = service.dupliraj(d.id());
+        jdbc.update("update varijante set render_hash = null where id in (?, ?)", d.id(), k.id());
+        assertEquals(new RenderujSveInfo(2, 0), service.renderujSve(predmet.getId()));
+
+        verify(latexRender, times(12)).renderuj(eq("svg"), anyString(), anyList());
+        assertEquals(List.of(), prekrsaji);
+    }
+
+    @Test
+    void renderujSvePreskaceVarijantuCijiPrilogNemaFajlINastavlja() throws Exception {
+        VarijantaDetails losa = service.kreiraj(grupa.id(), cmd("Sa prilogom."));
+        service.odobri(losa.id());
+        VarijantaDetails dobra = service.kreiraj(grupa.id(),
+                new VarijantaCmd(null, "Bez priloga.", null, ODGOVOR_A, List.of(), null));
+        jdbc.update("update varijante set render_hash = null where id in (?, ?)", losa.id(), dobra.id());
+        Files.delete(Path.of(medijiDir).resolve(png));   // red medija postoji, fajl ne
+        clearInvocations(latexRender);
+
+        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(predmet.getId()));
+
+        Map<String, Object> l = red(losa.id());
+        assertEquals("GRESKA", l.get("render_status"));
+        assertEquals("NACRT", l.get("status"));
+        assertEquals("Slika nije pronađena.", l.get("render_greska"));
+        assertNotNull(l.get("render_hash"));
+        assertEquals(losa.svgId(), l.get("render_svg_id"));
+        assertEquals("OK", red(dobra.id()).get("render_status"));
+        verify(latexRender, times(1)).renderuj(eq("svg"), anyString(), anyList());
+        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(predmet.getId()));
     }
 
     @Test

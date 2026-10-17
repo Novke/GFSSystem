@@ -52,12 +52,12 @@ class RenderVarijanteTest {
     }
 
     static RenderOdgovor uspeh(byte[] svg) {
-        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(svg), null, null, null, 12L);
+        return new RenderOdgovor(true, Base64.getEncoder().encodeToString(svg), null, null, null, 12L, false);
     }
 
     /** Neuspeh kompilacije kako ga šalje servis: greška (linija u dokumentu) i kraj loga. */
     static RenderOdgovor neuspeh(Integer linija, String poruka, String log) {
-        return new RenderOdgovor(false, null, null, new RenderGreskaInfo(linija, poruka), log, null);
+        return new RenderOdgovor(false, null, null, new RenderGreskaInfo(linija, poruka), log, null, false);
     }
 
     void fajl(String id, String mime, VrstaMedija vrsta, byte[] bajtovi) {
@@ -178,9 +178,8 @@ class RenderVarijanteTest {
 
     @Test
     void odbijenZahtevServisa4xxNePrikazujeSirovoTelo() {
-        // LatexRender za 4xx vraća ok=false sa telom odgovora kao porukom i bez loga
-        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenReturn(new RenderOdgovor(false, null, null,
-                new RenderGreskaInfo(null, "<html><body>413 Request Entity Too Large</body></html>"), null, null));
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList()))
+                .thenReturn(RenderOdgovor.odbijen("<html><body>413 Request Entity Too Large</body></html>"));
 
         RenderVarijante.Ishod ishod = render.renderuj(null, "Tekst.", null, List.of());
 
@@ -189,9 +188,19 @@ class RenderVarijanteTest {
     }
 
     @Test
+    void neuspehBezLogaKojiNijeOdbijanjeZadrzavaPorukuServisa() {
+        // samo eksplicitni marker znači odbijen zahtev, ne odsustvo loga
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenReturn(new RenderOdgovor(false, null, null,
+                new RenderGreskaInfo(null, "Dokument nema stranica."), null, null, false));
+
+        assertEquals(new RenderGreskaInfo(null, "Dokument nema stranica."),
+                render.renderuj(null, "Tekst.", null, List.of()).greska());
+    }
+
+    @Test
     void neispravanBase64UOdgovoruJeNedostupanServis() {
         when(latexRender.renderuj(eq("svg"), anyString(), anyList()))
-                .thenReturn(new RenderOdgovor(true, "nije base64 !!", null, null, null, 1L));
+                .thenReturn(new RenderOdgovor(true, "nije base64 !!", null, null, null, 1L, false));
 
         SystemException e = assertThrows(SystemException.class, () -> render.renderuj(null, "Tekst.", null, List.of()));
         assertEquals(503, e.getCode());
@@ -283,6 +292,10 @@ class RenderVarijanteTest {
         RenderVarijante.Greska g = RenderVarijante.izKolone(bezLinije);
         assertEquals(new RenderVarijante.Greska("tekst", null, "Prevelik izlaz: 6 MB.\nkraj"), g);
         assertEquals(new RenderGreskaInfo(null, "Prevelik izlaz: 6 MB.\nkraj"), g.info());
+
+        // greška pre prevođenja (render cele banke): bez dela, samo poruka
+        assertEquals("Slika nije pronađena.", RenderVarijante.uKolonu(null, new RenderGreskaInfo(null, "Slika nije pronađena.")));
+        assertEquals(new RenderVarijante.Greska(null, null, "Slika nije pronađena."), RenderVarijante.izKolone("Slika nije pronađena."));
 
         assertNull(RenderVarijante.izKolone(null));
         // zapis bez dela (stariji ili ručni red) ostaje cela poruka

@@ -34,7 +34,7 @@ import java.util.stream.Stream;
  * sa delom i linijom relativnom na taj deo, nijedan SVG). Poruka greške: red {@code dokument.tex:N:} iz loga
  * ({@link LatexGreska#izLoga}); kad ga u kraju loga nema (greška iz paketa, istek vremena, red ispao iz poslednjih
  * linija), poruka i linija koje je našao servis (linija svedena na deo); bez obe opšta poruka. Odbijen zahtev (4xx,
- * {@link LatexRender} ga vraća bez loga, sa telom odgovora) nikad ne prikazuje telo: nastavnik dobija opštu poruku,
+ * {@link RenderOdgovor#odbijen()}, poruka je telo odgovora) nikad ne prikazuje telo: nastavnik dobija opštu poruku,
  * telo ide u log.
  */
 @Service
@@ -128,8 +128,12 @@ public class RenderVarijante {
         return ekstenzija;
     }
 
-    /** Zapis greške u kolonu {@code render_greska}; čita ga {@link #izKolone}. */
+    /**
+     * Zapis greške u kolonu {@code render_greska}; čita ga {@link #izKolone}. Bez dela (greška pre prevođenja, npr. prilog
+     * bez fajla) samo poruka.
+     */
     public static String uKolonu(String deo, RenderGreskaInfo greska) {
+        if (deo == null) return greska.poruka();
         return deo + ":" + (greska.linija() == null ? "" : greska.linija()) + ": " + greska.poruka();
     }
 
@@ -181,8 +185,8 @@ public class RenderVarijante {
 
     private static RenderGreskaInfo greska(RenderOdgovor odgovor, int pomakLinija) {
         RenderGreskaInfo servis = odgovor.greska();
-        if (odgovor.log() == null) {
-            // samo odbijen zahtev (4xx) stiže bez loga: telo odgovora nije za nastavnika
+        if (odgovor.odbijen()) {
+            // poruka odbijenog zahteva (4xx) je telo odgovora servisa, nije za nastavnika
             log.warn("Render servis je odbio zahtev: {}", servis == null ? null : servis.poruka());
             return new RenderGreskaInfo(null, LatexRender.ODBIJEN_ZAHTEV);
         }

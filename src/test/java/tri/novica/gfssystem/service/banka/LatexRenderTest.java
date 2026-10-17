@@ -55,7 +55,7 @@ class LatexRenderTest {
 
         RenderOdgovor o = render.renderuj("svg", "x^2", PRILOZI);
 
-        assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 123L));
+        assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 123L, false));
         server.verify();
     }
 
@@ -115,7 +115,7 @@ class LatexRenderTest {
 
         RenderOdgovor o = render.renderuj("svg", "\\foo", List.of());
 
-        assertThat(o).isEqualTo(new RenderOdgovor(false, null, null, new RenderGreskaInfo(3, "x"), "! x", null));
+        assertThat(o).isEqualTo(new RenderOdgovor(false, null, null, new RenderGreskaInfo(3, "x"), "! x", null, false));
     }
 
     @Test
@@ -176,8 +176,7 @@ class LatexRenderTest {
 
         RenderOdgovor o = render.renderuj("png", "x", List.of());
 
-        assertThat(o).isEqualTo(new RenderOdgovor(false, null, null,
-                new RenderGreskaInfo(null, "format mora biti svg ili pdf"), null, null));
+        assertThat(o).isEqualTo(RenderOdgovor.odbijen("format mora biti svg ili pdf"));
     }
 
     @Test
@@ -221,7 +220,20 @@ class LatexRenderTest {
         RenderOdgovor o = render.renderuj("svg", "x", List.of());
 
         assertThat(o.ok()).isFalse();
+        assertThat(o.odbijen()).isTrue();
         assertThat(o.greska()).isEqualTo(new RenderGreskaInfo(null, "Render servis je odbio zahtev."));
+    }
+
+    @Test
+    void odbijenSeNeCitaIzJsonaServisa() {
+        server.expect(requestTo(URL + "/render")).andRespond(withSuccess(
+                "{\"ok\":false,\"greska\":{\"linija\":null,\"poruka\":\"x\"},\"log\":\"! x\",\"odbijen\":true}",
+                MediaType.APPLICATION_JSON));
+
+        RenderOdgovor o = render.renderuj("svg", "x", List.of());
+
+        assertThat(o.odbijen()).isFalse();
+        assertThat(o.greska()).isEqualTo(new RenderGreskaInfo(null, "x"));
     }
 
     @Test
@@ -290,7 +302,7 @@ class LatexRenderTest {
 
             RenderOdgovor o = klijent(30).renderuj("svg", "čšž", PRILOZI);
 
-            assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 5L));
+            assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 5L, false));
             assertThat(contentType.get()).startsWith("application/json");
             assertThat(primljeno.get()).contains("\"format\":\"svg\"", "\"tex\":\"čšž\"", "\"timeoutSekunde\":20");
         }

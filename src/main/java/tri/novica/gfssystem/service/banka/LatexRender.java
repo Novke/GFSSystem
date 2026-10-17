@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +30,7 @@ import java.util.List;
  * <p>
  * Neuspeh kompilacije nije izuzetak: stiže kao {@code ok=false} sa greškom (servis odgovara 200). Servis koji ne radi
  * (veza, timeout, 5xx, odgovor koji se ne čita ili je bez sadržaja) je {@link RenderNedostupan}; 4xx servisa (zahtev
- * odbijen) se vraća kao {@code ok=false} sa telom odgovora kao porukom.
+ * odbijen) se vraća kao {@link RenderOdgovor#odbijen(String)} ({@code ok=false}, {@code odbijen=true}, telo odgovora kao poruka).
  */
 @Service
 @Slf4j
@@ -78,11 +79,12 @@ public class LatexRender {
     public RenderOdgovor renderuj(String format, String tex, List<RenderPrilog> prilozi) {
         RenderZahtev zahtev = new RenderZahtev(format, tex, prilozi == null ? List.of() : prilozi, timeoutServisa);
         try {
-            RenderOdgovor odgovor = klijent.post().uri("/render")
+            Telo telo = klijent.post().uri("/render")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(zahtev)
                     .retrieve()
-                    .body(RenderOdgovor.class);
+                    .body(Telo.class);
+            RenderOdgovor odgovor = telo == null ? null : telo.odgovor();
             if (!upotrebljiv(odgovor, format)) {
                 log.warn("Render servis je vratio odgovor bez sadržaja.");
                 throw new RenderNedostupan();
@@ -90,10 +92,18 @@ public class LatexRender {
             return odgovor;
         } catch (HttpClientErrorException e) {
             log.warn("Render servis je odbio zahtev: HTTP {}", e.getStatusCode().value());
-            return new RenderOdgovor(false, null, null, new RenderGreskaInfo(null, porukaOdbijanja(e)), null, null);
+            return RenderOdgovor.odbijen(porukaOdbijanja(e));
         } catch (RestClientException e) {
             log.warn("Render servis nije dostupan: {}", opis(e));
             throw new RenderNedostupan(e);
+        }
+    }
+
+    /** JSON telo odgovora servisa; nepoznata polja se ignorišu, a {@code odbijen} u {@link RenderOdgovor} postavlja samo ovaj klijent. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record Telo(boolean ok, String svg, String pdf, RenderGreskaInfo greska, String log, Long trajanjeMs) {
+        RenderOdgovor odgovor() {
+            return new RenderOdgovor(ok, svg, pdf, greska, log, trajanjeMs, false);
         }
     }
 
