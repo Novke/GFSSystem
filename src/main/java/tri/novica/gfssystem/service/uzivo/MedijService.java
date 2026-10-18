@@ -6,6 +6,8 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.entity.uzivo.Medij;
@@ -21,16 +23,21 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * Fajlovi iz {@code mediji}: bajtovi su fajl {@code <gfs.mediji.dir>/<uuid>}, metapodaci red u tabeli. Tri vrste
- * ({@link VrstaMedija}): slike slajdova i pitanja ({@link #sacuvaj}: PNG, JPEG, GIF, WebP), prilozi zadataka banke
- * ({@link #sacuvajPrilog}: PNG, JPEG, PDF) i SVG koji je renderovao LaTeX ({@link #sacuvajRender}). Tip se prepoznaje po
- * prvim bajtovima (zaglavlje i ekstenziju šalje klijent, pa se ne koriste). Javno se servira samo id u kanonskom UUID
- * obliku, pa putanja na disku ne može izaći iz direktorijuma.
+ * Fajlovi iz {@code mediji}: bajtovi su fajl {@code <gfs.mediji.dir>/<uuid>}, metapodaci red u tabeli. Vrste
+ * ({@link VrstaMedija}): slike slajdova i pitanja ({@link #sacuvaj}: PNG, JPEG, GIF, WebP; {@code SLIKA}), prilozi zadataka
+ * banke ({@link #sacuvajPrilog}: PNG i JPEG kao {@code PRILOG_SLIKA}, PDF kao {@code PRILOG_PDF}) i SVG koji je renderovao
+ * LaTeX ({@link #sacuvajRender}). Tip se prepoznaje po prvim bajtovima (zaglavlje i ekstenziju šalje klijent, pa se ne
+ * koriste). Javno se servira samo id u kanonskom UUID obliku, pa putanja na disku ne može izaći iz direktorijuma.
+ * <p>
+ * <b>Fajl i transakcija:</b> u aktivnoj transakciji {@link #obrisi} briše fajl tek posle commit-a (pad commit-a ostavlja i
+ * red i fajl), a fajl novog medija se briše ako se transakcija poništi (red ne postoji, fajl se nikad ne bi obrisao). Van
+ * transakcije (upload, čišćenje u testovima) red se upisuje odmah u sopstvenoj transakciji repozitorijuma, pa i fajl odmah.
  */
 @Service
 @Slf4j
@@ -40,6 +47,7 @@ public class MedijService {
     public static final String NEDOZVOLJEN_PRILOG = "Dozvoljeni prilozi: PNG, JPEG i PDF.";
     public static final String PRAZAN_FAJL = "Fajl je prazan.";
     public static final String NIJE_PRONADJENA = "Slika nije pronađena.";
+    public static final String NIJE_SLIKA = "Medij nije slika.";
 
     private static final int MAX_NAZIV = 255;
     private static final Pattern UUID_OBLIK =
@@ -90,8 +98,8 @@ public class MedijService {
     }
 
     /**
-     * Prilog zadatka banke: PNG i JPEG (vrsta {@code SLIKA}) ili PDF (vrsta {@code PRILOG_PDF}, javno se ne servira).
-     * Bez GIF-a i WebP-a: LaTeX ih ne može uključiti.
+     * Prilog zadatka banke: PNG i JPEG (vrsta {@code PRILOG_SLIKA}) ili PDF (vrsta {@code PRILOG_PDF}); nijedan se javno
+     * ne servira. Bez GIF-a i WebP-a: LaTeX ih ne može uključiti.
      */
     public MedijInfo sacuvajPrilog(MultipartFile fajl) {
         return sacuvaj(fajl, MedijService::tipPriloga, NEDOZVOLJEN_PRILOG);
@@ -144,6 +152,17 @@ public class MedijService {
             obrisiFajl(cilj);   // fajl bez reda se nikad ne bi servirao
             throw e;
         }
+        if (uTransakciji()) {
+            // ni posle poništene transakcije (npr. pad commit-a novog rendera) ne sme ostati fajl bez reda
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == STATUS_ROLLED_BACK) {
+                        obrisiFajl(cilj);
+                    }
+                }
+            });
+        }
         log.info("Medij sačuvan: id={}, vrsta={}, mime={}, velicina={}", medij.getId(), tip.vrsta(), tip.mime(), medij.getVelicina());
         return new MedijInfo(medij.getId(), medij.getNaziv(), tip.mime(), medij.getVelicina());
     }
@@ -170,17 +189,37 @@ public class MedijService {
         }
     }
 
-    /** Briše red i fajl; nepoznat id, id koji nije UUID i fajl koji ne postoji nisu greška. */
+    /**
+     * Briše red i fajl; nepoznat id, id koji nije UUID i fajl koji ne postoji nisu greška. U aktivnoj transakciji fajl se
+     * briše tek posle commit-a: ako commit padne (npr. strani ključ na red medija), red i fajl ostaju zajedno.
+     */
     public void obrisi(String id) {
         if (!jeUuid(id)) {
             return;
         }
         medijRepository.deleteById(id);   // nepostojeći red se tiho preskače
-        obrisiFajl(dir.resolve(id));
+        Path putanja = dir.resolve(id);
+        if (uTransakciji()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    obrisiFajl(putanja);
+                }
+            });
+        } else {
+            obrisiFajl(putanja);
+        }
     }
 
-    public boolean postoji(String id) {
-        return jeUuid(id) && medijRepository.existsById(id);
+    /** Vrsta medija, prazno za nepoznat id ili id koji nije UUID. */
+    public Optional<VrstaMedija> vrsta(String id) {
+        return jeUuid(id) ? medijRepository.findById(id).map(Medij::getVrsta) : Optional.empty();
+    }
+
+    /** Prava transakcija sa sinhronizacijom (ne samo prazan opseg, npr. {@code NOT_SUPPORTED}). */
+    private static boolean uTransakciji() {
+        return TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive();
     }
 
     private static boolean jeUuid(String id) {
@@ -210,10 +249,10 @@ public class MedijService {
         return null;
     }
 
-    /** Prilog po magic bajtovima (PNG, JPEG, PDF) ili {@code null}. */
+    /** Prilog po magic bajtovima (PNG i JPEG kao {@code PRILOG_SLIKA}, PDF) ili {@code null}. */
     private static Tip tipPriloga(byte[] b) {
         Tip tip = pngIliJpeg(b);
-        if (tip != null) return tip;
+        if (tip != null) return new Tip(tip.mime(), VrstaMedija.PRILOG_SLIKA);
         // %PDF-
         if (pocinje(b, 0, 0x25, 0x50, 0x44, 0x46, 0x2D)) return new Tip("application/pdf", VrstaMedija.PRILOG_PDF);
         return null;

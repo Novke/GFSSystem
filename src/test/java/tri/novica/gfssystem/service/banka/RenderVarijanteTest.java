@@ -123,7 +123,7 @@ class RenderVarijanteTest {
     }
 
     @Test
-    void greskaURresenjuDajeDeoResenjeILinijuRelativnuNaResenjeISvgZadatkaSeNeVraca() {
+    void greskaURresenjuDajeDeoResenjeILinijuRelativnuNaResenjeISvgZadatka() {
         int linija = POMAK + 3;
         when(latexRender.renderuj(eq("svg"), contains("Tekst zadatka"), anyList())).thenReturn(uspeh(SVG));
         when(latexRender.renderuj(eq("svg"), contains("\\foo"), anyList())).thenReturn(neuspeh(linija,
@@ -134,7 +134,7 @@ class RenderVarijanteTest {
         assertFalse(ishod.ok());
         assertEquals("resenje", ishod.deo());
         assertEquals(new RenderGreskaInfo(3, "Undefined control sequence."), ishod.greska());
-        assertNull(ishod.svg());
+        assertArrayEquals(SVG, ishod.svg());   // zadatak se preveo: proba ga prikazuje uz grešku rešenja
         assertNull(ishod.resenjeSvg());
     }
 
@@ -259,7 +259,8 @@ class RenderVarijanteTest {
 
         assertEquals(64, h.length());
         assertEquals(h, render.hash("\\usepackage{amsmath}", "Tekst", "Rešenje", ba));
-        assertEquals(TokenHash.od("\\usepackage{amsmath}\u0000Tekst\u0000Rešenje\u0000a:" + PNG + ",b:" + PDF), h);
+        assertEquals(TokenHash.od(RenderVarijante.RENDER_VERZIJA + "\u0000\\usepackage{amsmath}\u0000Tekst\u0000Rešenje\u0000a:"
+                + PNG + ",b:" + PDF), h);
         assertNotEquals(h, render.hash("\\usepackage{amssymb}", "Tekst", "Rešenje", ab));
         assertNotEquals(h, render.hash("\\usepackage{amsmath}", "Tekst.", "Rešenje", ab));
         assertNotEquals(h, render.hash("\\usepackage{amsmath}", "Tekst", "Rešenje.", ab));
@@ -276,7 +277,18 @@ class RenderVarijanteTest {
 
         assertEquals(podrazumevana, render.hash("  ", "Tekst", null, List.of()));
         assertEquals(podrazumevana, render.hash(LatexDokument.PODRAZUMEVANA_PREAMBULA, "Tekst", "", List.of()));
-        assertEquals(TokenHash.od(LatexDokument.PODRAZUMEVANA_PREAMBULA + "\u0000Tekst\u0000\u0000"), podrazumevana);
+        assertEquals(TokenHash.od(RenderVarijante.RENDER_VERZIJA + "\u0000" + LatexDokument.PODRAZUMEVANA_PREAMBULA
+                + "\u0000Tekst\u0000\u0000"), podrazumevana);
+    }
+
+    @Test
+    void verzijaRenderaJeDeoHesa() {
+        // promena omota dokumenta (LatexDokument) podiže RENDER_VERZIJA, pa svaki stari heš zastari
+        List<PrilogCmd> prilozi = List.of(new PrilogCmd("a", PNG));
+        String sada = render.hash("\\usepackage{amsmath}", "Tekst", "Rešenje", prilozi);
+
+        assertEquals(sada, RenderVarijante.hash(RenderVarijante.RENDER_VERZIJA, "\\usepackage{amsmath}", "Tekst", "Rešenje", prilozi));
+        assertNotEquals(sada, RenderVarijante.hash(RenderVarijante.RENDER_VERZIJA + 1, "\\usepackage{amsmath}", "Tekst", "Rešenje", prilozi));
     }
 
     // ---------------------------------------------------------------- kolona render_greska

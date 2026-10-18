@@ -35,6 +35,18 @@ class LatexDokumentTest {
     }
 
     @Test
+    void preambulaPocinjePosleOmotaIBrojLinijaJeKaoUDokumentu() {
+        // probni render preambule svodi liniju greške na liniju preambule: linija u dokumentu - POMAK_PREAMBULE
+        String preambula = "\\usepackage{a}\r\n\\usepackage{b}\n\\relax";
+        LatexDokument.Dokument d = LatexDokument.zaTelefon(preambula, "x");
+
+        assertThat(linije(d.tex()).get(LatexDokument.POMAK_PREAMBULE)).isEqualTo("\\usepackage{a}");
+        assertThat(LatexDokument.brojLinijaPreambule(preambula)).isEqualTo(3);
+        assertThat(d.pomakLinija()).isEqualTo(LatexDokument.POMAK_PREAMBULE + 3 + 1);   // + \begin{document}
+        assertThat(LatexDokument.brojLinijaPreambule(null)).isEqualTo((int) LatexDokument.PODRAZUMEVANA_PREAMBULA.lines().count());
+    }
+
+    @Test
     void omotJeStandaloneSaPreambulomIBegindocument() {
         LatexDokument.Dokument d = LatexDokument.zaTelefon("\\usepackage{a}", "tekst $x$");
 

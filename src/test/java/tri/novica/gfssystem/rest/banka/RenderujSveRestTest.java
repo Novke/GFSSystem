@@ -25,12 +25,21 @@ class RenderujSveRestTest {
 
     @Test
     void vraca200IBrojace() throws Exception {
-        when(service.renderujSve(7L)).thenReturn(new RenderujSveInfo(12, 30));
+        when(service.renderujSve(7L)).thenReturn(new RenderujSveInfo(12, 3, 30));
         mvc.perform(post("/banka/predmeti/7/renderuj-sve"))
            .andExpect(status().isOk())
            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
            .andExpect(jsonPath("$.renderovano").value(12))
+           .andExpect(jsonPath("$.neuspelo").value(3))
            .andExpect(jsonPath("$.preostalo").value(30));
+    }
+
+    @Test
+    void drugiIstovremeniPozivJe409() throws Exception {
+        when(service.renderujSve(7L)).thenThrow(new SystemException("Render cele banke za ovaj predmet je već u toku.", HttpStatus.CONFLICT));
+        mvc.perform(post("/banka/predmeti/7/renderuj-sve"))
+           .andExpect(status().isConflict())
+           .andExpect(jsonPath("$.reason").value("Render cele banke za ovaj predmet je već u toku."));
     }
 
     @Test

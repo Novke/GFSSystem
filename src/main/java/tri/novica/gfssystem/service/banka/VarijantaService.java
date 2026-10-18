@@ -34,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -46,10 +47,11 @@ import java.util.stream.Stream;
  * ({@code render_hash} te varijante, nikad tuđem) i render je {@code OK}. Uspeh upisuje nove SVG medije ({@code RENDER_SVG},
  * {@code zadatak-<id>.svg}, {@code resenje-<id>.svg}) pa tek onda briše stare; neuspeh je stanje, ne izuzetak
  * ({@code GRESKA}, greška u {@code render_greska} kao {@code <deo>:<linija>: <poruka>}, stari SVG ostaje), a AKTIVNA tada pada u
- * NACRT (aktivna uvek ima uspeo render). Render servis koji ne radi ({@link RenderNedostupan}, 503) poništava ceo zahtev:
- * ništa se ne upisuje (ni nova varijanta ni izmena), front zadržava unos i ponavlja.
- * {@link MedijService#obrisi} briše fajl odmah, a red pri flush-u, posle upisa koji ga više ne pominje; pad commit-a posle
- * toga ostavlja red medija bez fajla (servira se kao 404), što se prihvata.
+ * NACRT pri čuvanju jedne varijante (kreiranje, izmena, prisilan render, duplikat). Render cele banke ({@link #renderujSve},
+ * posle izmene preambule) ne spušta status: aktivna sa neuspelim renderom ostaje aktivna i prikazuje poslednji uspeo SVG.
+ * Render servis koji ne radi ({@link RenderNedostupan}, 503) poništava ceo zahtev: ništa se ne upisuje (ni nova varijanta ni
+ * izmena), front zadržava unos i ponavlja. {@link MedijService} briše fajl starog SVG-a tek posle commit-a, a fajl novog
+ * briše ako se transakcija poništi: pad commit-a ostavlja varijantu sa starim SVG-om i njegovim fajlom, bez novih siročadi.
  * <p>
  * <b>Render pre ključa</b> (upis u tri koraka): (1) provera komande i kratka transakcija samo za čitanje (pravila grupe i
  * odgovora, preambula, sadržaj koji se renderuje), bez ključa; (2) render, van transakcije i bez ijednog ključa; (3) kratka
@@ -82,15 +84,24 @@ public class VarijantaService {
     static final String ODGOVORI_PREVELIKI = "Odgovori su preveliki.";
     static final String PREVISE_PRILOGA = "Najviše 10 priloga.";
     static final String REZERVISANO_IME = "Ime priloga 'dokument' je rezervisano.";
+    static final String NIJE_PRILOG = "Medij nije prilog zadatka.";
+    static final String PRILOZI_PREVELIKI = "Prilozi su preveliki za render (najviše 40 MB ukupno).";
+    static final String RENDER_SVIH_U_TOKU = "Render cele banke za ovaj predmet je već u toku.";
     /** Render cele banke: greška koja nije SystemException (poruka izuzetka nije za nastavnika). */
     static final String RENDER_PAO = "Render nije uspeo.";
 
-    static final int MAX_PROBA = 4;
+    /** Kontejner prevodi najviše 4 dokumenta odjednom: probe dobijaju 3, jedno mesto ostaje za čuvanje varijante. */
+    static final int MAX_PROBA = 3;
     /** Render cele banke: najviše ovoliko varijanti po pozivu ... */
     static final int MAX_RENDERA_PO_POZIVU = 200;
-    /** ... i ne počinje novu posle ovoliko vremena, da odgovor stigne pre isteka proksija (front nginx čeka 60 s). */
+    /** ... i ne počinje novu posle ovoliko vremena, da odgovor stigne pre isteka proksija (front nginx čeka 120 s). */
     static final Duration MAX_TRAJANJE_RENDERA_SVIH = Duration.ofSeconds(40);
     private static final int MAX_PRILOGA = 10;
+    /**
+     * Prilozi jednog rendera kao base64 (4/3 veličine) plus tekst i rešenje: render servis prima najviše 60 MB tela
+     * ({@code RENDER_MAX_BODY}), ovo ostavlja rezervu.
+     */
+    private static final long MAX_PRILOZI_ZA_RENDER_BAJTOVA = 40L * 1024 * 1024;
     /** Kolona {@code odgovori} je MySQL {@code text}: najviše 65 535 bajtova. */
     private static final int MAX_ODGOVORI_BAJTOVA = 65_535;
     /** Render servis piše {@code dokument.tex}, {@code .pdf} i {@code .log}: prilog tog imena bi ih pregazio. */
@@ -108,6 +119,8 @@ public class VarijantaService {
     private final Clock clock;
     /** Render-proba: najviše {@value #MAX_PROBA} istovremeno po backendu, preko toga 429 (ne čeka se). */
     private final Semaphore probe = new Semaphore(MAX_PROBA);
+    /** Predmeti čiji render cele banke upravo radi (jedan backend): drugi poziv za isti predmet je 409. */
+    private final Set<Long> renderSvihUToku = ConcurrentHashMap.newKeySet();
 
     // ---------------------------------------------------------------- čitanje
 
@@ -277,7 +290,8 @@ public class VarijantaService {
 
     /**
      * Render bez čuvanja, sa preambulom predmeta, za pregled u editoru (i za Claude-a kroz MCP), bez transakcije. Ista
-     * pravila teksta, rešenja i priloga kao upis; najviše {@value #MAX_PROBA} istovremeno (429 preko toga).
+     * pravila teksta, rešenja i priloga kao upis; najviše {@value #MAX_PROBA} istovremeno (429 preko toga). Kad padne samo
+     * rešenje, odgovor nosi i SVG zadatka ({@code ok=false}, {@code deo=resenje}).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RenderProbaInfo proba(RenderProbaCmd cmd) {
@@ -290,7 +304,7 @@ public class VarijantaService {
         String resenje = prazanUNull(cmd.resenje());
         BankaPP.proveriVarijantu(cmd.tekst(), resenje, null);
         RenderVarijante.proveriTelo(cmd.tekst(), resenje);
-        List<PrilogCmd> prilozi = proveriPriloge(cmd.prilozi()).stream()
+        List<PrilogCmd> prilozi = proveriPriloge(cmd.prilozi(), cmd.tekst(), resenje).stream()
                 .map(p -> new PrilogCmd(p.ime(), p.medij().getId())).toList();
         Predmet predmet = predmetRepository.findById(cmd.predmetId()).orElseThrow(VarijantaService::predmetNijePronadjen);
         if (!probe.tryAcquire()) {
@@ -310,36 +324,53 @@ public class VarijantaService {
      * zaključanog sadržaja sa trenutnom preambulom jednak renderovanom (inače se rezultat odbacuje i varijanta ostaje
      * zastarela). Prvo zastarele (heš sadržaja se razlikuje od poslednjeg rendera ili render čeka), pa one čiji je
      * poslednji render istog sadržaja pao; najviše {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle
-     * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Loša varijanta ne zaustavlja petlju: {@link SystemException} (npr. prilog bez fajla,
-     * komanda koju je deny-lista u međuvremenu zabranila) i drugi {@link RuntimeException} se upisuju kao {@code GRESKA} sa
-     * porukom izuzetka (ili opštom) i hešom njenog sadržaja (AKTIVNA pada u NACRT), pa se ide dalje; upis se preskače ako je
-     * varijanta u međuvremenu već uspešno renderovana istim sadržajem. Greške okruženja prekidaju poziv bez ikakvog
-     * označavanja: 503 servisa ({@link RenderNedostupan}), {@link DataAccessException}, {@link PersistenceException},
-     * {@link TransactionException} i {@link UncheckedIOException} (npr. pun disk pri upisu SVG-a); već upisane ostaju. {@code renderovano} broji samo uspele ({@code OK}) rendere; {@code preostalo} samo zastarele koje nisu stigle
-     * na red, pa front koji zove dok je {@code preostalo > 0} uvek stane.
+     * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Neuspeo render <b>ne spušta status</b>: upisuje se samo {@code GRESKA} i poruka, a
+     * varijanta (i AKTIVNA) zadržava status i poslednji uspeo SVG, jer jedna greška u preambuli obara svaku varijantu. Loša
+     * varijanta ne zaustavlja petlju: {@link SystemException} (npr. prilog bez fajla, komanda koju je deny-lista u
+     * međuvremenu zabranila) i drugi {@link RuntimeException} se upisuju kao {@code GRESKA} sa porukom izuzetka (ili opštom) i
+     * hešom njenog sadržaja, pa se ide dalje; upis se preskače ako je varijanta u međuvremenu već uspešno renderovana istim
+     * sadržajem. Greške okruženja prekidaju poziv bez ikakvog označavanja: 503 servisa ({@link RenderNedostupan}),
+     * {@link DataAccessException}, {@link PersistenceException}, {@link TransactionException} i {@link UncheckedIOException}
+     * (npr. pun disk pri upisu SVG-a); već upisane ostaju. {@code renderovano} broji uspele ({@code OK}) rendere,
+     * {@code neuspelo} upisane {@code GRESKA}, {@code preostalo} samo zastarele koje nisu stigle na red, pa front koji zove
+     * dok je {@code preostalo > 0} uvek stane. Jedan poziv po predmetu u isto vreme (u memoriji, jedan backend): drugi je 409.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RenderujSveInfo renderujSve(Long predmetId) {
         if (predmetId == null) {
             throw new SystemException(GrupaZadatakaService.PREDMET_OBAVEZAN, HttpStatus.BAD_REQUEST);
         }
-        Kandidati kandidati = citaj(() -> kandidati(predmetId));
-        Instant rok = clock.instant().plus(MAX_TRAJANJE_RENDERA_SVIH);
-        int obradjeno = 0;
-        int renderovano = 0;
-        for (Long id : kandidati.redom()) {
-            if (obradjeno == MAX_RENDERA_PO_POZIVU || !clock.instant().isBefore(rok)) {
-                break;
-            }
-            obradjeno++;
-            if (renderujJednu(id)) {
-                renderovano++;
-            }
+        if (!renderSvihUToku.add(predmetId)) {
+            throw new SystemException(RENDER_SVIH_U_TOKU, HttpStatus.CONFLICT);
         }
-        int preostalo = Math.max(0, kandidati.zastarelih() - obradjeno);
-        log.info("Render banke predmeta {}: renderovano={}, preostalo={}", predmetId, renderovano, preostalo);
-        return new RenderujSveInfo(renderovano, preostalo);
+        try {
+            Kandidati kandidati = citaj(() -> kandidati(predmetId));
+            Instant rok = clock.instant().plus(MAX_TRAJANJE_RENDERA_SVIH);
+            int obradjeno = 0;
+            int renderovano = 0;
+            int neuspelo = 0;
+            for (Long id : kandidati.redom()) {
+                if (obradjeno == MAX_RENDERA_PO_POZIVU || !clock.instant().isBefore(rok)) {
+                    break;
+                }
+                obradjeno++;
+                switch (renderujJednu(id)) {
+                    case USPEO -> renderovano++;
+                    case PAO -> neuspelo++;
+                    case PRESKOCEN -> { }
+                }
+            }
+            int preostalo = Math.max(0, kandidati.zastarelih() - obradjeno);
+            log.info("Render banke predmeta {}: renderovano={}, neuspelo={}, preostalo={}", predmetId, renderovano, neuspelo,
+                    preostalo);
+            return new RenderujSveInfo(renderovano, neuspelo, preostalo);
+        } finally {
+            renderSvihUToku.remove(predmetId);
+        }
     }
+
+    /** Šta je render cele banke upisao za jednu varijantu. */
+    private enum UpisRendera { USPEO, PAO, PRESKOCEN }
 
     /** Id-jevi za render cele banke: prvih {@code zastarelih} su zastarele, ostatak pale istog sadržaja; obe grupe po id-ju. */
     private record Kandidati(List<Long> redom, int zastarelih) {
@@ -361,22 +392,21 @@ public class VarijantaService {
         return new Kandidati(Stream.concat(zastarele.stream(), pale.stream()).toList(), zastarele.size());
     }
 
-    /** Jedna varijanta cele banke; {@code true} samo kad je upisan uspeo render. */
-    private boolean renderujJednu(Long id) {
+    /** Jedna varijanta cele banke: upisan uspeh, upisana greška ili ništa (nestala, osvežena ili promenjena u međuvremenu). */
+    private UpisRendera renderujJednu(Long id) {
         Ulaz ulaz = citaj(() -> varijantaRepository.findById(id).map(this::ulazAkoTreba).orElse(null));
         if (ulaz == null) {
-            return false;   // nestala ili ju je neko u međuvremenu renderovao
+            return UpisRendera.PRESKOCEN;   // nestala ili ju je neko u međuvremenu renderovao
         }
         String hash = hash(ulaz);
         try {
             RenderVarijante.Ishod ishod = renderVarijante.renderuj(ulaz.preambula(), ulaz.tekst(), ulaz.resenje(), ulaz.prilozi());
-            return Boolean.TRUE.equals(pisi(() -> upisiAkoIsti(id, hash, ishod)));
+            return pisi(() -> upisiAkoIsti(id, hash, ishod));
         } catch (RuntimeException e) {
             if (jeInfrastrukturna(e)) {
-                throw e;   // pun disk ili pad baze ne sme da spusti sve aktivne varijante u NACRT
+                throw e;   // pun disk ili pad baze ne sme da označi celu banku kao neuspelu
             }
-            oznaciGresku(id, hash, e);
-            return false;
+            return oznaciGresku(id, hash, e) ? UpisRendera.PAO : UpisRendera.PRESKOCEN;
         }
     }
 
@@ -395,23 +425,26 @@ public class VarijantaService {
         return hash(ulaz).equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK ? null : ulaz;
     }
 
-    /** Pod ključem: upis rendera samo za isti ulaz i kad ga u međuvremenu niko drugi nije osvežio. */
-    private boolean upisiAkoIsti(Long id, String hash, RenderVarijante.Ishod ishod) {
+    /** Pod ključem: upis rendera samo za isti ulaz i kad ga u međuvremenu niko drugi nije osvežio; status se ne menja. */
+    private UpisRendera upisiAkoIsti(Long id, String hash, RenderVarijante.Ishod ishod) {
         Optional<Varijanta> zakljucana = zakljucajAkoPostoji(id);
         if (zakljucana.isEmpty()) {
-            return false;
+            return UpisRendera.PRESKOCEN;
         }
         Varijanta v = zakljucana.get();
         String sada = hash(ulaz(v));
         if (!sada.equals(hash) || (sada.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK)) {
-            return false;
+            return UpisRendera.PRESKOCEN;
         }
-        primeniRender(v, hash, ishod);
-        return ishod.ok();
+        primeniRender(v, hash, ishod, false);
+        return ishod.ok() ? UpisRendera.USPEO : UpisRendera.PAO;
     }
 
-    /** Greška pre ili posle rendera jedne varijante cele banke: upisuje se kao GRESKA (bez dela), u novoj transakciji. */
-    private void oznaciGresku(Long id, String hash, RuntimeException uzrok) {
+    /**
+     * Greška pre ili posle rendera jedne varijante cele banke: upisuje se kao GRESKA (bez dela, status ostaje), u novoj
+     * transakciji. Vraća da li je upisana.
+     */
+    private boolean oznaciGresku(Long id, String hash, RuntimeException uzrok) {
         String poruka = uzrok instanceof SystemException && uzrok.getMessage() != null ? uzrok.getMessage() : RENDER_PAO;
         if (uzrok instanceof SystemException) {
             log.warn("Render banke: varijanta {} nije renderovana: {}", id, poruka);
@@ -420,15 +453,16 @@ public class VarijantaService {
         }
         RenderVarijante.Ishod greska = new RenderVarijante.Ishod(false, null, null, new RenderGreskaInfo(null, poruka), null);
         try {
-            pisi(() -> {
-                zakljucajAkoPostoji(id)
+            return pisi(() -> {
+                Optional<Varijanta> zaUpis = zakljucajAkoPostoji(id)
                         .filter(v -> hash(ulaz(v)).equals(hash))
-                        .filter(v -> !(hash.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK))   // neko ju je u međuvremenu uspešno renderovao
-                        .ifPresent(v -> primeniRender(v, hash, greska));
-                return null;
+                        .filter(v -> !(hash.equals(v.getRenderHash()) && v.getRenderStatus() == RenderStatus.OK));   // neko ju je u međuvremenu uspešno renderovao
+                zaUpis.ifPresent(v -> primeniRender(v, hash, greska, false));
+                return zaUpis.isPresent();
             });
         } catch (RuntimeException e) {
             log.warn("Render banke: greška varijante {} nije upisana", id, e);
+            return false;
         }
     }
 
@@ -477,19 +511,24 @@ public class VarijantaService {
             log.info("Varijanta {}: ulaz rendera se promenio posle čitanja, render pod ključem", v.getId());
             ishod = renderVarijante.renderuj(ulaz.preambula(), ulaz.tekst(), ulaz.resenje(), ulaz.prilozi());
         }
-        primeniRender(v, hash, ishod);
+        primeniRender(v, hash, ishod, true);
         return true;
     }
 
-    private void primeniRender(Varijanta v, String hash, RenderVarijante.Ishod ishod) {
+    /**
+     * Upisuje ishod rendera. Neuspeh: {@code GRESKA} i poruka, stari SVG par ostaje do sledećeg uspešnog rendera (ni SVG
+     * zadatka koji se preveo kad je palo samo rešenje ne zamenjuje stari: zadatak i rešenje su uvek iz istog rendera), a
+     * AKTIVNA pada u NACRT samo kad je {@code spustiAktivnu} (čuvanje jedne varijante, ne render cele banke).
+     */
+    private void primeniRender(Varijanta v, String hash, RenderVarijante.Ishod ishod, boolean spustiAktivnu) {
         v.setRenderHash(hash);
         if (!ishod.ok()) {
             v.setRenderStatus(RenderStatus.GRESKA);
             v.setRenderGreska(RenderVarijante.uKolonu(ishod.deo(), ishod.greska()));
-            if (v.getStatus() == StatusVarijante.AKTIVNA) {
+            if (spustiAktivnu && v.getStatus() == StatusVarijante.AKTIVNA) {
                 promeniStatus(v, StatusVarijante.NACRT);
             }
-            return;   // stari SVG ostaje do sledećeg uspešnog rendera
+            return;
         }
         List<String> stari = svgIds(v);
         v.setRenderSvg(sacuvajSvg(ishod.svg(), "zadatak-" + v.getId() + ".svg"));
@@ -538,14 +577,16 @@ public class VarijantaService {
         if (json.getBytes(StandardCharsets.UTF_8).length > MAX_ODGOVORI_BAJTOVA) {
             throw new SystemException(ODGOVORI_PREVELIKI, HttpStatus.BAD_REQUEST);
         }
-        return new Sadrzaj(naziv, cmd.tekst(), resenje, odgovori, json, proveriPriloge(cmd.prilozi()));
+        return new Sadrzaj(naziv, cmd.tekst(), resenje, odgovori, json, proveriPriloge(cmd.prilozi(), cmd.tekst(), resenje));
     }
 
     /**
      * Do {@value #MAX_PRILOGA} priloga, ime po {@code BankaPP.proveriImePriloga}, ne {@value #REZERVISANO}, jedinstveno;
-     * medij postoji i LaTeX ga može uključiti: slika PNG ili JPEG (ne GIF, WebP) ili PDF prilog (ne render SVG).
+     * medij postoji i otpremljen je kao prilog ({@code POST /banka/prilozi}: {@code PRILOG_SLIKA} PNG/JPEG ili
+     * {@code PRILOG_PDF}; slika slajda je javna, render SVG LaTeX ne uključuje); ukupno, kao base64 sa tekstom i rešenjem,
+     * najviše 40 MB (telo zahteva render servisu).
      */
-    private List<Prilog> proveriPriloge(List<PrilogCmd> prilozi) {
+    private List<Prilog> proveriPriloge(List<PrilogCmd> prilozi, String tekst, String resenje) {
         List<PrilogCmd> lista = prilozi == null ? List.of() : prilozi;
         if (lista.size() > MAX_PRILOGA) {
             throw new SystemException(PREVISE_PRILOGA, HttpStatus.BAD_REQUEST);
@@ -565,20 +606,33 @@ public class VarijantaService {
             }
             Medij medij = (p.medijId() == null ? Optional.<Medij>empty() : medijRepository.findById(p.medijId()))
                     .orElseThrow(() -> new SystemException("Prilog '" + p.ime() + "' nije pronađen.", HttpStatus.BAD_REQUEST));
-            if (!zaLatex(medij)) {
-                throw new SystemException(RenderVarijante.NEDOZVOLJEN_PRILOG, HttpStatus.BAD_REQUEST);
-            }
+            proveriVrstu(medij);
             rezultat.add(new Prilog(p.ime(), medij));
+        }
+        long ukupno = bajtova(tekst) + bajtova(resenje);
+        for (Prilog p : rezultat) {
+            ukupno += (p.medij().getVelicina() + 2) / 3 * 4;   // base64
+        }
+        if (ukupno > MAX_PRILOZI_ZA_RENDER_BAJTOVA) {
+            throw new SystemException(PRILOZI_PREVELIKI, HttpStatus.BAD_REQUEST);
         }
         return rezultat;
     }
 
-    private static boolean zaLatex(Medij m) {
-        return switch (m.getVrsta()) {
-            case SLIKA -> "image/png".equals(m.getMime()) || "image/jpeg".equals(m.getMime());
+    /** Prilog je samo medij otpremljen kao prilog, i to PNG, JPEG ili PDF (po mime-u iz baze). */
+    private static void proveriVrstu(Medij m) {
+        boolean zaLatex = switch (m.getVrsta()) {
+            case PRILOG_SLIKA -> "image/png".equals(m.getMime()) || "image/jpeg".equals(m.getMime());
             case PRILOG_PDF -> "application/pdf".equals(m.getMime());
-            case RENDER_SVG -> false;
+            case SLIKA, RENDER_SVG -> throw new SystemException(NIJE_PRILOG, HttpStatus.BAD_REQUEST);
         };
+        if (!zaLatex) {
+            throw new SystemException(RenderVarijante.NEDOZVOLJEN_PRILOG, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private static long bajtova(String s) {
+        return s == null ? 0 : s.getBytes(StandardCharsets.UTF_8).length;
     }
 
     /** Nova varijanta: grupa je list (409) sa težinom (409), odgovori po šemi grupe (400). */

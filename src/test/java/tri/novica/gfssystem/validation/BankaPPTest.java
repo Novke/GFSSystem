@@ -106,6 +106,20 @@ class BankaPPTest {
     }
 
     @Test
+    void normalizujPremaSacuvanojSemiDajeIdIznadNajvecegSacuvanogZaIstiKljuc() {
+        // sačuvano a: 1, 2, 3 (3 je u zahtevu uklonjena); b je novo polje; c je sačuvano bez opcija (BROJ)
+        List<Polje> sacuvana = BankaPP.normalizujPolja(List.of(jedan("a", op("A"), op("B"), op("C")),
+                new Polje("c", "x", TipPolja.BROJ, null, null, null, null, null, null)));
+        List<Polje> n = BankaPP.normalizujPolja(List.of(jedan("a", op(1L, "A"), op(2L, "B"), op("D")),
+                jedan("b", op("P"), op("Q")), jedan("c", op("R"), op("S"))), sacuvana);
+
+        assertEquals(List.of(op(1L, "A"), op(2L, "B"), op(4L, "D")), n.get(0).opcije());
+        assertEquals(List.of(op(1L, "P"), op(2L, "Q")), n.get(1).opcije());
+        assertEquals(List.of(op(1L, "R"), op(2L, "S")), n.get(2).opcije());
+        assertEquals(BankaPP.normalizujPolja(List.of(jedan("a", op("A")))), BankaPP.normalizujPolja(List.of(jedan("a", op("A"))), null));
+    }
+
+    @Test
     void normalizujNeDiraUlaz() {
         Polje p = jedan("a", op("A"), op("B"));
         BankaPP.normalizujPolja(List.of(p));

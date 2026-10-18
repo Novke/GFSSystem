@@ -582,6 +582,44 @@ class GrupaZadatakaServiceTest {
     }
 
     @Test
+    void novaOpcijaBezIdaNePreuzimaIdUklonjeneOpcijeIzSacuvaneSeme() {
+        // sačuvano A=1, B=2, C=3 (C je tačna); klijent (npr. MCP) šalje [1:A, 2:B, D bez id-ja]: D ne sme da postane 3
+        GrupaZadataka list = koren("Automati", 1);
+        list.setTezina(3);
+        list.setPolja(sema(IZBOR_C));
+        Varijanta aktivna = varijanta(list, StatusVarijante.AKTIVNA, RenderStatus.OK, "{\"c\":{\"tacna\":3}}");
+        Polje saD = new Polje("c", "Koji automat?", TipPolja.JEDAN_TACAN, null, null, null, null, null,
+                List.of(new PoljeOpcija(1L, "A"), new PoljeOpcija(2L, "B"), new PoljeOpcija(null, "D")));
+
+        GrupaDetails d = service.izmeni(list.getId(), izmena("Automati", 3, List.of(saD)));
+
+        List<PoljeOpcija> ocekivano = List.of(new PoljeOpcija(1L, "A"), new PoljeOpcija(2L, "B"), new PoljeOpcija(4L, "D"));
+        assertEquals(ocekivano, d.polja().get(0).opcije());
+        assertEquals(ocekivano, PoljaJson.izKolone(list.getPolja()).get(0).opcije());
+        assertEquals("{}", aktivna.getOdgovori(), "tačna opcija 3 je uklonjena, ne preslikana na D");
+        assertEquals(StatusVarijante.NACRT, aktivna.getStatus());
+    }
+
+    @Test
+    void idNoveOpcijeJeIznadNajvecegSacuvanogIDatogZaIstiKljuc() {
+        GrupaZadataka list = koren("Automati", 1);
+        list.setTezina(3);
+        list.setPolja(sema(IZBOR_C, TEKST_B));   // c: 1..3
+        Polje c = new Polje("c", "Koji automat?", TipPolja.VISE_TACNIH, null, null, null, null, null,
+                List.of(new PoljeOpcija(null, "X"), new PoljeOpcija(2L, "B"), new PoljeOpcija(null, "Y")));
+        Polje e = new Polje("e", "Novo polje", TipPolja.JEDAN_TACAN, null, null, null, null, null,
+                List.of(new PoljeOpcija(null, "P"), new PoljeOpcija(null, "Q")));
+        Polje f = new Polje("f", "Dato veće", TipPolja.JEDAN_TACAN, null, null, null, null, null,
+                List.of(new PoljeOpcija(9L, "R"), new PoljeOpcija(null, "S")));
+
+        GrupaDetails d = service.izmeni(list.getId(), izmena("Automati", 3, List.of(c, e, f)));
+
+        assertEquals(List.of(new PoljeOpcija(4L, "X"), new PoljeOpcija(2L, "B"), new PoljeOpcija(5L, "Y")), d.polja().get(0).opcije());
+        assertEquals(List.of(new PoljeOpcija(1L, "P"), new PoljeOpcija(2L, "Q")), d.polja().get(1).opcije());   // novo polje: od 1
+        assertEquals(List.of(new PoljeOpcija(9L, "R"), new PoljeOpcija(10L, "S")), d.polja().get(2).opcije());
+    }
+
+    @Test
     void izmenaBezPoljaNeMenjaSemuNiVarijanteAPraznaListaBriseSemu() {
         GrupaZadataka list = koren("2 → 10", 1);
         list.setTezina(2);

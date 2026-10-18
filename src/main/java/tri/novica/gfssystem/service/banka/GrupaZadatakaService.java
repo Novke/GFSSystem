@@ -174,7 +174,8 @@ public class GrupaZadatakaService {
     /**
      * Puna zamena naziva, opisa, težine i uputstva (predmet, roditelj i namena se ne menjaju); {@code polja == null}
      * ostavlja šemu i varijante netaknute, a brisanje šeme traži {@code []}. Promena šeme prilagođava varijante grupe
-     * (vidi {@link #prilagodiVarijante}); grupa sa varijantama mora imati težinu.
+     * (vidi {@link #prilagodiVarijante}); grupa sa varijantama mora imati težinu. Opcije bez id-ja dobijaju id pod ključem,
+     * iznad najvećeg u sačuvanoj šemi za to polje ({@code BankaPP.normalizujPolja(polja, sacuvana)}).
      */
     public GrupaDetails izmeni(Long id, GrupaCmd cmd) {
         Sadrzaj s = proveren(cmd);
@@ -184,6 +185,9 @@ public class GrupaZadatakaService {
         proveriNaziv(braca(predmetId, g.getNamena(), g.getRoditelj()), s.naziv(), id);
 
         List<Polje> stara = PoljaJson.izKolone(g.getPolja());
+        if (cmd.polja() != null) {
+            s = s.saPoljima(proverenaPolja(cmd.polja(), stara));
+        }
         boolean novaSema = s.polja() != null && !stara.equals(s.polja());
         List<Varijanta> varijante = novaSema ? varijantaRepository.findByGrupaIdForUpdate(id) : List.of();
         long brojVarijanti = novaSema ? varijante.size() : varijantaRepository.countByGrupaId(id);
@@ -201,8 +205,8 @@ public class GrupaZadatakaService {
 
     /**
      * Briše list (409 za grupu sa podgrupama i za korišćenu na času): varijante sa prilozima (kaskada), pa grupu, pa
-     * SVG medije rendera. {@link MedijService#obrisi} briše fajl odmah, a red tek na commit-u, pa se zove posle brisanja
-     * redova koji ih pominju; pad posle toga ostavlja red medija bez fajla (servira se kao 404).
+     * SVG medije rendera. {@link MedijService#obrisi} briše red na commit-u, a fajl tek posle njega, pa pad commit-a ne
+     * ostavlja red medija bez fajla.
      */
     public void obrisi(Long id) {
         Long predmetId = predmetGrupe(id);
@@ -370,6 +374,13 @@ public class GrupaZadatakaService {
 
     /** Proverena i normalizovana komanda; sve se proverava pre zaključavanja. {@code polja} null = nisu poslata. */
     private record Sadrzaj(String naziv, String opis, Integer tezina, String uputstvo, List<Polje> polja, String poljaJson) {
+        Sadrzaj saPoljima(Polja p) {
+            return new Sadrzaj(naziv, opis, tezina, uputstvo, p.lista(), p.json());
+        }
+    }
+
+    /** Normalizovana i proverena šema polja i njen JSON za kolonu. */
+    private record Polja(List<Polje> lista, String json) {
     }
 
     private static Sadrzaj proveren(GrupaCmd cmd) {
@@ -383,16 +394,19 @@ public class GrupaZadatakaService {
         if (opis != null && opis.codePointCount(0, opis.length()) > MAX_OPIS) {
             throw new SystemException(NEISPRAVAN_OPIS, HttpStatus.BAD_REQUEST);
         }
-        if (cmd.polja() == null) {
-            return new Sadrzaj(naziv, opis, cmd.tezina(), uputstvo, null, null);
-        }
-        List<Polje> polja = BankaPP.normalizujPolja(cmd.polja());
-        BankaPP.proveriPolja(polja);
-        String json = PoljaJson.uJson(polja);
+        Sadrzaj s = new Sadrzaj(naziv, opis, cmd.tezina(), uputstvo, null, null);
+        return cmd.polja() == null ? s : s.saPoljima(proverenaPolja(cmd.polja(), null));
+    }
+
+    /** Šema iz komande, normalizovana prema sačuvanoj ({@code null} za novu grupu ili proveru pre ključa) i proverena. */
+    private static Polja proverenaPolja(List<Polje> polja, List<Polje> sacuvana) {
+        List<Polje> normalizovana = BankaPP.normalizujPolja(polja, sacuvana);
+        BankaPP.proveriPolja(normalizovana);
+        String json = PoljaJson.uJson(normalizovana);
         if (json.getBytes(StandardCharsets.UTF_8).length > MAX_POLJA_BAJTOVA) {
             throw new SystemException(SEMA_PREVELIKA, HttpStatus.BAD_REQUEST);
         }
-        return new Sadrzaj(naziv, opis, cmd.tezina(), uputstvo, polja, json);
+        return new Polja(normalizovana, json);
     }
 
     /** Upisuje sadržaj; bez poslatih polja kolona ostaje (nova grupa: {@code "[]"}). */

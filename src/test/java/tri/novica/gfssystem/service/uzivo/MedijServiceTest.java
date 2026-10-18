@@ -213,14 +213,16 @@ class MedijServiceTest {
     }
 
     @Test
-    void postoji() {
+    void vrstaPostojecegMedija() {
         String id = UUID.randomUUID().toString();
-        when(medijRepository.existsById(id)).thenReturn(true);
-        assertTrue(service.postoji(id));
-        assertFalse(service.postoji("../x"));
-        assertFalse(service.postoji(null));
-        verify(medijRepository).existsById(id);
-        verifyNoMoreInteractions(medijRepository);
+        Medij medij = new Medij();
+        medij.setId(id);
+        medij.setVrsta(VrstaMedija.RENDER_SVG);
+        when(medijRepository.findById(id)).thenReturn(Optional.of(medij));
+        assertEquals(Optional.of(VrstaMedija.RENDER_SVG), service.vrsta(id));
+        assertEquals(Optional.empty(), service.vrsta(UUID.randomUUID().toString()));
+        assertEquals(Optional.empty(), service.vrsta("../x"));
+        assertEquals(Optional.empty(), service.vrsta(null));
     }
 
     // --- prilozi (PNG, JPEG, PDF), POST /banka/prilozi ---
@@ -244,7 +246,7 @@ class MedijServiceTest {
     }
 
     @Test
-    void pngIJpegPrilogSuSlike() {
+    void pngIJpegPrilogSuSlikePrilogaKojeNisuJavne() {
         MedijInfo png = service.sacuvajPrilog(new MockMultipartFile("fajl", "a.png", "image/png", PNG));
         MedijInfo jpeg = service.sacuvajPrilog(new MockMultipartFile("fajl", "b.jpg", "text/plain", JPEG));
 
@@ -252,8 +254,8 @@ class MedijServiceTest {
         assertEquals("image/jpeg", jpeg.mime());
         ArgumentCaptor<Medij> redovi = ArgumentCaptor.forClass(Medij.class);
         verify(medijRepository, times(2)).save(redovi.capture());
-        assertEquals(VrstaMedija.SLIKA, redovi.getAllValues().get(0).getVrsta());
-        assertEquals(VrstaMedija.SLIKA, redovi.getAllValues().get(1).getVrsta());
+        assertEquals(VrstaMedija.PRILOG_SLIKA, redovi.getAllValues().get(0).getVrsta());
+        assertEquals(VrstaMedija.PRILOG_SLIKA, redovi.getAllValues().get(1).getVrsta());
     }
 
     static Stream<Arguments> nedozvoljeniPrilozi() {

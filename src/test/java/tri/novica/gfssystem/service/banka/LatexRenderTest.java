@@ -245,23 +245,6 @@ class LatexRenderTest {
         assertThat(o.greska().poruka()).isEqualTo("a".repeat(300));
     }
 
-    @Test
-    void zdravKadJe200() {
-        server.expect(requestTo(URL + "/zdravlje")).andExpect(method(HttpMethod.GET)).andRespond(withSuccess());
-
-        assertThat(render.zdrav()).isTrue();
-        server.verify();
-    }
-
-    @Test
-    void nijeZdravKadJe5xxIliVezaPukne() {
-        server.expect(requestTo(URL + "/zdravlje")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
-        server.expect(requestTo(URL + "/zdravlje")).andRespond(withException(new IOException("Connection refused")));
-
-        assertThat(render.zdrav()).isFalse();
-        assertThat(render.zdrav()).isFalse();
-    }
-
     /** Stvarna veza (stdlib HttpServer) kroz javni konstruktor kakav koristi Spring: prenos, timeout, odbijena veza. */
     @Nested
     class StvarnaVeza {
@@ -325,7 +308,7 @@ class LatexRenderTest {
         }
 
         @Test
-        void odbijenaVezaJeNedostupanAZdravJeFalse() throws IOException {
+        void odbijenaVezaJeNedostupan() throws IOException {
             int slobodan;
             try (ServerSocket s = new ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
                 slobodan = s.getLocalPort();
@@ -334,7 +317,6 @@ class LatexRenderTest {
             LatexRender r = klijent(30);
 
             assertThatThrownBy(() -> r.renderuj("svg", "x", List.of())).isInstanceOf(RenderNedostupan.class);
-            assertThat(r.zdrav()).isFalse();
         }
     }
 }

@@ -2,6 +2,8 @@ package tri.novica.gfssystem.service.banka;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.orm.jpa.EntityManagerHolder;
@@ -30,6 +33,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -94,6 +99,7 @@ class VarijantaServiceDbTest {
         jdbc.update("delete from varijanta_prilozi where varijanta_id in (select v.id from varijante v "
                 + "join grupe_zadataka g on g.id = v.grupa_id where g.predmet_id = ?)", id);
         jdbc.update("delete from varijante where grupa_id in " + grupePredmeta, id);
+        jdbc.update("delete from grupe_zadataka where predmet_id = ? and roditelj_id is not null", id);   // deca pre korena
         jdbc.update("delete from grupe_zadataka where predmet_id = ?", id);
         svg.forEach(medijService::obrisi);
         mediji.forEach(medijService::obrisi);
@@ -115,6 +121,12 @@ class VarijantaServiceDbTest {
 
     boolean postojiFajl(String medijId) {
         return Files.exists(Path.of(medijiDir).resolve(medijId));
+    }
+
+    Set<String> fajlovi() throws Exception {
+        try (Stream<Path> s = Files.list(Path.of(medijiDir))) {
+            return s.map(p -> p.getFileName().toString()).collect(Collectors.toSet());
+        }
     }
 
     static void await(CountDownLatch latch) {
@@ -189,6 +201,60 @@ class VarijantaServiceDbTest {
         assertFalse(postojiFajl(d.svgId()));
         assertFalse(postojiFajl(d.resenjeSvgId()));
         assertTrue(postojiFajl(nova.svgId()));
+    }
+
+    @Test
+    void renderCijiCommitPadneZadrzavaStariSvgSaFajlomIBriseNoveFajlove() throws Exception {
+        // stari SVG zadatka koristi slajd (FK fk_slajdovi_slika; upisan mimo provere vrste): brisanje starog reda pada na
+        // commit-u, pa se ceo upis poništava; varijanta mora ostati na starom SVG-u sa fajlom, bez novih siročadi na disku
+        VarijantaDetails d = service.kreiraj(grupa.id(), cmd("Pretvori 1011."));
+        jdbc.update("insert into prezentacije (predmet_id, naziv, takmicenje, telefon_prikaz, detalji_dozvoljeni, kreirano, izmenjeno) "
+                + "values (?, 'Prezentacija', 0, 'DUGMAD', 0, now(6), now(6))", predmet.getId());
+        Long prezentacija = jdbc.queryForObject("select max(id) from prezentacije where predmet_id = ?", Long.class, predmet.getId());
+        try {
+            jdbc.update("insert into slajdovi (prezentacija_id, rb, tip, slika_id, postepeno) values (?, 1, 'INFO', ?, 0)",
+                    prezentacija, d.svgId());
+            Set<String> pre = fajlovi();
+
+            assertThrows(DataIntegrityViolationException.class, () -> service.render(d.id()));
+
+            Map<String, Object> red = red(d.id());
+            assertEquals(d.svgId(), red.get("render_svg_id"));
+            assertEquals(d.resenjeSvgId(), red.get("render_resenje_svg_id"));
+            assertTrue(postojiFajl(d.svgId()), "fajl starog SVG-a se briše tek posle commit-a");
+            assertTrue(postojiFajl(d.resenjeSvgId()));
+            assertEquals(pre, fajlovi(), "novi SVG fajlovi poništenog upisa su obrisani");
+        } finally {
+            jdbc.update("delete from prezentacije where id = ?", prezentacija);   // slajdovi kaskadom
+        }
+
+        VarijantaDetails r = service.render(d.id());   // bez reference sve radi kao i pre
+        assertEquals(RenderStatus.OK, r.renderStatus());
+        assertFalse(postojiFajl(d.svgId()));
+        assertTrue(postojiFajl(r.svgId()));
+    }
+
+    @Test
+    void renderujSveBiraKandidateStalnimBrojemUpita() {
+        // grupa u korenu i list ispod drugog korena, po tri varijante sa prilogom i SVG-om zadatka i rešenja
+        GrupaDetails koren = grupaService.kreiraj(new GrupaCmd(predmet.getId(), null, Namena.PREDAVANJE, "Koren", null, null, null, List.of()));
+        GrupaDetails list = grupaService.kreiraj(new GrupaCmd(null, koren.id(), null, "List", null, 3, null, List.of(BROJ_A)));
+        for (int i = 0; i < 3; i++) {
+            service.kreiraj(grupa.id(), cmd("Prva " + i + "."));
+            service.kreiraj(list.id(), cmd("Druga " + i + "."));
+        }
+        Statistics statistika = emf.unwrap(SessionFactory.class).getStatistics();
+        boolean bila = statistika.isStatisticsEnabled();
+        statistika.setStatisticsEnabled(true);
+        try {
+            statistika.clear();
+            assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(predmet.getId()));   // sve sveže: samo izbor kandidata
+            long upita = statistika.getPrepareStatementCount();
+            // predmet + varijante sa grupom, precima, predmetom, SVG medijima i prilozima: ne zavisi od broja varijanti
+            assertTrue(upita <= 2, "renderuj-sve: " + upita + " SQL upita");
+        } finally {
+            statistika.setStatisticsEnabled(bila);
+        }
     }
 
     @Test
@@ -275,7 +341,7 @@ class VarijantaServiceDbTest {
         service.render(d.id());
         VarijantaDetails k = service.dupliraj(d.id());
         jdbc.update("update varijante set render_hash = null where id in (?, ?)", d.id(), k.id());
-        assertEquals(new RenderujSveInfo(2, 0), service.renderujSve(predmet.getId()));
+        assertEquals(new RenderujSveInfo(2, 0, 0), service.renderujSve(predmet.getId()));
 
         verify(latexRender, times(12)).renderuj(eq("svg"), anyString(), anyList());
         assertEquals(List.of(), prekrsaji);
@@ -291,17 +357,17 @@ class VarijantaServiceDbTest {
         Files.delete(Path.of(medijiDir).resolve(png));   // red medija postoji, fajl ne
         clearInvocations(latexRender);
 
-        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(predmet.getId()));
+        assertEquals(new RenderujSveInfo(1, 1, 0), service.renderujSve(predmet.getId()));
 
         Map<String, Object> l = red(losa.id());
         assertEquals("GRESKA", l.get("render_status"));
-        assertEquals("NACRT", l.get("status"));
+        assertEquals("AKTIVNA", l.get("status"));   // render cele banke ne spušta aktivnu
         assertEquals("Slika nije pronađena.", l.get("render_greska"));
         assertNotNull(l.get("render_hash"));
         assertEquals(losa.svgId(), l.get("render_svg_id"));
         assertEquals("OK", red(dobra.id()).get("render_status"));
         verify(latexRender, times(1)).renderuj(eq("svg"), anyString(), anyList());
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(predmet.getId()));
+        assertEquals(new RenderujSveInfo(0, 1, 0), service.renderujSve(predmet.getId()));
     }
 
     @Test
@@ -341,7 +407,7 @@ class VarijantaServiceDbTest {
         jdbc.update("update varijante set render_hash = null where id = ?", b.id());
         clearInvocations(latexRender);
 
-        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(predmet.getId()));
+        assertEquals(new RenderujSveInfo(1, 0, 0), service.renderujSve(predmet.getId()));
 
         verify(latexRender, times(2)).renderuj(eq("svg"), anyString(), anyList());
         verify(latexRender).renderuj(eq("svg"), contains("Druga."), anyList());
@@ -351,7 +417,7 @@ class VarijantaServiceDbTest {
         assertNotEquals(b.svgId(), red.get("render_svg_id"));
         assertFalse(medijRepository.existsById(b.svgId()));
         assertEquals(a.svgId(), red(a.id()).get("render_svg_id"));
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(predmet.getId()));
+        assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(predmet.getId()));
         assertEquals(RenderStatus.OK, service.detalji(b.id()).renderStatus());
     }
 
@@ -373,7 +439,7 @@ class VarijantaServiceDbTest {
         EntityManager zahtev = emf.createEntityManager();
         TransactionSynchronizationManager.bindResource(emf, new EntityManagerHolder(zahtev));
         try {
-            assertEquals(new RenderujSveInfo(2, 0), service.renderujSve(predmet.getId()));
+            assertEquals(new RenderujSveInfo(2, 0, 0), service.renderujSve(predmet.getId()));
         } finally {
             TransactionSynchronizationManager.unbindResource(emf);
             zahtev.close();

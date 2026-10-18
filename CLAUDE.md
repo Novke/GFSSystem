@@ -169,9 +169,12 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   participants; only the `izvodjenja` row stays (no results view). With saving nothing is deleted.
 - **Media**: files under `gfs.mediji.dir` (env `GFS_MEDIJI_DIR`; in the container a volume), metadata in `mediji`. The
   default `${java.io.tmpdir}/gfs-mediji` only suits dev; `MedijService` logs a WARN at startup when it is in use.
-  `mediji.vrsta` (`VrstaMedija` `SLIKA` | `PRILOG_PDF` | `RENDER_SVG`, V11, default `SLIKA`) tells slide images from the bank's PDF attachments and
-  rendered SVGs: the public `GET /public/mediji/{uuid}` serves only `SLIKA` and `RENDER_SVG` and answers 404 for anything else (see "Banka zadataka"),
-  while slide and question image references do not check `vrsta`.
+  `mediji.vrsta` (`VrstaMedija` `SLIKA` | `PRILOG_SLIKA` | `PRILOG_PDF` | `RENDER_SVG`, V11, default `SLIKA`, `varchar(20)` so a new kind needs no
+  migration) tells slide images from the bank's attachments and rendered SVGs: the public `GET /public/mediji/{uuid}` serves only `SLIKA` and
+  `RENDER_SVG` and answers 404 for anything else (see "Banka zadataka"); slide and question images (`slikaId`) and PLATNO layers accept only
+  `SLIKA` (400 `Medij nije slika.` otherwise, checked before the lock with one query for the PLATNO ids), so a re-render never deletes a file a slide uses.
+  `MedijService.obrisi` inside a transaction deletes the file only **after commit** (a failed commit keeps row and file together), and the file of
+  a medium saved in a transaction that rolls back is deleted (no orphan files); outside a transaction both happen at once.
 - **"Ni ranije"** (`StanjeService`): phones get `JavnoStanje`; the projector renders `NastavnickoStanje.javniRezultat`
   and `javnaRangLista`, built by the same methods. The only difference: phones get option texts in the result only when
   text is allowed (PITANJE mode or Detalji); the projector always has them.
@@ -213,18 +216,25 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   `\usepackage`, `\begin{document}`), `naziv` <= 120, `odgovori` (JSON, see below), `izvor` `RUCNO` (default) | `CLAUDE` (only at creation),
   `rb` at the end of the group. Status `NACRT` -> `AKTIVNA` (`POST .../odobri`: needs `renderStatus == OK`, else 409 `Varijanta se odobrava tek
   kad je render uspeo.`, and answers complete against the current schema, else 400; also works from `ARHIVIRANA`), `arhiviraj`, `vratiUNacrt`.
-  New and duplicated variants are always `NACRT` (a duplicate gets its own render, SVG media belong to one variant). An edit of an `AKTIVNA`
-  variant keeps it active only if the render succeeds; a failed render drops it to `NACRT` (an active variant always has a successful render).
+  New and duplicated variants are always `NACRT` (a duplicate gets its own render, SVG media belong to one variant). Saving one variant
+  (`kreiraj`, `izmeni`, `render`, `dupliraj`) keeps an `AKTIVNA` variant active only if the render succeeds; a failed render drops it to `NACRT`.
+  `renderuj-sve` never changes the status: after a bad preamble an `AKTIVNA` variant can be `GRESKA` and keeps showing its last good SVG pair.
   Deleting a variant removes its attachments (media of attachments stay, a duplicate shares them) and its SVG media.
 - **Attachments (`varijanta_prilozi`):** <= 10 per variant, `ime` `^[a-z0-9_-]{1,60}$` (the name LaTeX uses: `\includegraphics{ime}`), unique in
-  the variant, **`dokument` is reserved** (the render service writes `dokument.tex/.pdf/.log`), the medium must exist and be PNG, JPEG
-  (`vrsta SLIKA`) or PDF (`PRILOG_PDF`); GIF, WebP and render SVG are 400. `PUT` replaces the whole list (an existing name just changes its medium).
+  the variant, **`dokument` is reserved** (the render service writes `dokument.tex/.pdf/.log`), the medium must exist and be an attachment
+  uploaded through `POST /banka/prilozi` (`PRILOG_SLIKA` PNG/JPEG or `PRILOG_PDF`); a slide image (`SLIKA`, public), GIF, WebP and render SVG are 400
+  `Medij nije prilog zadatka.`. All attachments together, as base64 (4/3 of the size) plus text and solution, must stay under 40 MB (the container
+  takes a 60 MB body), else 400 `Prilozi su preveliki za render (najviše 40 MB ukupno).` (about 30 MB of files). `PUT` replaces the whole list (an
+  existing name just changes its medium).
 - **JSON schema of `polja` (`grupe_zadataka.polja`, text column, `[]` = work on paper)** is a list of `Polje {kljuc, oznaka, tip, odstupanje,
   odstupanjeTip, jedinica, zanemariVelicinu, zanemariRazmake, opcije[{id, tekst}]}`; <= 10 fields, `kljuc` `^[a-z][a-z0-9]{0,9}$` and unique,
   `oznaka` 1-200 chars, `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
   with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`).
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
-  without an id gets the next free one (above the largest given, so a new option never takes over an old id). Whole column <= 65 535 bytes
+  without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,
+  under the lock: `BankaPP.normalizujPolja(polja, sacuvana)`), so a client that omits ids (MCP) never gets the id of an option removed in the same
+  `PUT`, and an answer that pointed at it is dropped instead of moving to the new option. A deleted id is not remembered beyond the stored schema: a
+  later `PUT` can reuse an id that no option and no answer of the group refers to any more (the removal already cleared those answers). Whole column <= 65 535 bytes
   (400 `Šema polja je prevelika.`; `odgovori` the same, `Odgovori su preveliki.`).
   **`odgovori` (`varijante.odgovori`, `{}` for a paper group)** is an object `kljuc -> OdgovorPolja {broj | prihvatljivi | tacna | tacne}` with
   exactly the property of the field type: `BROJ` `broj` (finite), `TEKST` `prihvatljivi` (1-10 strings, 1-200 chars), `JEDAN_TACAN` `tacna` (an option
@@ -246,21 +256,28 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   `\documentclass[preview,border=6pt,varwidth=84mm,11pt]{standalone}` + preamble + `\begin{document}` + body + `\end{document}` (84 mm = phone width;
   CRLF/CR become LF; `pomakLinija` converts a line of the document to a line of the teacher's text). The **default preamble**
   (`PODRAZUMEVANA_PREAMBULA`: T1/utf8, amsmath/amssymb, tikz with `automata,positioning,arrows.meta`, graphicx, booktabs, enumitem) is replaced
-  per subject by `predmeti.latex_preambula` (`GET|PUT /predmeti/{id}/latex-preambula`, body `{preambula}`; empty/`null` = default; <= 50 000 chars;
-  `LatexPreambulaService`). A **changed** value runs `VarijantaRepository.ponistiHashPredmeta` (bulk `render_hash = null` for the whole bank of the
-  subject) in the same transaction, the same value touches nothing. `LatexPravila` is the **deny-list** (`\write18`, `\input@path`, `\input`,
+  per subject by `predmeti.latex_preambula` (`GET|PUT /predmeti/{id}/latex-preambula`, body `{preambula}`; empty/`null` and a text equal to the
+  default (also with CRLF) = default, stored as `null`; <= 50 000 chars; `LatexPreambulaService`). A new non-default value is first **test-rendered**
+  (`RenderVarijante.proveriPreambulu`: the phone document with the new preamble and the body `Proba preambule.`, outside any transaction and lock):
+  a compile error is 400 `Preambula se ne kompajlira (linija N): <poruka>` (N = line in the preamble; without `(linija N)` when the error is not in
+  the preamble), a renderer that is down 503, and nothing is saved in either case; going back to the default is not rendered. A **changed** value
+  then runs `VarijantaRepository.ponistiHashPredmeta` (bulk `render_hash = null` for the whole bank of the subject) in the same short write
+  transaction, the same value touches nothing. `LatexPravila` is the **deny-list** (`\write18`, `\input@path`, `\input`,
   `\include`, `\openin/out`, `\read`, `\write`, `\immediate`, `\csname`, `\directlua`, `\InputIfFileExists`, `\@input`, `\lstinputlisting`,
   `\verbatiminput`, `\includepdf`, `\includepdfmerge`, `\includegraphics` with anything but a bare attachment name, `file:` URLs, `^^`; body-only: `\usepackage`,
   `\RequirePackage`, `\documentclass`, `\begin/\end{document}`, `\catcode`; the preamble may load packages): **only early help with a clear message**
   (400 `Komanda \x nije dozvoljena.`, checked for text and solution before any call), the security boundary is the container (below).
   `RenderVarijante.renderuj` renders the text, then the solution (only when not blank), each to its own SVG (`format svg`, attachments loaded once and
-  sent as `{ime, ekstenzija, sadrzaj base64}`); an error in either part makes the whole render fail with that part and the line relative to it, no SVG.
-  **`render_hash`** = SHA-256 hex over the preamble actually used (`LatexDokument.preambulaIli`), text, solution (`null` = empty) and the
-  attachments sorted by name as `ime:medijId`, joined with `\u0000`; the **cache** rule: same hash as the variant's *own* last render and `OK`
+  sent as `{ime, ekstenzija, sadrzaj base64}`); an error in either part makes the whole render fail with that part and the line relative to it
+  (a failed solution still returns the task SVG, which `render-proba` shows; a saved variant does not store it and keeps its last good pair).
+  **`render_hash`** = SHA-256 hex over `RenderVarijante.RENDER_VERZIJA` (bump it whenever `LatexDokument.OMOT` or anything else that changes the
+  output for the same input changes, so every hash goes stale and `renderuj-sve` re-renders), the preamble actually used (`LatexDokument.preambulaIli`),
+  text, solution (`null` = empty) and the attachments sorted by name as `ime:medijId`, joined with `\u0000`; the **cache** rule: same hash as the variant's *own* last render and `OK`
   = no render. `render_status` `CEKA` | `OK` | `GRESKA`; on `GRESKA` the old SVG stays and `render_greska` holds `<deo>:<linija>: <poruka>`
   (`deo` `tekst`|`resenje`, line may be empty, e.g. `resenje:12: Undefined control sequence.`; without a part just the message; message from the
   `dokument.tex:N:` log line via `LatexGreska.izLoga`, else the service's own, else a generic one; a 4xx of the service is a generic message and
-  the body goes to the log). Success saves new `RENDER_SVG` media (`zadatak-<id>.svg`, `resenje-<id>.svg`) and only then deletes the old ones.
+  the body goes to the log). Success saves new `RENDER_SVG` media (`zadatak-<id>.svg`, `resenje-<id>.svg`) and only then deletes the old ones
+  (their files after commit; a failed commit leaves the variant on the old SVG with its file and removes the new files).
   `LatexRender` is the HTTP client of the container (`gfs.latex.url` = env `GFS_LATEX_URL`, default `http://localhost:8800` for dev; in compose
   `http://latex:8800`; `gfs.latex.timeout-sekunde` 30, the service gets 10 s less, at least 10; HTTP/1.1; no `RestClient.Builder` bean on purpose).
   A failed compilation is **state, not an exception** (`ok=false` -> `GRESKA`); a service that is down, 5xx or answers without content is
@@ -276,27 +293,41 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
 - **`POST /banka/predmeti/{id}/renderuj-sve`** (after a preamble change): synchronous, one call is one step. `VarijantaService.renderujSve` picks
   the candidates (first the stale ones: hash differs or render `CEKA`; then those whose last render of the same content failed), renders at most
   **200** per call and starts no new one after **40 s** (`Clock`); each variant is its own read, render (no lock) and short write transaction
-  (writes only if the locked content still has the rendered hash and nobody refreshed it meanwhile). Response `{renderovano, preostalo}`:
-  `renderovano` counts successful renders only, `preostalo` only stale variants not reached, so the front calls until `preostalo == 0` and always
-  stops. A **bad variant** (a `SystemException` that is not 503, e.g. an attachment without a file or a command the deny-list forbade meanwhile, or
-  any other `RuntimeException`) is marked `GRESKA` with its message (or `Render nije uspeo.`) and the loop goes on; the mark is skipped if the
+  (writes only if the locked content still has the rendered hash and nobody refreshed it meanwhile). A failed render writes only `GRESKA` and
+  the message: **no status change** (one typo in the preamble fails every variant; the active ones keep their last good SVG). Response
+  `{renderovano, neuspelo, preostalo}`: `renderovano` counts successful renders, `neuspelo` the `GRESKA` written in this call, `preostalo` only
+  stale variants not reached, so the front calls until `preostalo == 0` and always stops. **One call per subject at a time** (in-memory try-lock
+  per `predmetId`, one backend, released in `finally`): a second one is 409 `Render cele banke za ovaj predmet je već u toku.`. Candidates come from one
+  fetch-join query (`svePredmeta`: group with ancestors and subject, SVG media, attachments with media). A **bad variant** (a `SystemException`
+  that is not 503, e.g. an attachment without a file or a command the deny-list forbade meanwhile, or any other `RuntimeException`) is marked
+  `GRESKA` with its message (or `Render nije uspeo.`) and the loop goes on; the mark is skipped if the
   locked variant already has the same hash and `OK`. **Infrastructure errors abort the loop and mark nothing**: `RenderNedostupan` (503),
   `DataAccessException`, `PersistenceException`, `TransactionException`, `UncheckedIOException` (e.g. a full disk while writing an SVG must not
   demote every active variant); what was already written stays.
 - **`POST /banka/render-proba`** (`{predmetId, tekst, resenje, prilozi}`): the editor's preview and Claude's check, nothing saved; same rules as a
-  write, the subject's preamble, `{ok, svg, resenjeSvg, greska, deo}` with the SVG as text. At most **4 at once per backend** (`Semaphore`,
-  not waiting), the fifth gets 429 `Previše proba u isto vreme.` (the container has its own semaphore of 4).
-- **Media kinds (`mediji.vrsta`, V11, default `SLIKA`):** `SLIKA` (slides, questions via `POST /mediji`: PNG/JPEG/GIF/WebP; also PNG/JPEG attachments),
-  `PRILOG_PDF` (**only** through `POST /banka/prilozi`, multipart `fajl`, PNG/JPEG/PDF by magic bytes, <= 10 MB; `POST /mediji` still refuses a PDF)
-  and `RENDER_SVG` (written by the server only, `MedijService.sacuvajRender`). `GET /public/mediji/{uuid}` (`PublicMedijRest`) is **fail-closed**: a
-  `switch` on `vrsta` serves `SLIKA` as before and `RENDER_SVG` with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`
-  (plus `nosniff`, long cache); any other value (`PRILOG_PDF`, future kinds) is 404 `Slika nije pronađena.`, the same answer as for an unknown id.
+  write, the subject's preamble, `{ok, svg, resenjeSvg, greska, deo}` with the SVG as text; when only the solution failed it is `ok=false`,
+  `deo=resenje` **with** the task `svg`. At most **3 at once per backend** (`Semaphore`, not waiting), the fourth gets 429 `Previše proba u isto
+  vreme.` (the container compiles at most 4 at once, so one slot stays free for saves).
+- **Media kinds (`mediji.vrsta`, V11, default `SLIKA`, `varchar(20)`):** `SLIKA` (slides, questions via `POST /mediji`: PNG/JPEG/GIF/WebP),
+  `PRILOG_SLIKA` and `PRILOG_PDF` (**only** through `POST /banka/prilozi`, multipart `fajl`, PNG/JPEG resp. PDF by magic bytes, <= 10 MB; `POST /mediji`
+  still refuses a PDF) and `RENDER_SVG` (written by the server only, `MedijService.sacuvajRender`). The render reads attachments by id whatever the
+  kind (only `PRILOG_*` can get there). `GET /public/mediji/{uuid}` (`PublicMedijRest`) is **fail-closed**: a `switch` on `vrsta` serves `SLIKA` as
+  before and `RENDER_SVG` with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:` (`data:` images, i.e. raster
+  attachments embedded in the SVG, render when the SVG is opened top-level; they cannot run scripts) plus `nosniff`, long cache; any other value
+  (`PRILOG_SLIKA`, `PRILOG_PDF`, future kinds) is 404 `Slika nije pronađena.`, the same answer as for an unknown id: attachments are never public
+  (an attachment of the solution can show the answer). Slide and question images accept only `SLIKA` (see "Media" above).
 - **Lock order (invariant, extends the Uživo one):** **subject row -> group row(s) -> variant row**. `GrupaZadatakaService` takes the subject
   (`PredmetRepository.findByIdForUpdate`) first for every tree change (siblings, `rb`, depth, move are serialised per subject; only the holder of the
   subject row ever holds several group rows) and a group row when the group gets a child, changes or is deleted. `VarijantaService` locks the
   group row (`GrupaZadatakaRepository.findByIdForUpdate`), then the variant row, holds **at most one group, never locks the subject after a group
   and never writes `grupe_zadataka` columns** (not even `izmenjeno`), so the leaf/inner rule and the answers-vs-schema check cannot race with a tree
-  change. `LatexPreambulaService` takes the subject row only. Hibernate does not refresh an entity read before a
+  change. `LatexPreambulaService.postavi` renders before any lock, then in its write transaction takes the subject row and runs the bulk
+  `ponistiHashPredmeta` (`update varijante v join grupe_zadataka g ... where g.predmet_id = ?`), which X-locks the subject's variant rows and reads
+  the group rows through the secondary index `idx_grupe_zadataka_stablo` (shared locks on that index, which do not conflict with the X lock
+  `findByIdForUpdate` takes on a group's primary key; checked on MySQL 8.0). No cycle: `GrupaZadatakaService` takes the subject row before anything
+  else (so it waits holding nothing), and a `VarijantaService` transaction holds at most one group and one variant and never waits for anything
+  the preamble transaction holds except that variant. If the bulk update ever reads group rows by primary key (a plan change) or `VarijantaService`
+  starts writing group columns, lock the subject's group rows first. Hibernate does not refresh an entity read before a
   lock, so only scalar ids are read before locking (`findPredmetId`, `findGrupaId`) and `VarijantaService` clears the persistence context at the
   start of each of its own transactions. Writes run in READ COMMITTED like the rest.
 - **REST surface, all behind basic-auth and none under `/public`** (the staging regex opens `api/public/` automatically): under `/banka`:

@@ -61,6 +61,8 @@ class VarijantaServiceTest {
     static final String GIF = "7d5a6f3e-0b12-4a5e-9f6d-4e5f60718293";
     static final String WEBP = "9f7c8b5a-2d34-4c7a-9b8f-60718293a4b5";
     static final String STARI_SVG = "8e6b7a4f-1c23-4b6f-8a7e-5f6071829304";
+    /** PNG otpremljen kao slika slajda ({@code POST /mediji}, vrsta SLIKA): javan, pa nije prilog zadatka. */
+    static final String SLIKA_SLAJDA = "a08d9c6b-3e45-4d8b-8c90-718293a4b5c6";
     static final byte[] SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes(StandardCharsets.UTF_8);
     static final int POMAK = LatexDokument.zaTelefon(null, "").pomakLinija();
 
@@ -120,11 +122,12 @@ class VarijantaServiceTest {
                 .sorted(Comparator.comparingInt(Varijanta::getRb)).toList());
         when(varijantaRepository.svePredmeta(anyLong())).thenAnswer(inv -> new ArrayList<>(varijante));
 
-        medij(PNG, "image/png", VrstaMedija.SLIKA);
+        medij(PNG, "image/png", VrstaMedija.PRILOG_SLIKA);
         medij(PDF, "application/pdf", VrstaMedija.PRILOG_PDF);
         medij(GIF, "image/gif", VrstaMedija.SLIKA);
         medij(WEBP, "image/webp", VrstaMedija.SLIKA);
         medij(STARI_SVG, "image/svg+xml", VrstaMedija.RENDER_SVG);
+        medij(SLIKA_SLAJDA, "image/png", VrstaMedija.SLIKA);
         when(medijRepository.findById(anyString())).thenAnswer(inv -> Optional.ofNullable(mediji.get(inv.<String>getArgument(0))));
         when(medijRepository.getReferenceById(anyString())).thenAnswer(inv -> mediji.get(inv.<String>getArgument(0)));
         when(medijService.ucitaj(anyString())).thenAnswer(inv -> {
@@ -512,10 +515,16 @@ class VarijantaServiceTest {
                 cmd("Tekst.", null, List.of(new PrilogCmd("skica", "0a1b2c3d-0000-4000-8000-000000000000")))));
         ocekujGresku(400, "Prilog 'skica' nije pronađen.",
                 () -> service.kreiraj(grupa.getId(), cmd("Tekst.", null, List.of(new PrilogCmd("skica", null)))));
-        for (String nedozvoljen : List.of(GIF, WEBP, STARI_SVG)) {
-            ocekujGresku(400, "Prilog mora biti PNG, JPEG ili PDF.",
+        // prilog je samo ono što je otpremljeno kao prilog (POST /banka/prilozi): slika slajda je javna, render SVG nije za LaTeX
+        for (String nedozvoljen : List.of(SLIKA_SLAJDA, GIF, WEBP, STARI_SVG)) {
+            ocekujGresku(400, "Medij nije prilog zadatka.",
                     () -> service.kreiraj(grupa.getId(), cmd("Tekst.", null, List.of(new PrilogCmd("slika", nedozvoljen)))));
+            ocekujGresku(400, "Medij nije prilog zadatka.",
+                    () -> service.proba(new RenderProbaCmd(7L, "Tekst.", null, List.of(new PrilogCmd("slika", nedozvoljen)))));
         }
+        medij("b19e0d7c-4f56-4e9c-9da1-8293a4b5c6d7", "image/gif", VrstaMedija.PRILOG_SLIKA);   // ne nastaje uploadom, ali i takav se odbija
+        ocekujGresku(400, "Prilog mora biti PNG, JPEG ili PDF.", () -> service.kreiraj(grupa.getId(),
+                cmd("Tekst.", null, List.of(new PrilogCmd("slika", "b19e0d7c-4f56-4e9c-9da1-8293a4b5c6d7")))));
         List<PrilogCmd> jedanaest = IntStream.range(0, 11).mapToObj(i -> new PrilogCmd("p" + i, PNG)).toList();
         ocekujGresku(400, "Najviše 10 priloga.", () -> service.kreiraj(grupa.getId(), cmd("Tekst.", null, jedanaest)));
         verify(grupaRepository, never()).findByIdForUpdate(anyLong());
@@ -524,6 +533,28 @@ class VarijantaServiceTest {
         VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Tekst.", null,
                 List.of(new PrilogCmd("tabela", PDF), new PrilogCmd("deset_10-x", PNG))));
         assertEquals(List.of("deset_10-x", "tabela"), d.prilozi().stream().map(PrilogInfo::ime).toList());
+    }
+
+    @Test
+    void priloziPrekoCetrdesetMegabajtaZaRenderSu400() {
+        // render servis prima najviše 60 MB tela; prilozi idu kao base64 (4/3), pa je granica 40 MB sa tekstom
+        long desetMb = 10L * 1024 * 1024;
+        for (String id : List.of("c2af1e8d-5a67-4fad-8eb2-93a4b5c6d7e8", "d3b02f9e-6b78-4abe-9fc3-a4b5c6d7e8f9",
+                "e4c13a0f-7c89-4bcf-80d4-b5c6d7e8f90a")) {
+            medij(id, "application/pdf", VrstaMedija.PRILOG_PDF).setVelicina(desetMb);
+        }
+        List<PrilogCmd> dva = List.of(new PrilogCmd("a", "c2af1e8d-5a67-4fad-8eb2-93a4b5c6d7e8"),
+                new PrilogCmd("b", "d3b02f9e-6b78-4abe-9fc3-a4b5c6d7e8f9"));
+        List<PrilogCmd> tri = new ArrayList<>(dva);
+        tri.add(new PrilogCmd("c", "e4c13a0f-7c89-4bcf-80d4-b5c6d7e8f90a"));   // 3 x 10 MB = 40 MB u base64, plus tekst
+
+        ocekujGresku(400, "Prilozi su preveliki za render (najviše 40 MB ukupno).",
+                () -> service.kreiraj(grupa.getId(), cmd("Tekst.", null, tri)));
+        ocekujGresku(400, "Prilozi su preveliki za render (najviše 40 MB ukupno).",
+                () -> service.proba(new RenderProbaCmd(7L, "Tekst.", null, tri)));
+        verifyNoInteractions(latexRender);
+
+        assertEquals(RenderStatus.OK, service.kreiraj(grupa.getId(), cmd("Tekst.", null, dva)).renderStatus());
     }
 
     // ---------------------------------------------------------------- zaključavanje
@@ -609,7 +640,8 @@ class VarijantaServiceTest {
         assertFalse(losa.ok());
         assertEquals("resenje", losa.deo());
         assertEquals(new RenderGreskaInfo(1, "Undefined control sequence."), losa.greska());
-        assertNull(losa.svg());
+        assertEquals(new String(SVG, StandardCharsets.UTF_8), losa.svg());   // zadatak se preveo: editor ga prikazuje uz grešku
+        assertNull(losa.resenjeSvg());
 
         ocekujGresku(404, "Predmet nije pronađen.", () -> service.proba(new RenderProbaCmd(8L, "Tekst.", null, null)));
         ocekujGresku(400, "Predmet je obavezan.", () -> service.proba(new RenderProbaCmd(null, "Tekst.", null, null)));
@@ -619,8 +651,10 @@ class VarijantaServiceTest {
     }
 
     @Test
-    void probaVraca429KadSuCetiriProbeUToku() throws Exception {
-        CountDownLatch uRenderu = new CountDownLatch(4);
+    void probaVraca429KadSuTriProbeUToku() throws Exception {
+        // tri, ne četiri: kontejner prevodi najviše 4 odjednom, jedno mesto ostaje za čuvanje varijante
+        assertEquals(3, VarijantaService.MAX_PROBA);
+        CountDownLatch uRenderu = new CountDownLatch(VarijantaService.MAX_PROBA);
         CountDownLatch pusti = new CountDownLatch(1);
         when(latexRender.renderuj(eq("svg"), contains("Spora"), anyList())).thenAnswer(inv -> {
             uRenderu.countDown();
@@ -628,10 +662,10 @@ class VarijantaServiceTest {
             return uspeh();
         });
         RenderProbaCmd spora = new RenderProbaCmd(7L, "Spora proba.", null, null);
-        ExecutorService niti = Executors.newFixedThreadPool(4);
+        ExecutorService niti = Executors.newFixedThreadPool(VarijantaService.MAX_PROBA);
         try {
             List<Future<RenderProbaInfo>> probe = new ArrayList<>();
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < VarijantaService.MAX_PROBA; i++) {
                 probe.add(niti.submit(() -> service.proba(spora)));
             }
             assertTrue(uRenderu.await(10, TimeUnit.SECONDS));
@@ -666,7 +700,7 @@ class VarijantaServiceTest {
 
         RenderujSveInfo r = service.renderujSve(7L);
 
-        assertEquals(new RenderujSveInfo(1, 0), r);   // pala se ponavlja, ali renderovano broji samo uspele
+        assertEquals(new RenderujSveInfo(1, 1, 0), r);   // pala se ponavlja: renderovano broji uspele, neuspelo pale
         verify(latexRender, never()).renderuj(anyString(), contains("Sveža."), anyList());
         verify(latexRender, times(1)).renderuj(anyString(), contains("Zastarela."), anyList());
         verify(latexRender, times(1)).renderuj(anyString(), contains("$11$"), anyList());   // rešenje samo zastarele: neuspeloj pada tekst
@@ -689,11 +723,11 @@ class VarijantaServiceTest {
         varijanta(zabranjena.id()).setTekst("\\write18{ls}");
         clearInvocations(latexRender);
 
-        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(1, 2, 0), service.renderujSve(7L));
 
         Varijanta l = varijanta(losa.id());
         assertEquals(RenderStatus.GRESKA, l.getRenderStatus());
-        assertEquals(StatusVarijante.NACRT, l.getStatus());
+        assertEquals(StatusVarijante.AKTIVNA, l.getStatus());   // render cele banke ne spušta aktivnu
         assertEquals("Slika nije pronađena.", l.getRenderGreska());
         assertNotNull(l.getRenderHash());
         assertEquals("svg-1", l.getRenderSvg().getId());   // stari SVG ostaje
@@ -705,7 +739,7 @@ class VarijantaServiceTest {
         verify(latexRender, times(1)).renderuj(anyString(), anyString(), anyList());
 
         // obe su sada pale istog sadržaja: ne drže preostalo, a ponavljaju se bez prekida petlje
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(0, 2, 0), service.renderujSve(7L));
     }
 
     @Test
@@ -715,7 +749,7 @@ class VarijantaServiceTest {
         varijante.forEach(v -> v.setRenderHash(null));
         when(medijService.ucitaj(PNG)).thenThrow(new IllegalStateException("/var/lib/gfs/x"));
 
-        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(1, 1, 0), service.renderujSve(7L));
         assertEquals("Render nije uspeo.", varijanta(a.id()).getRenderGreska());
 
         varijante.forEach(v -> v.setRenderHash(null));
@@ -766,7 +800,7 @@ class VarijantaServiceTest {
             throw new SystemException("Slika nije pronađena.", HttpStatus.NOT_FOUND);
         });
 
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(7L));
 
         Varijanta v = varijanta(d.id());
         assertEquals(RenderStatus.OK, v.getRenderStatus());
@@ -785,7 +819,7 @@ class VarijantaServiceTest {
         });
         clearInvocations(medijService);
 
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(7L));
 
         assertNull(varijanta(d.id()).getRenderHash(), "rezultat za stari sadržaj se ne upisuje");
         verify(medijService, never()).sacuvajRender(any(), anyString());
@@ -801,9 +835,72 @@ class VarijantaServiceTest {
         varijante.forEach(v -> v.setRenderHash(null));
         clearInvocations(latexRender);
 
-        assertEquals(new RenderujSveInfo(200, 1), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(200, 0, 1), service.renderujSve(7L));
         verify(latexRender, times(200)).renderuj(anyString(), anyString(), anyList());
-        assertEquals(new RenderujSveInfo(1, 0), service.renderujSve(7L));
-        assertEquals(new RenderujSveInfo(0, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(1, 0, 0), service.renderujSve(7L));
+        assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(7L));
+    }
+
+    @Test
+    void renderujSveKadPreambulaNeProlaziNeSpustaAktivnuIZadrzavaStariSvg() {
+        // jedna greška u preambuli obara render svake varijante: aktivne ostaju aktivne sa poslednjim uspelim SVG-om
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        predmet.setLatexPreambula("\\usepackage{nepostoji}");
+        varijante.forEach(v -> v.setRenderHash(null));   // kao ponistiHashPredmeta posle izmene preambule
+        when(latexRender.renderuj(eq("svg"), contains("nepostoji"), anyList())).thenReturn(neuspeh(1, "Undefined control sequence."));
+        clearInvocations(medijService);
+
+        assertEquals(new RenderujSveInfo(0, 1, 0), service.renderujSve(7L));
+
+        Varijanta v = varijanta(d.id());
+        assertEquals(StatusVarijante.AKTIVNA, v.getStatus());
+        assertEquals(RenderStatus.GRESKA, v.getRenderStatus());
+        assertTrue(v.getRenderGreska().startsWith("tekst:") && v.getRenderGreska().endsWith(": Undefined control sequence."),
+                v.getRenderGreska());
+        assertEquals(d.svgId(), v.getRenderSvg().getId());
+        assertEquals(d.resenjeSvgId(), v.getRenderResenjeSvg().getId());
+        assertEquals(new RenderVarijante(latexRender, medijService).hash("\\usepackage{nepostoji}", "Pretvori 1011.", "$11$",
+                List.of(new PrilogCmd("skica", PNG))), v.getRenderHash());
+        verify(medijService, never()).sacuvajRender(any(), anyString());
+        verify(medijService, never()).obrisi(anyString());
+
+        // izmena iste varijante (čuvanje jedne) i dalje spušta aktivnu kad render padne
+        VarijantaDetails i = service.izmeni(d.id(), cmd("Pretvori 1100."));
+        assertEquals(StatusVarijante.NACRT, i.status());
+        assertEquals(RenderStatus.GRESKA, i.renderStatus());
+    }
+
+    @Test
+    void renderujSveJeJedanPoPredmetuIstovremeno() throws Exception {
+        service.kreiraj(grupa.getId(), cmd("Spora.", null, List.of()));
+        varijante.forEach(v -> v.setRenderHash(null));
+        CountDownLatch uRenderu = new CountDownLatch(1);
+        CountDownLatch pusti = new CountDownLatch(1);
+        when(latexRender.renderuj(eq("svg"), contains("Spora."), anyList())).thenAnswer(inv -> {
+            uRenderu.countDown();
+            assertTrue(pusti.await(10, TimeUnit.SECONDS));
+            return uspeh();
+        });
+        ExecutorService nit = Executors.newSingleThreadExecutor();
+        try {
+            Future<RenderujSveInfo> prvi = nit.submit(() -> service.renderujSve(7L));
+            assertTrue(uRenderu.await(10, TimeUnit.SECONDS));
+
+            ocekujGresku(409, "Render cele banke za ovaj predmet je već u toku.", () -> service.renderujSve(7L));
+            ocekujGresku(404, "Predmet nije pronađen.", () -> service.renderujSve(8L));   // drugi predmet ne čeka
+
+            pusti.countDown();
+            assertEquals(new RenderujSveInfo(1, 0, 0), prvi.get(10, TimeUnit.SECONDS));
+        } finally {
+            nit.shutdownNow();
+        }
+        assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(7L));   // ključ je pušten
+
+        // i posle izuzetka (503) ključ je pušten
+        varijante.forEach(v -> v.setRenderHash(null));
+        when(latexRender.renderuj(eq("svg"), contains("Spora."), anyList())).thenThrow(new RenderNedostupan());
+        ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
+        ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
     }
 }

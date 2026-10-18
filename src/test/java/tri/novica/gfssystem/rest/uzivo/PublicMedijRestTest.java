@@ -40,6 +40,15 @@ class PublicMedijRestTest {
     }
 
     @Test
+    void slikaPrilogaNijeJavnaIJe404KaoNepoznatId() throws Exception {
+        // PNG/JPEG prilog zadatka može biti deo rešenja: kao i PDF, nikad se ne servira javno
+        when(service.ucitaj(ID)).thenReturn(new MedijService.Fajl("image/png", PNG.length, new ByteArrayResource(PNG), VrstaMedija.PRILOG_SLIKA));
+        mvc.perform(get("/public/mediji/" + ID))
+           .andExpect(status().isNotFound())
+           .andExpect(jsonPath("$.reason").value("Slika nije pronađena."));
+    }
+
+    @Test
     void nepoznatIdImaIstuPorukuKaoPdfPrilog() throws Exception {
         when(service.ucitaj(ID)).thenThrow(new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND));
         mvc.perform(get("/public/mediji/" + ID))
@@ -54,7 +63,8 @@ class PublicMedijRestTest {
            .andExpect(status().isOk())
            .andExpect(content().contentType("image/svg+xml"))
            .andExpect(content().bytes(SVG))
-           .andExpect(header().string("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'"))
+           // img-src data:: ugrađene rasterske slike priloga se vide i kad se SVG otvori sam; skripte i spoljni resursi ne
+           .andExpect(header().string("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:"))
            .andExpect(header().string("X-Content-Type-Options", "nosniff"))
            .andExpect(header().string("Cache-Control", "public, max-age=31536000, immutable"))
            .andExpect(header().string("Content-Disposition", "inline"));

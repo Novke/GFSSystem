@@ -6,7 +6,11 @@ package tri.novica.gfssystem.service.banka;
  * komande hvata {@link LatexPravila} pre slanja.
  */
 public final class LatexDokument {
+    /** Omot dokumenta; svaka izmena traži {@code RenderVarijante.RENDER_VERZIJA + 1}, inače se banka ne renderuje ponovo. */
     private static final String OMOT = "\\documentclass[preview,border=6pt,varwidth=84mm,11pt]{standalone}";
+
+    /** Broj linija pre prve linije preambule (samo omot): linija preambule je {@code linijaUDokumentu - POMAK_PREAMBULE}. */
+    public static final int POMAK_PREAMBULE = 1;
 
     /** Preambula kad je predmet nema: srpski tekst, matematika, TikZ za automate i grafove, tabele, liste, slike. */
     public static final String PODRAZUMEVANA_PREAMBULA = String.join("\n",
@@ -37,6 +41,11 @@ public final class LatexDokument {
         String prefiks = OMOT + "\n" + lf(preambulaIli(preambula)) + "\n\\begin{document}\n";
         int pomak = (int) prefiks.chars().filter(c -> c == '\n').count();
         return new Dokument(prefiks + lf(telo) + "\n\\end{document}\n", pomak);
+    }
+
+    /** Broj linija preambule kako ulazi u dokument ({@link #preambulaIli}, CRLF i CR kao LF). */
+    public static int brojLinijaPreambule(String preambula) {
+        return (int) lf(preambulaIli(preambula)).lines().count();
     }
 
     /** Zadata preambula sa skinutim razmacima na krajevima, a podrazumevana kad je {@code null} ili prazna. */

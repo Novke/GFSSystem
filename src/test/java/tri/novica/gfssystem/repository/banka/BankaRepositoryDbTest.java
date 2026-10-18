@@ -181,12 +181,10 @@ class BankaRepositoryDbTest {
         assertEquals(Optional.of(predmet.getId()), grupaRepository.findPredmetId(podgrupa.getId()));
         assertTrue(grupaRepository.findPredmetId(-1L).isEmpty());
 
-        // varijante: po grupi, po statusu, brojači, zaključavanje i upiti po predmetu
-        assertEquals(1, varijantaRepository.findByGrupaIdOrderByRb(podgrupa.getId()).size());
-        assertEquals(1, varijantaRepository.findByGrupaIdAndStatusOrderByRb(podgrupa.getId(), StatusVarijante.NACRT).size());
-        assertEquals(0, varijantaRepository.findByGrupaIdAndStatusOrderByRb(podgrupa.getId(), StatusVarijante.AKTIVNA).size());
-        assertEquals(1, varijantaRepository.countByGrupaIdAndStatus(podgrupa.getId(), StatusVarijante.NACRT));
-        assertEquals(0, varijantaRepository.countByGrupaIdAndStatus(podgrupa.getId(), StatusVarijante.ARHIVIRANA));
+        // varijante: po grupi i statusu, zaključavanje i upiti po predmetu
+        assertEquals(List.of(varijanta.getId()), varijantaRepository.lista(podgrupa.getId(), null).stream().map(Varijanta::getId).toList());
+        assertEquals(1, varijantaRepository.lista(podgrupa.getId(), StatusVarijante.NACRT).size());
+        assertEquals(0, varijantaRepository.lista(podgrupa.getId(), StatusVarijante.AKTIVNA).size());
         assertTrue(tx.execute(s -> varijantaRepository.findByIdForUpdate(varijanta.getId())).isPresent());
         assertEquals(List.of(varijanta.getId()),
                 varijantaRepository.svePredmeta(predmet.getId()).stream().map(Varijanta::getId).toList());

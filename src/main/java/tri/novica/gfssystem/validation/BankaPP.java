@@ -9,6 +9,7 @@ import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
 import tri.novica.gfssystem.exceptions.SystemException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -46,20 +47,38 @@ public final class BankaPP {
     /**
      * Kopija sa podrazumevanim vrednostima: tekstovi bez razmaka na krajevima, prazna jedinica {@code null}, odstupanje 0
      * {@code APSOLUTNO}, {@code zanemariVelicinu} i {@code zanemariRazmake} {@code true}; opcije samo za JEDAN_TACAN i
-     * VISE_TACNIH, a opciji bez id-ja se dodeljuje sledeći slobodan id (iznad najvećeg datog, od 1), pa nova opcija nikad
-     * ne preuzme id postojeće. Ne proverava pravila.
+     * VISE_TACNIH, a opciji bez id-ja se dodeljuje sledeći slobodan id (iznad najvećeg datog, od 1). Ne proverava pravila.
+     * Za izmenu sačuvane šeme vidi {@link #normalizujPolja(List, List)}.
      */
     public static List<Polje> normalizujPolja(List<Polje> polja) {
+        return normalizujPolja(polja, null);
+    }
+
+    /**
+     * Kao {@link #normalizujPolja(List)}, ali opcija bez id-ja dobija id iznad najvećeg datog <b>i</b> najvećeg u sačuvanoj
+     * šemi za isti ključ ({@code sacuvana}, šema grupe pre izmene; {@code null} = nema je). Tako ni klijent koji ne šalje
+     * id-jeve (MCP) ne dobija id opcije uklonjene u istoj izmeni, pa tačan odgovor koji je na nju pokazivao nestaje umesto
+     * da pređe na novu opciju.
+     */
+    public static List<Polje> normalizujPolja(List<Polje> polja, List<Polje> sacuvana) {
+        Map<String, Long> najveciSacuvan = new HashMap<>();
+        if (sacuvana != null) {
+            for (Polje p : sacuvana) {
+                if (p == null || p.kljuc() == null || p.opcije() == null) continue;
+                for (PoljeOpcija o : p.opcije()) {
+                    if (o != null && o.id() != null) najveciSacuvan.merge(p.kljuc(), o.id(), Math::max);
+                }
+            }
+        }
         List<Polje> rezultat = new ArrayList<>();
         if (polja == null) return rezultat;
         for (Polje p : polja) {
-            rezultat.add(normalizuj(p));
+            rezultat.add(p == null ? null : normalizuj(p, najveciSacuvan.getOrDefault(strip(p.kljuc()), 0L)));
         }
         return rezultat;
     }
 
-    private static Polje normalizuj(Polje p) {
-        if (p == null) return null;
+    private static Polje normalizuj(Polje p, long najveciSacuvan) {
         boolean opcijsko = p.tip() == TipPolja.JEDAN_TACAN || p.tip() == TipPolja.VISE_TACNIH;
         return new Polje(strip(p.kljuc()), strip(p.oznaka()), p.tip(),
                 p.odstupanje() == null ? Double.valueOf(0.0) : p.odstupanje(),
@@ -67,14 +86,14 @@ public final class BankaPP {
                 prazanUNull(p.jedinica()),
                 p.zanemariVelicinu() == null ? Boolean.TRUE : p.zanemariVelicinu(),
                 p.zanemariRazmake() == null ? Boolean.TRUE : p.zanemariRazmake(),
-                opcijsko ? normalizujOpcije(p.opcije()) : null);
+                opcijsko ? normalizujOpcije(p.opcije(), najveciSacuvan) : null);
     }
 
-    private static List<PoljeOpcija> normalizujOpcije(List<PoljeOpcija> opcije) {
+    private static List<PoljeOpcija> normalizujOpcije(List<PoljeOpcija> opcije, long najveciSacuvan) {
         if (opcije == null) return null;
         long sledeci = opcije.stream().filter(o -> o != null && o.id() != null).mapToLong(PoljeOpcija::id)
                 .max().orElse(0L);
-        sledeci = Math.max(sledeci, 0L) + 1;
+        sledeci = Math.max(Math.max(sledeci, najveciSacuvan), 0L) + 1;
         List<PoljeOpcija> rezultat = new ArrayList<>();
         for (PoljeOpcija o : opcije) {
             if (o == null) {

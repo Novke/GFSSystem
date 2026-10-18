@@ -6,8 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import tri.novica.gfssystem.dto.banka.PreambulaCmd;
 import tri.novica.gfssystem.dto.banka.PreambulaInfo;
+import tri.novica.gfssystem.dto.banka.RenderGreskaInfo;
+import tri.novica.gfssystem.dto.banka.RenderOdgovor;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.banka.*;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -16,15 +19,19 @@ import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link LatexPreambulaService} nad pravom MySQL bazom (Flyway V1..V11, kao CI): preambula se zaista upisuje, a bulk
- * update keša rendera dira samo varijante tog predmeta i samo kad se vrednost promenila. Bez {@code @Transactional}:
- * svaki poziv servisa se commit-uje, pa test čisti za sobom kroz JDBC.
+ * update keša rendera dira samo varijante tog predmeta i samo kad se vrednost promenila; preambula koja ne prođe probni
+ * render (lažan {@link LatexRender} bean) ne menja ništa. Bez {@code @Transactional}: svaki poziv servisa se commit-uje, pa
+ * test čisti za sobom kroz JDBC.
  */
 @SpringBootTest
 class LatexPreambulaServiceDbTest {
@@ -37,6 +44,7 @@ class LatexPreambulaServiceDbTest {
     @Autowired GrupaZadatakaRepository grupaRepository;
     @Autowired VarijantaRepository varijantaRepository;
     @Autowired JdbcTemplate jdbc;
+    @MockitoBean LatexRender latexRender;
 
     Predmet predmet;
     Predmet drugiPredmet;
@@ -49,6 +57,8 @@ class LatexPreambulaServiceDbTest {
         drugiPredmet = predmet();
         varijante = List.of(varijanta(predmet), varijanta(predmet));
         tudjaVarijanta = varijanta(drugiPredmet);
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenReturn(new RenderOdgovor(true,
+                Base64.getEncoder().encodeToString("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes()), null, null, null, 5L, false));
     }
 
     @AfterEach
@@ -143,6 +153,22 @@ class LatexPreambulaServiceDbTest {
 
         assertThrows(SystemException.class, () -> service.postavi(predmet.getId(), new PreambulaCmd("\\write18{ls}")));
 
+        assertEquals(PREAMBULA, preambulaUBazi(predmet));
+        varijante.forEach(id -> assertEquals(HES, hes(id)));
+    }
+
+    @Test
+    void preambulaKojaSeNeKompajliraNeMenjaNistaUBazi() {
+        service.postavi(predmet.getId(), new PreambulaCmd(PREAMBULA));
+        vratiHesove();
+        when(latexRender.renderuj(eq("svg"), contains("nepostoji"), anyList())).thenReturn(new RenderOdgovor(false, null, null,
+                new RenderGreskaInfo(2, "LaTeX Error: File `nepostoji.sty' not found."), null, null, false));
+
+        SystemException x = assertThrows(SystemException.class,
+                () -> service.postavi(predmet.getId(), new PreambulaCmd("\\usepackage{nepostoji}")));
+
+        assertEquals(400, x.getCode());
+        assertEquals("Preambula se ne kompajlira (linija 1): LaTeX Error: File `nepostoji.sty' not found.", x.getMessage());
         assertEquals(PREAMBULA, preambulaUBazi(predmet));
         varijante.forEach(id -> assertEquals(HES, hes(id)));
     }

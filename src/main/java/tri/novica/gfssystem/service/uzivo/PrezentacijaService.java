@@ -380,16 +380,31 @@ public class PrezentacijaService {
             PlatnoPP.proveri(platno);
             PlatnoPP.proveriVelicinu(platnoJson.velicinaBajtova(platno));
             Set<String> ids = PlatnoPP.medijIds(platno);
-            if (!ids.isEmpty() && medijRepository.countByIdIn(ids) != ids.size()) {
-                throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.BAD_REQUEST);
+            if (!ids.isEmpty()) {
+                List<VrstaMedija> vrste = medijRepository.vrste(ids);
+                if (vrste.size() != ids.size()) {
+                    throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.BAD_REQUEST);
+                }
+                if (vrste.stream().anyMatch(v -> v != VrstaMedija.SLIKA)) {
+                    throw new SystemException(MedijService.NIJE_SLIKA, HttpStatus.BAD_REQUEST);
+                }
             }
         }
         return new ProverenSlajd(n, platno);
     }
 
+    /**
+     * Slika slajda ili pitanja postoji i jeste slika ({@code SLIKA}, kroz {@code POST /mediji}): render SVG i prilozi banke
+     * nisu (re-render briše stari SVG, prilozi nisu javni), pa su 400 {@code Medij nije slika.}
+     */
     private void proveriSliku(String slikaId) {
-        if (slikaId != null && !medijService.postoji(slikaId)) {
-            throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.BAD_REQUEST);
+        if (slikaId == null) {
+            return;
+        }
+        VrstaMedija vrsta = medijService.vrsta(slikaId)
+                .orElseThrow(() -> new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.BAD_REQUEST));
+        if (vrsta != VrstaMedija.SLIKA) {
+            throw new SystemException(MedijService.NIJE_SLIKA, HttpStatus.BAD_REQUEST);
         }
     }
 

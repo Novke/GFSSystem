@@ -17,16 +17,17 @@ import tri.novica.gfssystem.service.uzivo.MedijService;
  * Javno (bez autentifikacije) serviranje slika za telefone studenata; nginx izuzima /api/public/ iz basic-auth-a.
  * Id je UUID, a sadržaj se pod istim id-jem nikad ne menja, pa se kešira trajno. {@code nosniff}: pregledač ne sme da
  * pogađa tip, sadržaj važi samo kao {@code Content-Type} iz baze (proveren po bajtovima pri uploadu).
- * Služe se samo {@code SLIKA} i {@code RENDER_SVG} (fail-closed): PDF prilozi banke zadataka i svaka buduća vrsta nisu javni, a
- * odgovor za njih je isti kao za nepoznat id, da se ne otkrije da postoje.
- * Render SVG dobija CSP koji zabranjuje sve osim inline stilova (skripte i spoljni resursi nemaju šta da rade u SVG-u).
+ * Služe se samo {@code SLIKA} i {@code RENDER_SVG} (fail-closed): prilozi banke zadataka ({@code PRILOG_SLIKA},
+ * {@code PRILOG_PDF}) i svaka buduća vrsta nisu javni, a odgovor za njih je isti kao za nepoznat id, da se ne otkrije da postoje.
+ * Render SVG dobija CSP koji zabranjuje sve osim inline stilova i {@code data:} slika (rasterski prilozi ugrađeni u SVG; data
+ * slika ne izvršava skripte), pa se SVG vidi i kad se otvori sam, ne samo u {@code <img>}.
  */
 @RestController
 @RequestMapping("/public/mediji")
 @RequiredArgsConstructor
 public class PublicMedijRest {
 
-    private static final String CSP_SVG = "default-src 'none'; style-src 'unsafe-inline'";
+    private static final String CSP_SVG = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
 
     private final MedijService medijService;
 
@@ -41,7 +42,7 @@ public class PublicMedijRest {
         switch (fajl.vrsta()) {
             case SLIKA -> { }
             case RENDER_SVG -> odgovor.header("Content-Security-Policy", CSP_SVG);
-            default -> throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND);   // fail-closed: PRILOG_PDF i buduće vrste nisu javne
+            default -> throw new SystemException(MedijService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND);   // fail-closed: prilozi i buduće vrste nisu javni
         }
         return odgovor.body(fajl.sadrzaj());
     }

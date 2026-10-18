@@ -25,7 +25,7 @@ import java.util.List;
 
 /**
  * HTTP klijent render servisa (kontejner {@code gfs-latex}, spec banke 3.1): {@code POST /render} pretvara LaTeX u SVG ili
- * PDF, {@code GET /zdravlje} proverava da li radi. Klijent se gradi ovde (veza 5 s, čitanje {@code gfs.latex.timeout-sekunde}),
+ * PDF ({@code GET /zdravlje} servisa koristi healthcheck kontejnera, ne backend). Klijent se gradi ovde (veza 5 s, čitanje {@code gfs.latex.timeout-sekunde}),
  * bez {@code RestClient.Builder} beana: pom nema {@code spring-boot-restclient}, a bean tog tipa bi kasnije zaklonio Bootov.
  * <p>
  * Neuspeh kompilacije nije izuzetak: stiže kao {@code ok=false} sa greškom (servis odgovara 200). Servis koji ne radi
@@ -104,17 +104,6 @@ public class LatexRender {
     record Telo(boolean ok, String svg, String pdf, RenderGreskaInfo greska, String log, Long trajanjeMs) {
         RenderOdgovor odgovor() {
             return new RenderOdgovor(ok, svg, pdf, greska, log, trajanjeMs, false);
-        }
-    }
-
-    /** {@code true} kad {@code GET /zdravlje} vrati 2xx; svaka druga ishod (veza, timeout, status) je {@code false}. */
-    public boolean zdrav() {
-        try {
-            klijent.get().uri("/zdravlje").retrieve().toBodilessEntity();
-            return true;
-        } catch (RestClientException e) {
-            log.debug("Render servis nije zdrav: {}", opis(e));
-            return false;
         }
     }
 
