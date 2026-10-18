@@ -1,6 +1,8 @@
 package tri.novica.gfssystem.mcp;
 
+import io.modelcontextprotocol.spec.McpStatelessServerTransport;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.mcp.server.webmvc.transport.WebMvcStatelessServerTransport;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
@@ -50,10 +52,14 @@ class McpKonfigTest {
         assertDoesNotThrow(() -> McpKonfig.proveri(false, "STREAMABLE", List.of("/drugo"), "/mcp"));
     }
 
-    /** Kontekst sa McpKonfig, ključem i jednom RouterFunction rutom na zadatoj putanji. */
+    /**
+     * Kontekst sa McpKonfig, ključem i jednom RouterFunction rutom na zadatoj putanji; transport (u aplikaciji iz Spring AI
+     * auto-konfiguracije) je ovde bean, jer McpKonfig pravi stateless server nad njim.
+     */
     static ApplicationContextRunner kontekst(String putanjaRute, String... svojstva) {
         return new ApplicationContextRunner()
                 .withUserConfiguration(McpKonfig.class)
+                .withBean(McpStatelessServerTransport.class, () -> WebMvcStatelessServerTransport.builder().build())
                 .withBean(JsonMapper.class, () -> JsonMapper.builder().build())
                 .withBean(Clock.class, Clock::systemDefaultZone)
                 .withBean("ruta", RouterFunction.class, () -> RouterFunctions.route().POST(putanjaRute, H).build())

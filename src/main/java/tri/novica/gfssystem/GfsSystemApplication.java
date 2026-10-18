@@ -2,13 +2,15 @@ package tri.novica.gfssystem;
 
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
+import org.springframework.ai.mcp.server.common.autoconfigure.McpServerStatelessAutoConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.time.Clock;
 
-@SpringBootApplication
+// MCP stateless server pravi mcp/McpKonfig (isključena SDK provera argumenata prema šemi, vidi McpKonfig.StatelessServer)
+@SpringBootApplication(exclude = McpServerStatelessAutoConfiguration.class)
 public class GfsSystemApplication {
 
     public static void main(String[] args) {

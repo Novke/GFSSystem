@@ -1,12 +1,23 @@
 package tri.novica.gfssystem.mcp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpStatelessServerFeatures.SyncToolSpecification;
+import io.modelcontextprotocol.server.McpStatelessSyncServer;
+import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpStatelessServerTransport;
+import org.springframework.ai.mcp.server.common.autoconfigure.McpServerStatelessAutoConfiguration;
+import org.springframework.ai.mcp.server.common.autoconfigure.McpServerStdioDisabledCondition;
 import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerProperties;
+import org.springframework.ai.util.JacksonUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
@@ -19,6 +30,9 @@ import org.springframework.web.servlet.function.RequestPredicates;
 import org.springframework.web.servlet.function.RouterFunction;
 import org.springframework.web.servlet.function.RouterFunctions;
 import org.springframework.web.servlet.function.ServerRequest;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JavaType;
+import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -33,12 +47,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
- * MCP kostur (spec MCP 2 i 3.1): filter ključa nad putanjom endpointa, UTF-8 uputstva servera i startne provere.
- * Transport se ne podešava: {@code WebMvcStatelessServerTransport} iz Spring AI auto-konfiguracije, sa podrazumevanim
- * {@code ServerTransportSecurityValidator.NOOP} (Claude Code ne šalje {@code Origin}).
+ * MCP kostur (spec MCP 2 i 3.1): filter ključa nad putanjom endpointa, UTF-8 uputstva servera, omotač alata, stateless
+ * server i startne provere. Transport se ne podešava: {@code WebMvcStatelessServerTransport} iz Spring AI
+ * auto-konfiguracije, sa podrazumevanim {@code ServerTransportSecurityValidator.NOOP} (Claude Code ne šalje {@code Origin});
+ * menja se samo JSON mapper koji koristi, kroz Spring AI tačku zamene ({@link StatelessServer#mcpServerJsonMapper()}).
  */
 @Configuration
 public class McpKonfig {
@@ -80,6 +96,80 @@ public class McpKonfig {
                 return bean;
             }
         };
+    }
+
+    /**
+     * Omotač alata ({@link McpOmotac}): za svaki bean sa {@code @McpTool} metodama beleži objektne argumente po alatu, a
+     * listu stateless specifikacija alata (Spring AI {@code toolSpecs}) zamenjuje omotanom. Statički i bez
+     * {@code ApplicationContext}-a: vidi bean-ove kako nastaju, kao i Spring AI skener.
+     */
+    @Bean
+    static BeanPostProcessor mcpOmotac() {
+        Map<String, Map<String, JavaType>> zapisi = new ConcurrentHashMap<>();
+        return new BeanPostProcessor() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public Object postProcessAfterInitialization(Object bean, String ime) {
+                McpOmotac.zabelezi(bean, zapisi);
+                return McpOmotac.jeSpisakAlata(bean)
+                        ? McpOmotac.omotaj((List<SyncToolSpecification>) bean, zapisi) : bean;
+            }
+        };
+    }
+
+    /**
+     * Stateless server umesto Spring AI {@code McpServerStatelessAutoConfiguration} (isključena u
+     * {@code GfsSystemApplication}; isto ime bean-a {@code mcpStatelessSyncServer}, pa bi bez isključenja start pao), sa
+     * JSON mapper-om transporta koji čuva {@code null}. Razlog za server: MCP SDK 2.0.0 podrazumevano
+     * proverava argumente prema {@code inputSchema} pre handler-a ({@code McpStatelessAsyncServer} kroz
+     * {@code ToolInputValidator}) i vraća tehničku englesku poruku ({@code Tool (x) input validation failed: ...}) mimo
+     * {@link McpOmotac}-a, a Spring AI 2.0.1 tu proveru ne izlaže. Ovde je {@code validateToolInputs(false)}: argumente
+     * proveravaju omotač, {@link McpGreske} i {@link McpPatch}, sa porukama na srpskom. Ostalo je kao u Spring AI-ju:
+     * samo alati (resursi, promptovi i dopune su isključeni svojstvima), instrukcije, rok i
+     * {@code immediateExecution} (alat radi na niti zahteva, pa vidi atribute zahteva).
+     */
+    @Configuration(proxyBeanMethods = false)
+    @Conditional({McpServerStdioDisabledCondition.class,
+            McpServerStatelessAutoConfiguration.EnabledStatelessServerCondition.class})
+    @EnableConfigurationProperties(McpServerProperties.class)
+    static class StatelessServer {
+
+        /**
+         * JSON mapper MCP transporta, umesto Spring AI {@code McpServerJsonMapperAutoConfiguration} (njegova tačka
+         * zamene: bean istog imena). Isti je kao Spring AI-jev, osim što ne izbacuje {@code null} vrednosti iz mapa:
+         * transport poruku prevodi kroz mapu ({@code McpSchema.deserializeJsonRpcMessage}), a Spring AI-jev
+         * {@code NON_NULL} za sadržaj bi iz argumenata alata izbacio {@code "opis": null}, pa merge patch ne bi mogao da
+         * obriše polje niti da odbije {@code null} za polje koje se ne briše. Svojstva record-a bez vrednosti se i dalje
+         * ne pišu.
+         */
+        @Bean(name = "mcpServerJsonMapper", defaultCandidate = false)
+        JsonMapper mcpServerJsonMapper() {
+            return JsonMapper.builder()
+                    .enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT)
+                    .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+                    .addModules(JacksonUtils.instantiateAvailableModules())
+                    .changeDefaultPropertyInclusion(
+                            v -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL, JsonInclude.Include.ALWAYS))
+                    .build();
+        }
+
+        @Bean
+        McpStatelessSyncServer mcpStatelessSyncServer(McpStatelessServerTransport transport,
+                                                      McpServerProperties svojstva,
+                                                      ObjectProvider<List<SyncToolSpecification>> alati) {
+            List<SyncToolSpecification> sviAlati = alati.stream().flatMap(List::stream).toList();
+            McpServer.StatelessSyncSpecification server = McpServer.sync(transport)
+                    .serverInfo(McpSchema.Implementation.builder(svojstva.getName(), svojstva.getVersion()).build())
+                    .capabilities(McpSchema.ServerCapabilities.builder().tools(false).build())
+                    .instructions(svojstva.getInstructions())
+                    .requestTimeout(svojstva.getRequestTimeout())
+                    .immediateExecution(true)
+                    .validateToolInputs(false);
+            if (!sviAlati.isEmpty()) {
+                server.tools(sviAlati);
+            }
+            return server.build();
+        }
     }
 
     /**
