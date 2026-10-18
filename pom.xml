@@ -29,6 +29,18 @@
     <properties>
         <java.version>21</java.version>
     </properties>
+    <!-- MCP za Kloda: Spring AI 2.0.1 je građen za Boot 4.1.1 / Framework 7.0.9 / Jackson 3 (spec MCP sekcija 2) -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>2.0.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -64,9 +76,21 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- MCP server (stateless, /mcp), iza sopstvenog filtera ključa (mcp/McpKljucFilter) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- ArchUnit: granica pristupa MCP paketa (mcp/McpOpsegTest) -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.5.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
