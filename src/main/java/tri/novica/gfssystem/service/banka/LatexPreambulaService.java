@@ -40,8 +40,8 @@ import java.util.function.Supplier;
  * starom preambulom može da upiše stari heš, ali ga {@code VarijantaService} pod ključem poredi sa trenutnom
  * preambulom, a {@code renderuj-sve} svaku takvu varijantu renderuje ponovo.
  * <p>
- * <b>Render pre ključa, pa zaključavanje:</b> {@link #postavi} je bez transakcije (probni render traje do 30 s i ne drži ni
- * ključ ni konekciju); trenutna vrednost se čita u kratkoj transakciji, a upis ide u kratkoj transakciji koja počinje praznim
+ * <b>Render pre ključa, pa zaključavanje:</b> {@link #postavi} je bez transakcije (probni render traje do 30 s, bez ključa i
+ * transakcije, kao u {@code VarijantaService}); trenutna vrednost se čita u kratkoj transakciji, a upis ide u kratkoj transakciji koja počinje praznim
  * persistence context-om (open-in-view), zaključa red predmeta ({@code PredmetRepository.findByIdForUpdate}, prvi u
  * redosledu predmet -> grupa -> varijanta iz {@link GrupaZadatakaService}), ponovo poredi vrednost i tek onda upisuje.
  * Bulk update zatim zaključa (X) redove varijanti predmeta; redove grupa čita kroz sekundarni indeks

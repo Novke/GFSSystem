@@ -9,8 +9,11 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
@@ -24,6 +27,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -223,6 +227,50 @@ class MedijServiceTest {
         assertEquals(Optional.empty(), service.vrsta(UUID.randomUUID().toString()));
         assertEquals(Optional.empty(), service.vrsta("../x"));
         assertEquals(Optional.empty(), service.vrsta(null));
+    }
+
+    @Test
+    void greskaBrisanjaFajlaPosleCommitaSeSamoLoguje() {
+        // zahtev je već commit-ovan: ni RuntimeException iz brisanja (npr. zabranjen pristup) ne sme da ga obori
+        String id = UUID.randomUUID().toString();
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try (MockedStatic<Files> fajlovi = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            fajlovi.when(() -> Files.deleteIfExists(any())).thenThrow(new SecurityException("zabranjeno"));
+            service.obrisi(id);
+            List<TransactionSynchronization> posle = TransactionSynchronizationManager.getSynchronizations();
+            assertEquals(1, posle.size());
+            assertDoesNotThrow(() -> posle.get(0).afterCommit());
+            fajlovi.verify(() -> Files.deleteIfExists(dir.resolve(id)));
+
+            // isto van transakcije i pri čišćenju fajla poništenog upisa
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+            assertDoesNotThrow(() -> service.obrisi(UUID.randomUUID().toString()));
+        } finally {
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+        verify(medijRepository).deleteById(id);
+    }
+
+    @Test
+    void greskaBrisanjaFajlaPosleRollbackaSeSamoLoguje() {
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            MedijInfo info = service.sacuvajRender(SVG, "zadatak.svg");
+            List<TransactionSynchronization> posle = TransactionSynchronizationManager.getSynchronizations();
+            assertEquals(1, posle.size());
+            try (MockedStatic<Files> fajlovi = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+                fajlovi.when(() -> Files.deleteIfExists(any())).thenThrow(new IllegalStateException("disk"));
+                assertDoesNotThrow(() -> posle.get(0).afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+            }
+            posle.get(0).afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);   // bez greške: fajl nestaje
+            assertFalse(Files.exists(dir.resolve(info.id())));
+        } finally {
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     // --- prilozi (PNG, JPEG, PDF), POST /banka/prilozi ---

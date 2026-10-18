@@ -224,7 +224,7 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   the variant, **`dokument` is reserved** (the render service writes `dokument.tex/.pdf/.log`), the medium must exist and be an attachment
   uploaded through `POST /banka/prilozi` (`PRILOG_SLIKA` PNG/JPEG or `PRILOG_PDF`); a slide image (`SLIKA`, public), GIF, WebP and render SVG are 400
   `Medij nije prilog zadatka.`. All attachments together, as base64 (4/3 of the size) plus text and solution, must stay under 40 MB (the container
-  takes a 60 MB body), else 400 `Prilozi su preveliki za render (najviše 40 MB ukupno).` (about 30 MB of files). `PUT` replaces the whole list (an
+  takes a 60 MB body), i.e. about 30 MB of files, else 400 `Prilozi su preveliki za render (ukupno najviše oko 30 MB fajlova).`. `PUT` replaces the whole list (an
   existing name just changes its medium).
 - **JSON schema of `polja` (`grupe_zadataka.polja`, text column, `[]` = work on paper)** is a list of `Polje {kljuc, oznaka, tip, odstupanje,
   odstupanjeTip, jedinica, zanemariVelicinu, zanemariRazmake, opcije[{id, tekst}]}`; <= 10 fields, `kljuc` `^[a-z][a-z0-9]{0,9}$` and unique,
@@ -233,7 +233,10 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
   without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,
   under the lock: `BankaPP.normalizujPolja(polja, sacuvana)`), so a client that omits ids (MCP) never gets the id of an option removed in the same
-  `PUT`, and an answer that pointed at it is dropped instead of moving to the new option. A deleted id is not remembered beyond the stored schema: a
+  `PUT`, and an answer that pointed at it is dropped instead of moving to the new option. **Contract for clients (front, MCP agent): a `PUT` of a
+  group must echo the `id` of every existing option it keeps.** An option sent without `id` is a NEW option (fresh id above the stored maximum),
+  and the old option it may look like is removed together with every answer that pointed at it; `AKTIVNA` variants that lose an answer drop to
+  `NACRT` (see "Schema change" below). Renaming an option = same `id`, new `tekst`. A deleted id is not remembered beyond the stored schema: a
   later `PUT` can reuse an id that no option and no answer of the group refers to any more (the removal already cleared those answers). Whole column <= 65 535 bytes
   (400 `Šema polja je prevelika.`; `odgovori` the same, `Odgovori su preveliki.`).
   **`odgovori` (`varijante.odgovori`, `{}` for a paper group)** is an object `kljuc -> OdgovorPolja {broj | prihvatljivi | tacna | tacne}` with
@@ -291,7 +294,8 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   `obrisi/odobri/arhiviraj/vratiUNacrt` do not clear it. Front nginx needs `proxy_read_timeout 120s` for `/api/` (render 2 x 30 s plus upload exceed 60 s;
   create/duplicate are not idempotent, so a 504 plus retry would duplicate).
 - **`POST /banka/predmeti/{id}/renderuj-sve`** (after a preamble change): synchronous, one call is one step. `VarijantaService.renderujSve` picks
-  the candidates (first the stale ones: hash differs or render `CEKA`; then those whose last render of the same content failed), renders at most
+  the candidates (the stale ones: hash differs or render `CEKA`; **only when there is none**, those whose last render of the same content failed,
+  so the multi-call flow after a preamble change renders and counts each failure once, while a manual call with nothing stale retries them), renders at most
   **200** per call and starts no new one after **40 s** (`Clock`); each variant is its own read, render (no lock) and short write transaction
   (writes only if the locked content still has the rendered hash and nobody refreshed it meanwhile). A failed render writes only `GRESKA` and
   the message: **no status change** (one typo in the preamble fails every variant; the active ones keep their last good SVG). Response
@@ -303,7 +307,7 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   `GRESKA` with its message (or `Render nije uspeo.`) and the loop goes on; the mark is skipped if the
   locked variant already has the same hash and `OK`. **Infrastructure errors abort the loop and mark nothing**: `RenderNedostupan` (503),
   `DataAccessException`, `PersistenceException`, `TransactionException`, `UncheckedIOException` (e.g. a full disk while writing an SVG must not
-  demote every active variant); what was already written stays.
+  mark the whole bank as failed); what was already written stays.
 - **`POST /banka/render-proba`** (`{predmetId, tekst, resenje, prilozi}`): the editor's preview and Claude's check, nothing saved; same rules as a
   write, the subject's preamble, `{ok, svg, resenjeSvg, greska, deo}` with the SVG as text; when only the solution failed it is `ok=false`,
   `deo=resenje` **with** the task `svg`. At most **3 at once per backend** (`Semaphore`, not waiting), the fourth gets 429 `Previše proba u isto

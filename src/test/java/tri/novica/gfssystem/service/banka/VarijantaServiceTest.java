@@ -548,9 +548,9 @@ class VarijantaServiceTest {
         List<PrilogCmd> tri = new ArrayList<>(dva);
         tri.add(new PrilogCmd("c", "e4c13a0f-7c89-4bcf-80d4-b5c6d7e8f90a"));   // 3 x 10 MB = 40 MB u base64, plus tekst
 
-        ocekujGresku(400, "Prilozi su preveliki za render (najviše 40 MB ukupno).",
+        ocekujGresku(400, "Prilozi su preveliki za render (ukupno najviše oko 30 MB fajlova).",
                 () -> service.kreiraj(grupa.getId(), cmd("Tekst.", null, tri)));
-        ocekujGresku(400, "Prilozi su preveliki za render (najviše 40 MB ukupno).",
+        ocekujGresku(400, "Prilozi su preveliki za render (ukupno najviše oko 30 MB fajlova).",
                 () -> service.proba(new RenderProbaCmd(7L, "Tekst.", null, tri)));
         verifyNoInteractions(latexRender);
 
@@ -690,25 +690,67 @@ class VarijantaServiceTest {
     // ---------------------------------------------------------------- render cele banke
 
     @Test
-    void renderujSveRenderujeZastareleINeuspeleAPreostaloBrojiSamoZastarele() {
+    void renderujSveSaZastarelimNePonavljaPaleABezZastarelihIhPonavlja() {
+        // posle izmene preambule front zove dok je preostalo > 0: pale se tada ne renderuju, pa se svaka greška broji jednom
         VarijantaDetails sveza = service.kreiraj(grupa.getId(), cmd("Sveža."));
         VarijantaDetails zastarela = service.kreiraj(grupa.getId(), cmd("Zastarela."));
+        VarijantaDetails losaZastarela = service.kreiraj(grupa.getId(), cmd("Loša zastarela."));
         when(latexRender.renderuj(eq("svg"), contains("\\foo"), anyList())).thenReturn(neuspeh(1, "Undefined control sequence."));
-        VarijantaDetails neuspela = service.kreiraj(grupa.getId(), cmd("\\foo"));
+        VarijantaDetails pala = service.kreiraj(grupa.getId(), cmd("\\foo"));   // GRESKA sa tekućim hešom
         varijanta(zastarela.id()).setRenderHash(null);   // npr. posle izmene preambule
+        varijanta(losaZastarela.id()).setRenderHash(null);
+        when(latexRender.renderuj(eq("svg"), contains("Loša zastarela."), anyList())).thenReturn(neuspeh(1, "Undefined control sequence."));
         clearInvocations(latexRender);
 
-        RenderujSveInfo r = service.renderujSve(7L);
+        assertEquals(new RenderujSveInfo(1, 1, 0), service.renderujSve(7L));   // neuspelo broji samo zastarelu koja je pala
 
-        assertEquals(new RenderujSveInfo(1, 1, 0), r);   // pala se ponavlja: renderovano broji uspele, neuspelo pale
         verify(latexRender, never()).renderuj(anyString(), contains("Sveža."), anyList());
         verify(latexRender, times(1)).renderuj(anyString(), contains("Zastarela."), anyList());
-        verify(latexRender, times(1)).renderuj(anyString(), contains("$11$"), anyList());   // rešenje samo zastarele: neuspeloj pada tekst
-        verify(latexRender, times(1)).renderuj(anyString(), contains("\\foo"), anyList());
-        assertNotNull(varijanta(zastarela.id()).getRenderHash());
+        verify(latexRender, times(1)).renderuj(anyString(), contains("Loša zastarela."), anyList());
+        verify(latexRender, never()).renderuj(anyString(), contains("\\foo"), anyList());   // pala ne ide u isti tok
+        assertEquals(RenderStatus.OK, varijanta(zastarela.id()).getRenderStatus());
+        assertEquals(RenderStatus.GRESKA, varijanta(losaZastarela.id()).getRenderStatus());
         assertEquals(RenderStatus.OK, varijanta(sveza.id()).getRenderStatus());
-        assertEquals(RenderStatus.GRESKA, varijanta(neuspela.id()).getRenderStatus());
+        clearInvocations(latexRender);
+
+        // poziv bez ijedne zastarele (ručni "renderuj sve") ponavlja pale istog sadržaja
+        assertEquals(new RenderujSveInfo(0, 2, 0), service.renderujSve(7L));
+        verify(latexRender, times(1)).renderuj(anyString(), contains("\\foo"), anyList());
+        verify(latexRender, times(1)).renderuj(anyString(), contains("Loša zastarela."), anyList());
+        verify(latexRender, never()).renderuj(anyString(), contains("Zastarela."), anyList());
+        assertEquals(RenderStatus.GRESKA, varijanta(pala.id()).getRenderStatus());
         ocekujGresku(404, "Predmet nije pronađen.", () -> service.renderujSve(8L));
+    }
+
+    @Test
+    void aktivnaSaGreskomIzRenderaBankeSeNeOdobravaAUspeoRenderIliIzmenaJeVracaNaOk() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        when(latexRender.renderuj(eq("svg"), contains("nepostoji"), anyList())).thenReturn(neuspeh(1, "Undefined control sequence."));
+        Runnable losaPreambula = () -> {
+            predmet.setLatexPreambula("\\usepackage{nepostoji}");
+            varijante.forEach(v -> v.setRenderHash(null));   // kao ponistiHashPredmeta
+            assertEquals(new RenderujSveInfo(0, 1, 0), service.renderujSve(7L));
+            assertEquals(StatusVarijante.AKTIVNA, varijanta(d.id()).getStatus());
+            assertEquals(RenderStatus.GRESKA, varijanta(d.id()).getRenderStatus());
+        };
+        losaPreambula.run();
+
+        // odobravanje traži uspeo render i kad je varijanta već aktivna
+        ocekujGresku(409, "Varijanta se odobrava tek kad je render uspeo.", () -> service.odobri(d.id()));
+
+        predmet.setLatexPreambula(null);   // preambula popravljena: prisilan render vraća OK, status ostaje
+        VarijantaDetails r = service.render(d.id());
+        assertEquals(RenderStatus.OK, r.renderStatus());
+        assertEquals(StatusVarijante.AKTIVNA, r.status());
+        assertNull(r.renderGreska());
+
+        losaPreambula.run();
+        predmet.setLatexPreambula(null);   // isto kroz izmenu
+        VarijantaDetails i = service.izmeni(d.id(), cmd("Pretvori 1100."));
+        assertEquals(RenderStatus.OK, i.renderStatus());
+        assertEquals(StatusVarijante.AKTIVNA, i.status());
+        assertNotEquals(d.svgId(), i.svgId());
     }
 
     @Test

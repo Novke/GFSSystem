@@ -85,7 +85,7 @@ public class VarijantaService {
     static final String PREVISE_PRILOGA = "Najviše 10 priloga.";
     static final String REZERVISANO_IME = "Ime priloga 'dokument' je rezervisano.";
     static final String NIJE_PRILOG = "Medij nije prilog zadatka.";
-    static final String PRILOZI_PREVELIKI = "Prilozi su preveliki za render (najviše 40 MB ukupno).";
+    static final String PRILOZI_PREVELIKI = "Prilozi su preveliki za render (ukupno najviše oko 30 MB fajlova).";
     static final String RENDER_SVIH_U_TOKU = "Render cele banke za ovaj predmet je već u toku.";
     /** Render cele banke: greška koja nije SystemException (poruka izuzetka nije za nastavnika). */
     static final String RENDER_PAO = "Render nije uspeo.";
@@ -98,8 +98,8 @@ public class VarijantaService {
     static final Duration MAX_TRAJANJE_RENDERA_SVIH = Duration.ofSeconds(40);
     private static final int MAX_PRILOGA = 10;
     /**
-     * Prilozi jednog rendera kao base64 (4/3 veličine) plus tekst i rešenje: render servis prima najviše 60 MB tela
-     * ({@code RENDER_MAX_BODY}), ovo ostavlja rezervu.
+     * Prilozi jednog rendera kao base64 (4/3 veličine, oko 30 MB fajlova) plus tekst i rešenje: render servis prima
+     * najviše 60 MB tela ({@code RENDER_MAX_BODY}), ovo ostavlja rezervu.
      */
     private static final long MAX_PRILOZI_ZA_RENDER_BAJTOVA = 40L * 1024 * 1024;
     /** Kolona {@code odgovori} je MySQL {@code text}: najviše 65 535 bajtova. */
@@ -322,8 +322,9 @@ public class VarijantaService {
      * Ponovni render banke predmeta (posle izmene preambule): sinhrono, redom, bez ključa predmeta. Svaka varijanta se
      * čita i renderuje bez ključa, a upisuje u kratkoj transakciji pod ključem grupe pa varijante, samo ako je heš
      * zaključanog sadržaja sa trenutnom preambulom jednak renderovanom (inače se rezultat odbacuje i varijanta ostaje
-     * zastarela). Prvo zastarele (heš sadržaja se razlikuje od poslednjeg rendera ili render čeka), pa one čiji je
-     * poslednji render istog sadržaja pao; najviše {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle
+     * zastarela). Kandidati su zastarele (heš sadržaja se razlikuje od poslednjeg rendera ili render čeka), a samo kad
+     * nijedne nema one čiji je poslednji render istog sadržaja pao: tok posle izmene preambule tako nijednu palu ne
+     * renderuje dvaput (i broji je jednom), a poziv bez zastarelih ponavlja pale; najviše {@value #MAX_RENDERA_PO_POZIVU} po pozivu i nijedna nova posle
      * {@link #MAX_TRAJANJE_RENDERA_SVIH}. Neuspeo render <b>ne spušta status</b>: upisuje se samo {@code GRESKA} i poruka, a
      * varijanta (i AKTIVNA) zadržava status i poslednji uspeo SVG, jer jedna greška u preambuli obara svaku varijantu. Loša
      * varijanta ne zaustavlja petlju: {@link SystemException} (npr. prilog bez fajla, komanda koju je deny-lista u
@@ -372,7 +373,10 @@ public class VarijantaService {
     /** Šta je render cele banke upisao za jednu varijantu. */
     private enum UpisRendera { USPEO, PAO, PRESKOCEN }
 
-    /** Id-jevi za render cele banke: prvih {@code zastarelih} su zastarele, ostatak pale istog sadržaja; obe grupe po id-ju. */
+    /**
+     * Id-jevi za render cele banke, po id-ju: zastarele, a kad nijedne nema, pale istog sadržaja; {@code zastarelih} je broj
+     * zastarelih (za {@code preostalo}).
+     */
     private record Kandidati(List<Long> redom, int zastarelih) {
     }
 
@@ -389,7 +393,9 @@ public class VarijantaService {
                 pale.add(v.getId());
             }
         }
-        return new Kandidati(Stream.concat(zastarele.stream(), pale.stream()).toList(), zastarele.size());
+        // pale tek kad nema zastarelih: u toku posle izmene preambule (front zove dok je preostalo > 0) svaka pala se
+        // renderuje i broji jednom, a ručni poziv bez zastarelih ih ponavlja
+        return new Kandidati(zastarele.isEmpty() ? pale : zastarele, zastarele.size());
     }
 
     /** Jedna varijanta cele banke: upisan uspeh, upisana greška ili ništa (nestala, osvežena ili promenjena u međuvremenu). */
@@ -584,7 +590,7 @@ public class VarijantaService {
      * Do {@value #MAX_PRILOGA} priloga, ime po {@code BankaPP.proveriImePriloga}, ne {@value #REZERVISANO}, jedinstveno;
      * medij postoji i otpremljen je kao prilog ({@code POST /banka/prilozi}: {@code PRILOG_SLIKA} PNG/JPEG ili
      * {@code PRILOG_PDF}; slika slajda je javna, render SVG LaTeX ne uključuje); ukupno, kao base64 sa tekstom i rešenjem,
-     * najviše 40 MB (telo zahteva render servisu).
+     * najviše 40 MB (telo zahteva render servisu), tj. oko 30 MB fajlova.
      */
     private List<Prilog> proveriPriloge(List<PrilogCmd> prilozi, String tekst, String resenje) {
         List<PrilogCmd> lista = prilozi == null ? List.of() : prilozi;

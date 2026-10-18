@@ -284,10 +284,14 @@ public class MedijService {
                 : naziv;
     }
 
+    /**
+     * Briše fajl ako postoji; greška (i {@link RuntimeException}, npr. zabranjen pristup) se samo loguje: posle commit-a ili
+     * rollback-a zahtev je već završen i ne sme da padne zbog fajla.
+     */
     private static void obrisiFajl(Path putanja) {
         try {
             Files.deleteIfExists(putanja);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.warn("Fajl {} nije obrisan", putanja, e);
         }
     }
