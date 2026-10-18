@@ -40,3 +40,5 @@ jobs:
         run: chmod +x mvnw && ./mvnw -B package
       - name: Provera Dockerfile-a
         run: docker build -t gfs-backend-ci .
+      - name: "Render servis (gfs-latex): build i smoke"
+        run: bash latex-render/test/smoke.sh

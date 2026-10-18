@@ -16,6 +16,9 @@ public class Predmet {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private String naziv;
+    /** LaTeX preambula predmeta za render banke zadataka; null = podrazumevana. */
+    @Column(name = "latex_preambula", columnDefinition = "mediumtext")
+    private String latexPreambula;
 
     @OneToMany(mappedBy = "predmet")
     private List<Predavanje> predavanja;

@@ -102,11 +102,11 @@ class PrezentacijaServiceTest {
         medij.setNaziv("tabla.png");
         medij.setMime("image/png");
         medij.setVelicina(1234);
-        when(medijService.postoji(SLIKA)).thenReturn(true);
+        when(medijService.vrsta(SLIKA)).thenReturn(Optional.of(VrstaMedija.SLIKA));
         when(medijRepository.getReferenceById(SLIKA)).thenReturn(medij);
         when(medijRepository.findById(SLIKA)).thenReturn(Optional.of(medij));
-        when(medijRepository.countByIdIn(anyCollection()))
-                .thenAnswer(inv -> (long) ((Collection<?>) inv.getArgument(0)).size());
+        when(medijRepository.vrste(anyCollection()))
+                .thenAnswer(inv -> Collections.nCopies(((Collection<?>) inv.getArgument(0)).size(), VrstaMedija.SLIKA));
 
         when(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(anyLong())).thenAnswer(inv -> slajdovi(inv.getArgument(0)));
         when(slajdRepository.findById(anyLong())).thenAnswer(inv -> nadjiUBazi(inv.getArgument(0)));
@@ -591,8 +591,25 @@ class PrezentacijaServiceTest {
     }
 
     @Test
+    void medijKojiNijeSlikaJe400ZaSlajdPitanjeIPlatno() {
+        // render SVG i prilozi banke nisu slike slajda: re-render bi brisao fajl na koji slajd pokazuje
+        for (VrstaMedija vrsta : List.of(VrstaMedija.RENDER_SVG, VrstaMedija.PRILOG_SLIKA, VrstaMedija.PRILOG_PDF)) {
+            when(medijService.vrsta("banka")).thenReturn(Optional.of(vrsta));
+            greska(400, "Medij nije slika.",
+                    () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "banka", null, false, null, null, null), null));
+            PitanjeCmd p = new PitanjeCmd(TipPitanja.SKALA, "Ocena?", "banka", null, null, null, null, null, null, null, null,
+                    null, null);
+            greska(400, "Medij nije slika.", () -> service.dodajSlajd(1L, pitanjeSlajdCmd(p), null));
+            when(medijRepository.vrste(anyCollection())).thenReturn(List.of(VrstaMedija.SLIKA, vrsta));
+            greska(400, "Medij nije slika.", () -> service.dodajSlajd(1L, platnoCmd(null), null));
+        }
+        assertTrue(baza.isEmpty());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
     void nepostojecaSlikaJe400() {
-        when(medijService.postoji("nema")).thenReturn(false);
+        when(medijService.vrsta("nema")).thenReturn(Optional.empty());
         greska(400, "Slika nije pronađena.",
                 () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "nema", null, false, null, null, null), null));
         PitanjeCmd p = new PitanjeCmd(TipPitanja.SKALA, "Ocena?", "nema", null, null, null, null, null, null, null, null,
@@ -915,7 +932,7 @@ class PrezentacijaServiceTest {
         assertNull(d.naslov());
         assertEquals(12.35, ((TekstSloj) d.platno().slojevi().get(0)).x());
         // medij: slika sloja i crtež, jednim upitom
-        verify(medijRepository).countByIdIn(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ));
+        verify(medijRepository).vrste(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ));
     }
 
     @Test
@@ -939,7 +956,7 @@ class PrezentacijaServiceTest {
 
     @Test
     void nepostojeciMedijUPlatnuJe400BezUpisa() {
-        when(medijRepository.countByIdIn(anyCollection())).thenReturn(1L);
+        when(medijRepository.vrste(anyCollection())).thenReturn(List.of(VrstaMedija.SLIKA));   // drugi id ne postoji
         greska(400, MedijService.NIJE_PRONADJENA, () -> service.dodajSlajd(1L, platnoCmd(null), null));
         assertTrue(baza.isEmpty());
         verify(slajdRepository, never()).save(any());
