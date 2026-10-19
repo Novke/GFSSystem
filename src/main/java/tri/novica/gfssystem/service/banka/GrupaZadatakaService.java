@@ -18,6 +18,7 @@ import tri.novica.gfssystem.entity.uzivo.Medij;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
+import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.utility.Serija;
@@ -34,6 +35,11 @@ import java.util.stream.Stream;
  * i namenu roditelja, dubina je najviše {@value #MAX_DUBINA} (koren = 1), naziv je jedinstven među braćom bez obzira na
  * velika slova (posle trim-a), {@code rb} braće je 1..n. Čvor je ili list (varijante) ili unutrašnji (podgrupe): ovde
  * se odbija podgrupa grupi sa varijantama, {@code VarijantaService} odbija varijantu grupi sa podgrupama.
+ * <p>
+ * Oznaka {@code iskljucena} u {@link GrupaCvor} i {@link GrupaDetails}: grupa ili neki njen predak ima isključenu temu
+ * ({@code IskljuceneTemeService}), {@code iskljucenjeId} je tema najbližeg takvog čvora. Teme se čitaju direktno iz
+ * {@link IskljucenaTemaRepository} (jedan upit po stablu ili grupi), ne kroz {@code IskljuceneTemeService}: on koristi
+ * ovaj servis za putanju grupe, pa bi to bio ciklus zavisnosti.
  * <p>
  * <b>Red zaključavanja (invarijanta):</b> red predmeta -> red(ovi) grupa (novi roditelj pre grupe koja mu prelazi) ->
  * redovi varijanti. Svaka izmena stabla prvo zaključa red predmeta ({@code PredmetRepository.findByIdForUpdate}), pa
@@ -83,12 +89,13 @@ public class GrupaZadatakaService {
     private final GrupaZadatakaRepository grupaRepository;
     private final VarijantaRepository varijantaRepository;
     private final PredmetRepository predmetRepository;
+    private final IskljucenaTemaRepository temaRepository;
     private final MedijService medijService;
     private final Clock clock;
 
     // ---------------------------------------------------------------- čitanje
 
-    /** Celo stablo predmeta i namene: jedan upit grupa i jedan upit brojača, stablo se slaže u memoriji. */
+    /** Celo stablo predmeta i namene: upit grupa, upiti brojača i upit isključenih grupa, stablo se slaže u memoriji. */
     @Transactional(readOnly = true)
     public List<GrupaCvor> stablo(Long predmetId, Namena namena) {
         if (predmetId == null) {
@@ -506,17 +513,34 @@ public class GrupaZadatakaService {
         List<Long> podstablo = stablo.podstablo(g);
         Map<Long, Brojevi> brojaci = brojaci(podstablo, false);
         Brojevi b = podstablo.stream().map(brojaci::get).filter(Objects::nonNull).reduce(Brojevi.NULA, Brojevi::plus);
+        List<GrupaPutanja> putanja = putanja(g);
+        Long iskljucenjeId = iskljucenje(putanja, temaRepository.iskljuceneGrupe(g.getPredmet().getId()));
         return new GrupaDetails(g.getId(), g.getPredmet().getId(), roditeljId(g), g.getNamena(), g.getNaziv(),
-                g.getOpis(), g.getRb(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja()), putanja(g),
+                g.getOpis(), g.getRb(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja()), putanja,
                 stablo.deca(g).isEmpty(), b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), g.getIzmenjeno(),
-                g.getIzvor(), g.getSerija(), false, null);
+                g.getIzvor(), g.getSerija(), iskljucenjeId != null, iskljucenjeId);
     }
 
-    /** Sve grupe predmeta i namene jednim upitom; brojači (sa Klodovim nacrtima, još dva upita) samo kad se traže. */
+    /** Tema najbližeg isključenog čvora putanje (od korena do grupe): sopstvena tema grupe pre teme pretka, inače null. */
+    private static Long iskljucenje(List<GrupaPutanja> putanja, Map<Long, Long> iskljuceneGrupe) {
+        for (int i = putanja.size() - 1; i >= 0; i--) {
+            Long tema = iskljuceneGrupe.get(putanja.get(i).id());
+            if (tema != null) {
+                return tema;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Sve grupe predmeta i namene jednim upitom; brojači (sa Klodovim nacrtima, još dva upita) i isključene grupe (još
+     * jedan) samo kad se traže čvorovi stabla.
+     */
     private Stablo ucitajStablo(Long predmetId, Namena namena, boolean saBrojacima) {
         List<GrupaZadataka> grupe = grupaRepository.findByPredmetIdAndNamenaOrderByRoditeljIdAscRbAsc(predmetId, namena);
         Map<Long, Brojevi> brojaci = saBrojacima ? brojaci(grupe.stream().map(GrupaZadataka::getId).toList(), true) : Map.of();
-        return new Stablo(grupe, brojaci);
+        Map<Long, Long> iskljucene = saBrojacima ? temaRepository.iskljuceneGrupe(predmetId) : Map.of();
+        return new Stablo(grupe, brojaci, iskljucene);
     }
 
     /**
@@ -553,7 +577,10 @@ public class GrupaZadatakaService {
         }
     }
 
-    /** Stablo jednog predmeta i namene u memoriji: koreni i deca po roditelju, po {@code rb} pa id-ju. */
+    /**
+     * Stablo jednog predmeta i namene u memoriji: koreni i deca po roditelju, po {@code rb} pa id-ju; {@code iskljucene}
+     * je id grupe -> id njene sopstvene isključene teme.
+     */
     private static final class Stablo {
         private static final Comparator<GrupaZadataka> PO_RB =
                 Comparator.comparingInt(GrupaZadataka::getRb).thenComparing(GrupaZadataka::getId);
@@ -561,9 +588,11 @@ public class GrupaZadatakaService {
         private final List<GrupaZadataka> koreni = new ArrayList<>();
         private final Map<Long, List<GrupaZadataka>> deca = new HashMap<>();
         private final Map<Long, Brojevi> brojaci;
+        private final Map<Long, Long> iskljucene;
 
-        Stablo(List<GrupaZadataka> grupe, Map<Long, Brojevi> brojaci) {
+        Stablo(List<GrupaZadataka> grupe, Map<Long, Brojevi> brojaci, Map<Long, Long> iskljucene) {
             this.brojaci = brojaci;
+            this.iskljucene = iskljucene;
             for (GrupaZadataka g : grupe) {
                 if (g.getRoditelj() == null) {
                     koreni.add(g);
@@ -597,16 +626,25 @@ public class GrupaZadatakaService {
             return 1 + deca(g).stream().mapToInt(this::visina).max().orElse(0);
         }
 
-        /** Čvor sa decom; brojači unutrašnjeg čvora su zbir podstabla (i sopstvenih, kojih po pravilu nema). */
+        /** Čvor korena sa decom (vidi {@link #cvor(GrupaZadataka, Long)}). */
         GrupaCvor cvor(GrupaZadataka g) {
-            List<GrupaCvor> podcvorovi = deca(g).stream().map(this::cvor).toList();
+            return cvor(g, null);
+        }
+
+        /**
+         * Čvor sa decom; brojači unutrašnjeg čvora su zbir podstabla (i sopstvenih, kojih po pravilu nema). Isključenje:
+         * sopstvena tema grupe, inače {@code iskljucenjePretka} (tema najbližeg isključenog pretka), koje deca nasleđuju.
+         */
+        private GrupaCvor cvor(GrupaZadataka g, Long iskljucenjePretka) {
+            Long iskljucenjeId = iskljucene.getOrDefault(g.getId(), iskljucenjePretka);
+            List<GrupaCvor> podcvorovi = deca(g).stream().map(d -> cvor(d, iskljucenjeId)).toList();
             Brojevi b = podcvorovi.stream()
                     .map(c -> new Brojevi(c.brojVarijanti(), c.brojAktivnih(), c.brojNacrta(), c.brojGresaka(),
                             c.brojClaudeNacrta()))
                     .reduce(brojaci.getOrDefault(g.getId(), Brojevi.NULA), Brojevi::plus);
             return new GrupaCvor(g.getId(), g.getNaziv(), g.getRb(), g.getTezina(), podcvorovi.isEmpty(),
                     b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), podcvorovi, g.getIzvor(), b.claudeNacrta(),
-                    false, null);
+                    iskljucenjeId != null, iskljucenjeId);
         }
     }
 
