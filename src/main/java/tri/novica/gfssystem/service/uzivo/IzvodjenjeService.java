@@ -418,7 +418,7 @@ public class IzvodjenjeService {
             return;
         }
         Slajd s = pitanjeIliGreska(iz, sl);
-        PitanjeSnimak snimak = trenutnaRunda(iz).map(this::snimak).orElseGet(() -> PitanjeSnimak.od(s));
+        SnimakRunde snimak = trenutnaRunda(iz).map(this::snimak).orElseGet(() -> PitanjeSnimak.od(s));
         if (!snimak.imaTacanOdgovor()) {
             throw new SystemException(NEMA_TACNOG, HttpStatus.CONFLICT);
         }
@@ -683,8 +683,8 @@ public class IzvodjenjeService {
         return trenutnaRunda(iz).orElseThrow(() -> new SystemException(TAJMER_VAN_PITANJA, HttpStatus.CONFLICT));
     }
 
-    private PitanjeSnimak snimak(PitanjeRunda r) {
-        return jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+    private SnimakRunde snimak(PitanjeRunda r) {
+        return jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
     }
 
     private Ucesnik ucesnik(Izvodjenje iz, Long ucesnikId) {

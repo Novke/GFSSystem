@@ -86,7 +86,7 @@ public class StanjeService {
 
         PitanjeRunda runda = p.runda(iz.getTrenutnaRundaId()).orElse(null);
         List<Odgovor> odgovoriRunde = runda == null ? List.of() : p.odgovoriRunde(runda.getId());
-        Rezultat rezultat = runda == null ? null : RezultatBuilder.izgradi(snimak(runda), odgovoriRunde, false, true);
+        Rezultat rezultat = runda == null ? null : rezultat(snimak(runda), odgovoriRunde, false, true);
 
         List<Odgovor> bodovni = bodovniOdgovori(p);
         Map<Long, Integer> poeni = RangLista.poeniPoUcesniku(bodovni);
@@ -169,8 +169,9 @@ public class StanjeService {
                 // pre otvaranja (ili bez runde) ništa osim tipa i faze
                 pitanje = trenutni.getPitanje() == null ? null
                         : JavnoPitanje.samoTip(trenutni.getPitanje().getTip(), faza);
-            } else {
-                pitanje = javnoPitanje(iz, r, snimak(r), tacanVidljiv(iz));
+            } else if (snimak(r) instanceof PitanjeSnimak s) {
+                // privremeno: javno pitanje samo iz PITANJE snimka (ZADATAK runda ga nema)
+                pitanje = javnoPitanje(iz, r, s, tacanVidljiv(iz));
             }
         }
         return new JavnoStanje(iz.getId(), iz.getVerzija(), clock.millis(), iz.getStatus(),
@@ -210,7 +211,8 @@ public class StanjeService {
         PitanjeRunda runda = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
         if (runda == null) return null;
         boolean tacan = tacanVidljiv(iz);
-        Rezultat r = RezultatBuilder.izgradi(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
+        Rezultat r = rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
+        if (r == null) return null;
         if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
             RezultatBrojevi b = r.brojevi();
             return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
@@ -354,7 +356,9 @@ public class StanjeService {
 
         List<RezultatPitanja> pitanja = new ArrayList<>();
         for (PitanjeRunda r : p.runde()) {
-            PitanjeSnimak snimak = snimak(r);
+            SnimakRunde snimak = snimak(r);
+            // privremeno: ZADATAK runda ide sa pitanje = rezultat = null (bez rezultata zadatka)
+            PitanjeSnimak pitanje = snimak instanceof PitanjeSnimak ps ? ps : null;
             List<Odgovor> odgovori = poRundi.getOrDefault(r.getId(), List.of());
             Integer procenat = null;
             if (snimak.imaTacanOdgovor() && !odgovori.isEmpty()) {
@@ -362,8 +366,8 @@ public class StanjeService {
                 procenat = (int) Math.round(100.0 * tacnih / odgovori.size());
             }
             pitanja.add(new RezultatPitanja(r.getId(), r.getSlajdId(),
-                    r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), snimak,
-                    RezultatBuilder.izgradi(snimak, odgovori, false, true), odgovori.size(), procenat));
+                    r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), pitanje,
+                    rezultat(snimak, odgovori, false, true), odgovori.size(), procenat));
         }
         return new IzvodjenjeRezultati(info(p), p.iz().isTakmicenje(), pitanja, RangLista.izracunaj(p.ucesnici(), bodovniOdgovori(p)));
     }
@@ -422,8 +426,16 @@ public class StanjeService {
         return izSnimka != null ? izSnimka : "runda-" + r.getId();
     }
 
-    PitanjeSnimak snimak(PitanjeRunda r) {
-        return jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+    SnimakRunde snimak(PitanjeRunda r) {
+        return jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
+    }
+
+    /**
+     * Rezultat runde iz snimka ({@link RezultatBuilder}); privremeno samo za PITANJE, ZADATAK runda još nema rezultat
+     * ({@code null}) dok ne dobije svoju ocenu i projekcije.
+     */
+    private static Rezultat rezultat(SnimakRunde s, List<Odgovor> odgovori, boolean javno, boolean tacan) {
+        return s instanceof PitanjeSnimak p ? RezultatBuilder.izgradi(p, odgovori, javno, tacan) : null;
     }
 
     IzvodjenjeInfo info(Podaci p) {

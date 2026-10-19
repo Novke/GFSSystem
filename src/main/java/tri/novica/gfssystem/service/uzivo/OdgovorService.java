@@ -79,7 +79,10 @@ public class OdgovorService {
             throw new OdgovorOdbijen(VEC_ODGOVORIO);
         }
 
-        PitanjeSnimak snimak = jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+        // privremeno: odgovor na ZADATAK rundu se odbija dok zadatak ne dobije svoju proveru i ocenu po polju
+        if (!(jsonMapper.readValue(r.getSnimak(), SnimakRunde.class) instanceof PitanjeSnimak snimak)) {
+            throw new OdgovorOdbijen(ZATVORENO);
+        }
         OdgovorVrednost v = vrednost(snimak.tip(), cmd);
         Boolean tacno;
         try {
