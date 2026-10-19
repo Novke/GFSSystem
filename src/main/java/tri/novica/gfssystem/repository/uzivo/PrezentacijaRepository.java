@@ -22,4 +22,8 @@ public interface PrezentacijaRepository extends JpaRepository<Prezentacija, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Prezentacija p where p.id = :id")
     Optional<Prezentacija> findByIdForUpdate(@Param("id") Long id);
+
+    /** Id-jevi prezentacija serije, rastuće; samo id-jevi, iz istog razloga kao {@code SlajdRepository.findPrezentacijaIdsBySerija}. */
+    @Query("select p.id from Prezentacija p where p.serija = :serija order by p.id")
+    List<Long> findIdsBySerija(@Param("serija") String serija);
 }

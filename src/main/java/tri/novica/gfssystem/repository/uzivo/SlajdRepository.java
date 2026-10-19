@@ -24,4 +24,11 @@ public interface SlajdRepository extends JpaRepository<Slajd, Long> {
 
     @Query("select s.prezentacija.id from Slajd s where s.id = :id")
     Optional<Long> findPrezentacijaId(@Param("id") Long slajdId);
+
+    /**
+     * Id-jevi prezentacija sa bar jednim slajdom serije, rastuće (zaključavaju se tim redom). Samo id-jevi: entitet učitan
+     * pre zaključavanja ostao bi u persistence context-u sa stanjem od pre čekanja na zaključavanje.
+     */
+    @Query("select distinct s.prezentacija.id from Slajd s where s.serija = :serija order by s.prezentacija.id")
+    List<Long> findPrezentacijaIdsBySerija(@Param("serija") String serija);
 }
