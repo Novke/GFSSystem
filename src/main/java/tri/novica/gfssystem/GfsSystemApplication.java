@@ -3,12 +3,15 @@ package tri.novica.gfssystem;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import tri.novica.gfssystem.config.NastavnikSvojstva;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.time.Clock;
 
 @SpringBootApplication
+@EnableConfigurationProperties(NastavnikSvojstva.class)
 public class GfsSystemApplication {
 
     public static void main(String[] args) {

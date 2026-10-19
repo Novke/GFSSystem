@@ -75,6 +75,12 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Prijava: samo bcrypt za lozinku nastavnika (spring-boot-starter-security stiže uz bezbednosni lanac) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.modelmapper</groupId>
             <artifactId>modelmapper</artifactId>
