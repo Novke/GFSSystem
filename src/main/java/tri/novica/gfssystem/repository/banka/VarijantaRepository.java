@@ -97,6 +97,26 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             from Varijanta v join v.grupa g where v.serija = :serija order by v.id""")
     List<Object[]> zaPonistavanje(@Param("serija") String serija);
 
+    /**
+     * AKTIVNE varijante sa gotovim SVG-om po grupi, jedan upit: redovi {@code [grupaId, broj]}, grupe bez njih nisu tu
+     * (kandidati slajda Zadatak, {@code KandidatiZadatka}).
+     */
+    @Query("""
+            select v.grupa.id, count(v) from Varijanta v
+            where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
+            and v.renderSvg is not null group by v.grupa.id""")
+    List<Object[]> aktivneSaSvgPoGrupi(@Param("ids") Collection<Long> ids);
+
+    /**
+     * AKTIVNE varijante zadatih grupa sa SVG-om teksta (inner join: bez njega varijanta nije kandidat) i, kad ga ima,
+     * SVG rešenja, po grupi pa po id-ju; jedan upit bez upita po varijanti.
+     */
+    @Query("""
+            select v from Varijanta v join fetch v.renderSvg left join fetch v.renderResenjeSvg
+            where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
+            order by v.grupa.id, v.id""")
+    List<Varijanta> aktivneZaGrupe(@Param("ids") Collection<Long> ids);
+
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying
     @Query("update Varijanta v set v.renderHash = null where v.grupa.predmet.id = :predmetId")
