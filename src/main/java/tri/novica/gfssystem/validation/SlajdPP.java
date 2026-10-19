@@ -59,12 +59,16 @@ public final class SlajdPP {
     private static final int MAX_OZNAKA_SKALE = 60;
     private static final String PUTANJA_MEDIJA = "api/public/mediji/";
     /**
-     * Inline slika koju marked (i CommonMark) sigurno čita kao inline: natpis u jednom redu bez zagrada, {@code `} i
-     * {@code <}, cilj bez razmaka, zagrada i {@code \}, opcioni naslov pod navodnicima. Na tom mestu nema referentne slike.
+     * Inline slika koju marked (i CommonMark) sigurno čita kao inline, pa na tom mestu nema referentne slike. Ceo oblik je
+     * u jednom redu: natpis bez zagrada, {@code `} i {@code <}; cilj bez razmaka, zagrada i {@code \}; opcioni naslov pod
+     * navodnicima bez znakova kojima spoljni oblik može da se završi usred slike ({@code [ ] ( ) * _ ~ | ` < > \}). Spoljni
+     * oblik (granica bloka ili reda tabele, ćelija {@code |}, natpis linka {@code ]}, naglašavanje {@code * _ ~}, kod
+     * {@code `}) tako može da preseče sliku samo u natpisu, pre njegovog {@code ]}, a odsečak bez {@code ]} nije slika.
+     * Šire od ovoga (npr. prelom reda u zagradi) nije greška: tada se proveravaju definicije.
      */
     private static final Pattern SIGURNA_INLINE = Pattern.compile(
-            "!\\[(?:\\\\[^\\n]|[^\\[\\]\\\\`<\\n])*+\\]\\([ \\t\\n]*+(?:<[^<>\\n\\\\]++>|[^\\x00-\\x20()<>\\\\]++)"
-            + "(?:(?:[ \\t]+(?:\\n[ \\t]*)?|\\n[ \\t]*)(?:\"[^\"\\\\]*\"|'[^'\\\\]*'))?[ \\t\\n]*\\)");
+            "!\\[(?:\\\\[^\\n]|[^\\[\\]\\\\`<\\n])*+\\]\\([ \\t]*+(?:<[^<>\\n\\\\]++>|[^\\x00-\\x20()<>\\\\]++)"
+            + "(?:[ \\t]++(?:\"[^\"\\\\\\n\\[\\]()*_~|`<>]*+\"|'[^'\\\\\\n\\[\\]()*_~|`<>]*+'))?[ \\t]*+\\)");
     /** {@code [oznaka]:} bilo gde u tekstu (i u citatu ili listi), kao oznaka definicije u marked-u. */
     private static final Pattern DEFINICIJA = Pattern.compile("\\[(?:\\\\[\\s\\S]|[^\\[\\]\\\\])++\\]:");
 

@@ -25,6 +25,8 @@ class SlajdPPMarkdownTest {
     static final String B = "7a9d0c11-2b34-4f56-8a78-9b0c1d2e3f40";
     static final String GFS_A = "api/public/mediji/" + A;
     static final String GFS_B = "api/public/mediji/" + B;
+    /** Spoljna definicija za {@code ![a]}: marked je koristi kad inline oblik slike ne uspe (nolink {@code ![a]}). */
+    static final String SPOLJNA_A = "\n\n[a]: https://evil.invalid/p.png";
 
     static void odbijeno(String md) {
         SystemException e = assertThrows(SystemException.class, () -> SlajdPP.slikeIzMarkdowna(md), md);
@@ -94,6 +96,37 @@ class SlajdPPMarkdownTest {
         // nepravilan inline oblik (smeće posle cilja) marked čita kao referencu ![a] -> definicija se proverava
         odbijeno("![a](" + GFS_A + " smece)\n\n[a]: https://x");
         odbijeno("![a]\r\n\r\n[a]: https://x");
+    }
+
+    /**
+     * Inline slika iz GFS-a koju marked 18 ipak ne čita kao inline (prekine je granica bloka, ćelija tabele, natpis
+     * spoljnog linka ili naglašavanje), pa padne na {@code ![a]} i prikaže spoljnu definiciju. Svaki od ovih ulaza marked
+     * (gfm, breaks) prikazuje kao {@code <img src="https://evil.invalid/p.png">}.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "![a](" + GFS_A + "\n\n)" + SPOLJNA_A,
+            "![a](\n\n" + GFS_A + ")" + SPOLJNA_A,
+            "![a](" + GFS_A + " \"x\n\ny\")" + SPOLJNA_A,
+            "![a](" + GFS_A + " \"x\n# h\")" + SPOLJNA_A,
+            "[x ![a](" + GFS_A + " \"t](y) z\")" + SPOLJNA_A,
+            "*x ![a](" + GFS_A + " \"t)*\")" + SPOLJNA_A,
+            "*x <y ![a](" + GFS_A + " \"t>*\")" + SPOLJNA_A,
+            "![a](" + GFS_A + " \"x|y\")\n|-|-|" + SPOLJNA_A,
+            "|h|\n|-|\n![a](\n" + GFS_A + ")" + SPOLJNA_A})
+    void prekinutaInlineSlikaSaSpoljnomDefinicijomJe400(String md) {
+        odbijeno(md);
+    }
+
+    @Test
+    void inlineSlikaKojaNijeSigurnaProlaziBezSpoljneDefinicije() {
+        // prelom reda u zagradi ili naslovu: definicije se proveravaju, a kad ih nema (ili su iz GFS-a) slika prolazi
+        assertEquals(Set.of(A), SlajdPP.slikeIzMarkdowna("![a](\n" + GFS_A + ")"));
+        assertEquals(Set.of(A), SlajdPP.slikeIzMarkdowna("![a](" + GFS_A + " \"dva\nreda\")"));
+        assertEquals(Set.of(A), SlajdPP.slikeIzMarkdowna("![a](" + GFS_A + " \"t*\")\n\n[a]: " + GFS_A));
+        // slika u ćeliji tabele i definicija običnog linka: slika je u jednom redu, bez | u sebi
+        assertEquals(Set.of(A), SlajdPP.slikeIzMarkdowna(
+                "|h|h|\n|-|-|\n|![a](" + GFS_A + " \"n\")|[l][r]|\n\n[r]: https://x"));
     }
 
     @Test
