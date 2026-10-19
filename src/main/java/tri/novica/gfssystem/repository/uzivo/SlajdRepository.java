@@ -31,4 +31,13 @@ public interface SlajdRepository extends JpaRepository<Slajd, Long> {
      */
     @Query("select distinct s.prezentacija.id from Slajd s where s.serija = :serija order by s.prezentacija.id")
     List<Long> findPrezentacijaIdsBySerija(@Param("serija") String serija);
+
+    /**
+     * Brojači serija ({@code SerijaService}), jedan upit: redovi {@code [serija, slajdova, najnovije izmenjeno njihovih
+     * prezentacija]} (slajd nema svoje vreme); {@code predmetId == null} = svi predmeti.
+     */
+    @Query("""
+            select s.serija, count(s), max(p.izmenjeno) from Slajd s join s.prezentacija p
+            where s.serija is not null and (:predmetId is null or p.predmet.id = :predmetId) group by s.serija""")
+    List<Object[]> brojaciPoSeriji(@Param("predmetId") Long predmetId);
 }

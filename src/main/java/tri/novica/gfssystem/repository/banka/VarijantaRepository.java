@@ -74,6 +74,29 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             where g.predmet.id = :predmetId""")
     List<Varijanta> svePredmeta(@Param("predmetId") Long predmetId);
 
+    /**
+     * Brojači serija ({@code SerijaService}), jedan upit: redovi {@code [serija, Klodovih nacrta, ikad odobrenih, najnovije
+     * kreirano]}; {@code predmetId == null} = svi predmeti.
+     */
+    @Query("""
+            select v.serija,
+            sum(case when v.izvor = tri.novica.gfssystem.entity.banka.IzvorVarijante.CLAUDE
+              and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.NACRT then 1 else 0 end),
+            sum(case when v.ikadOdobrena = true then 1 else 0 end), max(v.kreirano)
+            from Varijanta v where v.serija is not null and (:predmetId is null or v.grupa.predmet.id = :predmetId)
+            group by v.serija""")
+    List<Object[]> brojaciPoSeriji(@Param("predmetId") Long predmetId);
+
+    /**
+     * Varijante serije za poništavanje, rastuće po id-ju: redovi {@code [id, rb, naziv, grupaId, naziv grupe, status, izvor,
+     * ikadOdobrena]}. Samo vrednosti, ne entiteti: brisanje posle zaključava i čita varijantu samo, a entitet učitan pre
+     * ključa ostao bi u persistence context-u sa stanjem od pre ključa (Novica je u međuvremenu mogao da odobri).
+     */
+    @Query("""
+            select v.id, v.rb, v.naziv, g.id, g.naziv, v.status, v.izvor, v.ikadOdobrena
+            from Varijanta v join v.grupa g where v.serija = :serija order by v.id""")
+    List<Object[]> zaPonistavanje(@Param("serija") String serija);
+
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying
     @Query("update Varijanta v set v.renderHash = null where v.grupa.predmet.id = :predmetId")

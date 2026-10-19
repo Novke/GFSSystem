@@ -26,4 +26,13 @@ public interface PrezentacijaRepository extends JpaRepository<Prezentacija, Long
     /** Id-jevi prezentacija serije, rastuće; samo id-jevi, iz istog razloga kao {@code SlajdRepository.findPrezentacijaIdsBySerija}. */
     @Query("select p.id from Prezentacija p where p.serija = :serija order by p.id")
     List<Long> findIdsBySerija(@Param("serija") String serija);
+
+    /**
+     * Brojači serija ({@code SerijaService}), jedan upit: redovi {@code [serija, prezentacija, najnovije kreirano]};
+     * {@code predmetId == null} = svi predmeti.
+     */
+    @Query("""
+            select p.serija, count(p), max(p.kreirano) from Prezentacija p
+            where p.serija is not null and (:predmetId is null or p.predmet.id = :predmetId) group by p.serija""")
+    List<Object[]> brojaciPoSeriji(@Param("predmetId") Long predmetId);
 }
