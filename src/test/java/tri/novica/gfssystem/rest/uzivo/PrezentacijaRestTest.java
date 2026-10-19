@@ -255,6 +255,19 @@ class PrezentacijaRestTest {
     }
 
     @Test
+    void pokreniBodovanRun() throws Exception {
+        when(izvodjenjeService.pokreni(eq(1L), any())).thenReturn(new IzvodjenjeInfo(9L,
+                new PrezentacijaKratko(1L, "Uvod", 7L), "042424", StatusIzvodjenja.AKTIVNO, true,
+                new GrupaKratko(3L, "GD-2025"), null, IZMENJENO, null, 0, 0, true));
+        // Jackson puni kanonski konstruktor record-a i kad postoji kraći
+        mvc.perform(post("/prezentacije/1/izvodjenja").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cuvanje\":false,\"grupaId\":null,\"predavanjeId\":40,\"boduje\":true}"))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.boduje").value(true));
+        verify(izvodjenjeService).pokreni(1L, new PokreniCmd(false, null, 40L, true));
+    }
+
+    @Test
     void platnoSlajdProlaziKaoSirovJsonINazadKaoDokument() throws Exception {
         Platno platno = PlatnoTestPodaci.ispravno();
         SlajdDetails platnoSlajd = new SlajdDetails(9L, 1, TipSlajda.PLATNO, null, null, null, null, false, null, platno, null);

@@ -17,6 +17,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.uzivo.*;
+import tri.novica.gfssystem.security.IdentitetStudenta;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -55,6 +56,8 @@ public class IzvodjenjeService {
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
     static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
+    static final String BODOVANJE_BEZ_PREDAVANJA = "Bodovanje traži predavanje.";
+    static final String PRIJAVA_NEDOSTUPNA = "Prijava studenata još nije dostupna.";
     /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V7). */
     static final String UK_AKTIVAN_KOD = "uk_izvodjenja_aktivan_kod";
 
@@ -77,6 +80,7 @@ public class IzvodjenjeService {
     private final RokPlaner rokPlaner;
     private final StanjeService stanjeService;
     private final ImenaUcesnika imenaUcesnika;
+    private final IdentitetStudenta identitet;
     private final ApplicationEventPublisher publisher;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -86,9 +90,19 @@ public class IzvodjenjeService {
     /**
      * Novo izvođenje u fazi prijave; 409 dok prezentacija već ima aktivno izvođenje. Prvo zaključa prezentaciju (isti
      * red kao izmene slajdova; brisanje prezentacije i drugo pokretanje ne mogu proći između provere i ovog upisa).
+     * Bodovan run ({@code boduje}) traži predavanje (400) i prijavu studenata u ovom buildu (409), obe provere pre
+     * zaključavanja, i uvek čuva (prisustvo se upisuje i kad prezentacija nema rundi).
      */
     public IzvodjenjeInfo pokreni(Long prezentacijaId, PokreniCmd cmd) {
         PokreniCmd c = cmd == null ? new PokreniCmd(false, null, null) : cmd;
+        if (c.boduje()) {
+            if (c.predavanjeId() == null) {
+                throw new SystemException(BODOVANJE_BEZ_PREDAVANJA, HttpStatus.BAD_REQUEST);
+            }
+            if (!identitet.dostupno()) {
+                throw new SystemException(PRIJAVA_NEDOSTUPNA, HttpStatus.CONFLICT);
+            }
+        }
         Prezentacija p = prezentacijaRepository.findByIdForUpdate(prezentacijaId)
                 .orElseThrow(() -> new SystemException(PrezentacijaService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND));
         // jedno aktivno izvođenje po prezentaciji; pod zaključanom prezentacijom, pa dva pokretanja idu redom
@@ -112,8 +126,11 @@ public class IzvodjenjeService {
             grupa = grupaRepository.findById(c.grupaId())
                     .orElseThrow(() -> new SystemException("Grupa nije pronađena.", HttpStatus.NOT_FOUND));
         }
-        if (slajdRepository.countByPrezentacijaIdAndTip(p.getId(), TipSlajda.PITANJE) == 0) {
-            cuvanje = false;   // bez pitanja nema šta da se čuva
+        if (c.boduje()) {
+            cuvanje = true;   // prisustvo se čuva i bez rundi
+        } else if (slajdRepository.countByPrezentacijaIdAndTipIn(p.getId(),
+                EnumSet.of(TipSlajda.PITANJE, TipSlajda.ZADATAK)) == 0) {
+            cuvanje = false;   // bez pitanja i zadataka nema šta da se čuva
         }
 
         String kod = kodGenerator.novi();
@@ -124,6 +141,7 @@ public class IzvodjenjeService {
         iz.setGrupa(grupa);
         iz.setPredavanje(predavanje);
         iz.setCuvanje(cuvanje);
+        iz.setBoduje(c.boduje());
         iz.setStatus(StatusIzvodjenja.AKTIVNO);
         iz.setPocetak(sada());
         iz.setPrikaz(Prikaz.PRIJAVA);
@@ -144,7 +162,8 @@ public class IzvodjenjeService {
             log.error("Upis izvođenja nije uspeo: prezentacija={}", p.getId(), e);
             throw e;
         }
-        log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}", iz.getId(), p.getId(), cuvanje);
+        log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}, boduje={}", iz.getId(), p.getId(), cuvanje,
+                c.boduje());
         return IzvodjenjeMapper.info(iz, 0, 0);
     }
 
