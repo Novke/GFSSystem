@@ -49,7 +49,12 @@ class McpAlatiTest {
             Map.entry("premesti_grupu", new Red(false, false, true, false)),
             Map.entry("obrisi_grupu", new Red(false, true, true, true)),
             Map.entry("kopiraj_grupu", new Red(false, false, false, false)),
-            Map.entry("ponisti_seriju", new Red(false, true, true, true)));
+            Map.entry("ponisti_seriju", new Red(false, true, true, true)),
+            Map.entry("napravi_varijantu", new Red(false, false, false, false)),
+            Map.entry("izmeni_varijantu", new Red(false, true, false, false)),
+            Map.entry("dupliraj_varijantu", new Red(false, false, false, false)),
+            Map.entry("obrisi_varijantu", new Red(false, true, true, true)),
+            Map.entry("proba_rendera", new Red(true, false, true, false)));
 
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 

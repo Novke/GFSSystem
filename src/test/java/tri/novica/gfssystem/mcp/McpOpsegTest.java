@@ -89,7 +89,13 @@ class McpOpsegTest {
             "KopijaGrupeService.brojStavki(Long)",
             "KopijaGrupeService.kopiraj(Long, Namena, Long, String)",
             "SerijaService.ponisti(String, boolean)",
-            "PrezentacijaService.ponistiSeriju(String, boolean)");
+            "PrezentacijaService.ponistiSeriju(String, boolean)",
+            // McpBanka: varijante (Klodovi nacrti, kopija umesto izmene tuđe ili odobrene, proba rendera)
+            "VarijantaService.kreiraj(Long, VarijantaCmd, String, boolean)",
+            "VarijantaService.izmeniDelimicno(Long, VarijantaPatch, String, boolean)",
+            "VarijantaService.dupliraj(Long, IzvorVarijante, String)",
+            "VarijantaService.obrisiSopstveniNacrt(Long)",
+            "VarijantaService.probaSaSlikom(RenderProbaCmd)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(

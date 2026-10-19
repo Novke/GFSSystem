@@ -29,6 +29,7 @@ import tri.novica.gfssystem.utility.Promena;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Sirovi argumenti MCP alata ({@link CallToolRequest#arguments()}), čitani strogo (spec MCP 4.1). Tipizirani parametri
@@ -80,17 +81,24 @@ public final class McpPatch {
      * {@code Polje '<kljuc>' se ne briše.}; vrednost se čita strogo u {@code tip}.
      */
     public <T> Promena<T> promena(String kljuc, Class<T> tip, boolean brisivo) {
+        return promena(kljuc, brisivo, k -> procitaj(k, argumenti.get(k), STROGI.constructType(tip)));
+    }
+
+    /**
+     * Kao {@link #promena(String, Class, boolean)}, a vrednost (ključ prisutan, nije {@code null}) čita {@code citac}, npr.
+     * {@code patch.promena("odgovori", false, patch::odgovori)} ili {@code patch.promena("prilozi", true, patch::prilozi)}.
+     */
+    public <T> Promena<T> promena(String kljuc, boolean brisivo, Function<String, T> citac) {
         if (!argumenti.containsKey(kljuc)) {
             return Promena.bez();
         }
-        Object vrednost = argumenti.get(kljuc);
-        if (vrednost == null) {
+        if (argumenti.get(kljuc) == null) {
             if (!brisivo) {
                 throw new SystemException("Polje '" + kljuc + "' se ne briše.", HttpStatus.BAD_REQUEST);
             }
             return Promena.na(null);
         }
-        return Promena.na(procitaj(kljuc, vrednost, STROGI.constructType(tip)));
+        return Promena.na(citac.apply(kljuc));
     }
 
     /** Vrednost ključa strogo u {@code tip}; odsutan ključ ili {@code null} je {@code null}. */

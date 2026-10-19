@@ -28,7 +28,11 @@ class McpFasadeTest {
                     "ukljuciTemu(Long)", "napraviGrupu(GrupaCmd, String)", "izmeniGrupu(Long, GrupaPatch, String)",
                     "izmeniPoljaGrupe(Long, List, String)", "premestiGrupu(Long, PremestiCmd, String)",
                     "obrisiGrupu(Long, String)", "kopirajGrupu(Long, Namena, Long, String)",
-                    "ponistiSeriju(String, boolean)"),
+                    "ponistiSeriju(String, boolean)",
+                    "napraviVarijantu(Long, VarijantaCmd, String, ZahtevSlike, McpPoziv)",
+                    "izmeniVarijantu(Long, VarijantaPatch, String, ZahtevSlike, McpPoziv)",
+                    "duplirajVarijantu(Long, String)", "obrisiVarijantu(Long, String)",
+                    "probaRendera(RenderProbaCmd, ZahtevSlike)"),
             McpPrezentacije.class, Set.of());
 
     static String kljuc(Method m) {

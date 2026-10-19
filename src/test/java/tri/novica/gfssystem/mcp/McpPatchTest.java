@@ -71,6 +71,24 @@ class McpPatchTest {
     }
 
     @Test
+    void promenaSaCitacemOdgovoraIPriloga() {
+        Map<String, Object> m = new HashMap<>();
+        m.put("odgovori", Map.of("a", Map.of("broj", 11)));
+        m.put("prilozi", null);
+        m.put("tekst", null);
+        McpPatch p = patch(m);
+        assertEquals(Promena.na(Map.of("a", new OdgovorPolja(11.0, null, null, null))),
+                p.promena("odgovori", false, p::odgovori));
+        assertEquals(Promena.na(null), p.promena("prilozi", true, p::prilozi));
+        assertEquals(Promena.bez(), p.promena("naziv", true, p::prilozi));
+        ocekuj400("Polje 'tekst' se ne briše.", () -> p.promena("tekst", false, p::odgovori));
+        McpPatch losi = patch(mapa("odgovori", Map.of("a", Map.of("broj", 11, "x", 1)),
+                "prilozi", List.of(Map.of("ime", "slika", "medijId", "m", "y", 1))));
+        assertThrows(SystemException.class, () -> losi.promena("odgovori", false, losi::odgovori));
+        ocekuj400("Nepoznato polje 'prilozi[0].y'.", () -> losi.promena("prilozi", true, losi::prilozi));
+    }
+
+    @Test
     void pogresanTipJeNeispravanFormat() {
         McpPatch p = patch(mapa("tezina", "3", "naziv", 5, "decimalni", 2.5, "zastavica", "true"));
         ocekuj400("Neispravan format podataka.", () -> p.promena("tezina", Integer.class, true));

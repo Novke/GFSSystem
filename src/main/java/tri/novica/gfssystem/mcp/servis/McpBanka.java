@@ -14,14 +14,23 @@ import tri.novica.gfssystem.dto.banka.IskljucenaTemaInfo;
 import tri.novica.gfssystem.dto.banka.Polje;
 import tri.novica.gfssystem.dto.banka.PonistavanjeInfo;
 import tri.novica.gfssystem.dto.banka.PremestiCmd;
+import tri.novica.gfssystem.dto.banka.ProbaSaSlikom;
+import tri.novica.gfssystem.dto.banka.RenderProbaCmd;
+import tri.novica.gfssystem.dto.banka.RenderProbaInfo;
 import tri.novica.gfssystem.dto.banka.SlikeRendera;
 import tri.novica.gfssystem.dto.banka.StavkaPonistavanja;
+import tri.novica.gfssystem.dto.banka.UpisVarijante;
+import tri.novica.gfssystem.dto.banka.VarijantaCmd;
 import tri.novica.gfssystem.dto.banka.VarijantaDetails;
 import tri.novica.gfssystem.dto.banka.VarijantaInfo;
+import tri.novica.gfssystem.dto.banka.VarijantaPatch;
 import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
+import tri.novica.gfssystem.entity.banka.RenderStatus;
+import tri.novica.gfssystem.entity.banka.StatusVarijante;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.mcp.McpBudzet;
+import tri.novica.gfssystem.mcp.McpGreske;
 import tri.novica.gfssystem.mcp.McpLinkovi;
 import tri.novica.gfssystem.mcp.McpPoziv;
 import tri.novica.gfssystem.mcp.McpZahtev;
@@ -36,6 +45,7 @@ import tri.novica.gfssystem.utility.Serija;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -53,6 +63,12 @@ import java.util.Set;
  * premešta i briše samo svoje ({@link #klodova}: izvor se nikad ne menja, pa provera pre ključa servisa nema trku).
  * Pravljenje troši dnevni budžet ključa pre upisa (grupa 1, kopija broj stavki podstabla). Svaki upis nosi ispravnu
  * seriju ({@link Serija#proveri}); izmena, premeštanje i brisanje je ne upisuju (serija grupe je ona iz pravljenja).
+ * <p>
+ * Varijante (spec MCP 4.1): Klod pravi nacrte (NACRT, izvor CLAUDE bez obzira na komandu, serija), na mestu menja i briše
+ * samo sopstveni neodobren nacrt, a izmena svake druge varijante je kopija-nacrt koja je zamenjuje ({@code VarijantaService}
+ * odlučuje ponovo pod ključem). Nova varijanta, kopija i duplikat troše po jedno pravljenje pre upisa. {@code UpisVarijante}
+ * i {@code VarijantaDetails} se ovde prevode u {@link McpUpisVarijante} i {@link McpVarijanta}, pa alat ne vidi id-jeve
+ * SVG-a; PNG upisa i probe ide kroz {@link McpSlika} po istom pravilu namene kao {@link #varijanta}.
  */
 @Service
 public class McpBanka {
@@ -69,6 +85,8 @@ public class McpBanka {
     private static final String PREDMET_OBAVEZAN = "Predmet je obavezan.";
     /** 409 za izmenu, šemu polja, premeštanje i brisanje Novicine (RUCNO) grupe. */
     static final String NOVICINA_GRUPA = "Ovu grupu je napravio Novica; izmenu radi on u UI-ju.";
+    /** 400 za {@code izmeni_varijantu} bez ijednog polja: nad tuđom varijantom bi to bila kopija bez izmene. */
+    static final String IZMENA_BEZ_POLJA = "Izmena mora sadržati bar jedno polje varijante.";
 
     private final McpLinkovi linkovi;
     private final McpBudzet budzet;
@@ -216,6 +234,94 @@ public class McpBanka {
         return kopijaService.kopiraj(grupaId, ciljNamena, ciljRoditeljId, serija);
     }
 
+    // ---------------------------------------------------------------- varijante
+
+    /**
+     * Klodova nova varijanta na kraj lista {@code grupaId} (i Novicinog): NACRT, izvor CLAUDE bez obzira na komandu, serija
+     * upisa. Grupa se čita pre budžeta (nepostojeća je 404 bez troška), pa se troši jedno pravljenje pre upisa. Render je deo
+     * upisa, uz traženu sliku i PNG iz istog prevođenja; greška rendera je stanje varijante ({@code renderGreska},
+     * {@code renderDeo}), ne greška alata. Slika po {@link #saSlikom}; rezultat nosi {@code linkPregleda} serije.
+     */
+    public McpSaSlikom<McpUpisVarijante> napraviVarijantu(Long grupaId, VarijantaCmd cmd, String serija, ZahtevSlike slika,
+                                                          McpPoziv poziv) {
+        Serija.proveri(serija);
+        Long id = obavezan(grupaId, "grupaId");
+        if (cmd == null) {
+            throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        Namena namena = grupaService.detalji(id).namena();
+        budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
+        ZahtevSlike zahtev = slika == null ? ZahtevSlike.NE : slika;
+        UpisVarijante upis = varijantaService.kreiraj(id, new VarijantaCmd(cmd.naziv(), cmd.tekst(), cmd.resenje(),
+                cmd.odgovori(), cmd.prilozi(), IzvorVarijante.CLAUDE), serija, zahtev.slika());
+        return saSlikom(upis, namena, zahtev, poziv, linkovi.pregled(serija));
+    }
+
+    /**
+     * Klodova delimična izmena (merge patch, {@code VarijantaService.izmeniDelimicno}): sopstveni neodobren nacrt se menja na
+     * mestu, svaka druga varijanta dobija kopiju-nacrt iz serije koja je zamenjuje ({@code linkOriginala}; original ostaje).
+     * Izmena bez ijednog polja je 400 {@value #IZMENA_BEZ_POLJA}. Kopija troši jedno pravljenje pre upisa: odluka se
+     * predviđa iz stanja pre upisa, a servis je ponovo donosi pod ključem (nacrt koji Novica odobri baš tada postaje kopija
+     * bez troška; retko, a budžet je zaštita od petlje). 409 servisa (sadržaj ili preambula promenjeni tokom rendera) je
+     * greška alata bez slike, i ništa nije upisano.
+     */
+    public McpSaSlikom<McpUpisVarijante> izmeniVarijantu(Long id, VarijantaPatch patch, String serija, ZahtevSlike slika,
+                                                         McpPoziv poziv) {
+        Serija.proveri(serija);
+        Long varijantaId = obavezan(id, "varijantaId");
+        if (patch == null) {
+            throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        if (bezIzmene(patch)) {
+            throw new SystemException(IZMENA_BEZ_POLJA, HttpStatus.BAD_REQUEST);
+        }
+        VarijantaDetails trenutna = varijantaService.detalji(varijantaId);
+        Namena namena = grupaService.detalji(trenutna.grupaId()).namena();
+        if (!sopstveniNacrt(trenutna)) {
+            budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
+        }
+        ZahtevSlike zahtev = slika == null ? ZahtevSlike.NE : slika;
+        UpisVarijante upis = varijantaService.izmeniDelimicno(varijantaId, patch, serija, zahtev.slika());
+        return saSlikom(upis, namena, zahtev, poziv, null);
+    }
+
+    /** Duplikat bilo koje varijante (i Novicine) kao Klodov nacrt iz serije, na kraju iste grupe; jedno pravljenje pre upisa. */
+    public McpVarijanta duplirajVarijantu(Long id, String serija) {
+        Serija.proveri(serija);
+        Long varijantaId = obavezan(id, "varijantaId");
+        budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
+        VarijantaDetails d = varijantaService.dupliraj(varijantaId, IzvorVarijante.CLAUDE, serija);
+        return mcp(d, grupaService.detalji(d.grupaId()).namena());
+    }
+
+    /**
+     * Briše Klodov neodobren nacrt; svaka druga varijanta je 409 {@code Klod briše samo svoje neodobrene nacrte.} Odluku
+     * donosi servis pod ključem, a varijanta se pre toga u istom zahtevu ne čita: brisanje radi u transakciji bez
+     * čišćenja persistence context-a, pa bi ranije učitan entitet nosio staro stanje.
+     */
+    public void obrisiVarijantu(Long id, String serija) {
+        Serija.proveri(serija);
+        varijantaService.obrisiSopstveniNacrt(obavezan(id, "varijantaId"));
+    }
+
+    /**
+     * Render-proba bez upisa ({@code VarijantaService.probaSaSlikom}: pravila i mesta za probe kao REST proba, samo PNG).
+     * Uz {@code slika.slika()} slika ima zadatak i, uz {@code slika.resenje()}, poslato rešenje; tekst koji se nije preveo
+     * nema sliku (greška je u rezultatu), a PNG koji se ne čita daje napomenu {@value #SLIKA_NIJE_STIGLA}. Render servis
+     * koji ne radi (503) i zauzeta mesta za probe (429) su greška alata: bez rendera nema ni ishoda probe.
+     */
+    public McpSaSlikom<McpProba> probaRendera(RenderProbaCmd cmd, ZahtevSlike slika) {
+        ProbaSaSlikom proba = varijantaService.probaSaSlikom(cmd);
+        RenderProbaInfo info = proba.info();
+        McpProba rezultat = new McpProba(info.ok(), info.greska(), info.deo());
+        SlikeRendera slike = proba.slike();
+        if (slika == null || !slika.slika() || slike == null || slike.zadatak() == null) {
+            return new McpSaSlikom<>(rezultat, null, null);
+        }
+        byte[] png = McpSlika.spoji(slike.zadatak(), slika.resenje() ? slike.resenje() : null);
+        return new McpSaSlikom<>(rezultat, png, png == null ? SLIKA_NIJE_STIGLA : null);
+    }
+
     // ---------------------------------------------------------------- poništavanje serije
 
     /**
@@ -243,6 +349,54 @@ public class McpBanka {
             throw new SystemException(NOVICINA_GRUPA, HttpStatus.CONFLICT);
         }
         return grupaId;
+    }
+
+    /**
+     * Upis varijante za Kloda sa slikom po pravilu slika (spec MCP 4.1): bez {@code slika.slika()} bez slike; za grupu namene
+     * TEST samo zadatak osim uz {@code slika.resenje()}, za PREDAVANJE zadatak i rešenje. PNG je iz prevođenja samog upisa;
+     * kad upis nije renderovao (keš: isti ulaz rendera, render OK) PNG sačuvanog sadržaja ({@code VarijantaService.slika}),
+     * samo dok poziv ima vremena ({@link McpPoziv#imaVremenaZaSliku()}). Upis čiji se tekst nije preveo nema ni sliku ni
+     * napomenu (greška sa linijom je u varijanti); slika koja ne stigne (rok, 503, 429, PNG koji se ne čita) daje napomenu
+     * {@value #SLIKA_NIJE_STIGLA}.
+     */
+    private McpSaSlikom<McpUpisVarijante> saSlikom(UpisVarijante upis, Namena namena, ZahtevSlike slika, McpPoziv poziv,
+                                                   String linkPregleda) {
+        McpUpisVarijante podaci = upis(upis, namena, linkPregleda);
+        if (!slika.slika()) {
+            return new McpSaSlikom<>(podaci, null, null);
+        }
+        boolean saResenjem = namena == Namena.PREDAVANJE || slika.resenje();
+        VarijantaDetails d = upis.varijanta();
+        SlikeRendera slike = upis.slike();
+        byte[] png;
+        if (slike != null) {
+            png = McpSlika.spoji(slike.zadatak(), saResenjem ? slike.resenje() : null);
+        } else if (d.renderStatus() != RenderStatus.OK) {
+            return new McpSaSlikom<>(podaci, null, null);
+        } else {
+            png = poziv.imaVremenaZaSliku() ? png(d.id(), saResenjem) : null;
+        }
+        return new McpSaSlikom<>(podaci, png, png == null ? SLIKA_NIJE_STIGLA : null);
+    }
+
+    /** {@code UpisVarijante} za Kloda: radnja malim slovima, varijanta bez id-jeva SVG-a, linkovi. */
+    private McpUpisVarijante upis(UpisVarijante upis, Namena namena, String linkPregleda) {
+        VarijantaDetails d = upis.varijanta();
+        String linkOriginala = upis.radnja() == UpisVarijante.Radnja.KOPIJA && d.zamenjuje() != null
+                ? linkovi.varijanta(d.zamenjuje())
+                : null;
+        return new McpUpisVarijante(upis.radnja().name().toLowerCase(Locale.ROOT), mcp(d, namena),
+                linkovi.varijanta(d.id()), linkOriginala, linkPregleda);
+    }
+
+    /** Kao {@code VarijantaService}: na mestu se menja i briše samo NACRT sa izvorom CLAUDE koji nikad nije odobren. */
+    private static boolean sopstveniNacrt(VarijantaDetails d) {
+        return d.status() == StatusVarijante.NACRT && d.izvor() == IzvorVarijante.CLAUDE && !d.ikadOdobrena();
+    }
+
+    private static boolean bezIzmene(VarijantaPatch p) {
+        return !p.naziv().postavljeno() && !p.tekst().postavljeno() && !p.resenje().postavljeno()
+                && !p.odgovori().postavljeno() && !p.prilozi().postavljeno();
     }
 
     private static List<StavkaPonistavanja> spoji(List<StavkaPonistavanja> prve, List<StavkaPonistavanja> druge) {
