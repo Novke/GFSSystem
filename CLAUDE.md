@@ -13,6 +13,8 @@ Academic management system for Gradjevinski Fakultet Subotica (GFS).
 - **MapStruct** and **ModelMapper** for DTO mapping
 - **Spring Validation** for input validation
 - **Spring AOP** for cross-cutting concerns
+- **Spring AI 2.0.1** MCP server (`spring-ai-starter-mcp-server-webmvc`, MCP SDK 2.0.0, stateless) for Claude, see "MCP za Claude-a";
+  **ArchUnit 1.5.1** (tests) guards its access boundary
 
 ## Project Structure
 
@@ -34,6 +36,7 @@ src/main/java/tri/novica/gfssystem/
 │   ├── converter/   # JPA converters
 │   └── view/        # Database views
 ├── exceptions/      # Custom exceptions
+├── mcp/             # MCP server for Claude: core (key filter, errors, patch, budget), alati/ (tools), servis/ (facades), rest/ (upload)
 ├── repository/      # Spring Data repositories
 ├── rest/            # REST controllers
 ├── security/        # Security config (CORS)
@@ -359,6 +362,167 @@ assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills i
   the throwaway `gfs-redizajn-mysql`, never `shared-mysql`): they are `@SpringBootTest` without `@Transactional`, commit for real, mock only `LatexRender`
   (fixed SVG) and clean up through JDBC; the locking tests use real second transactions.
 
+## MCP za Claude-a
+
+Claude in Claude Code on novica-dev talks to an MCP server built into this backend: it fills the task bank with drafts (with
+a PNG of the render), reads presentations and adds INFO/PITANJE slides; Novica reviews the drafts one by one on the front's
+`/banka/pregled`. Spec and plan (project A1): `docs/superpowers/specs/2026-10-18-mcp-nastava-design.md` and
+`.../plans/2026-10-18-mcp-banka.md` in the wrapper repo; projects B (slide "Zadatak") and A2 (editing slides) extend it
+through the plan's "Tačke proširenja za B i A2".
+
+- **Server:** Spring AI 2.0.1 **stateless** (`protocol=STATELESS`, `type=SYNC`: every `POST /mcp` gets one JSON answer, no
+  SSE, so nginx needs nothing), tools only (resources, prompts, completions off). `McpKonfig.StatelessServer` builds the server
+  itself (`McpServerStatelessAutoConfiguration` is excluded in `GfsSystemApplication`) with `validateToolInputs(false)` (the
+  SDK's schema check would answer in technical English before `McpOmotac`), a transport JSON mapper that keeps `null` in maps
+  (merge patch needs `"opis": null`) and `immediateExecution` (the tool runs on the request thread and sees request
+  attributes). Server instructions (`initialize`, <= 4 000 chars) are `resources/mcp/uputstva.md`, read as UTF-8 by a bean
+  post-processor (Boot reads `.properties` as ISO-8859-1); the `vodic` tool serves `mcp/vodic-{banka,pitanja,pravila}.md`
+  (`VodicTema`, <= 16 000 chars each, read at startup).
+- **Properties, also in the test `application.properties`** (it shadows the main file; without them a STREAMABLE server or
+  nothing starts): `spring.ai.mcp.server.*` (protocol, type, `name=gfs`, version, `streamable-http.mcp-endpoint=/mcp`,
+  capabilities off, `request-timeout=120s`), `gfs.mcp.kljucevi=${GFS_MCP_KLJUCEVI:}` (test: the synthetic key's hash) and
+  `gfs.okruzenje=${GFS_OKRUZENJE:LOKALNO}` (test `TEST`, compose `PROD`/`STAGING`, returned by `kontekst`).
+  `application-server.properties`: `logging.level.io.modelcontextprotocol=WARN` (no message bodies) and
+  `org.springframework.ai.mcp=INFO`. Never set `spring.ai.mcp.server.enabled`: `McpUkljucenje` (`META-INF/spring.factories`,
+  highest-priority property source) switches MCP on exactly when `gfs.mcp.kljucevi` has entries.
+- **Key and filter:** the client key is `gfs_` + 43 base64url chars; the server knows only `oznaka:sha256hex` entries
+  (`McpKljucevi`, comma-separated, several = rotation; a bad entry fails the start and the message names only its index).
+  `McpKljucFilter` (`FilterRegistrationBean`, patterns `/mcp` and `/mcp/*` from the endpoint property): no keys -> 404 (and no
+  MCP route at all), missing or wrong `Authorization: Bearer <key>` -> 401 `{"reason":"Neispravan MCP ključ.","time":...}` with
+  `WWW-Authenticate: Bearer` (constant-time compare over all entries); success puts the key label into a request attribute
+  (`McpZahtev`). The header is never logged; there is no lockout by IP (256-bit key, `X-Forwarded-For` is chosen by the
+  client). Startup check `McpKonfig.mcpProvera`: MCP on with a protocol other than STATELESS, or a `RouterFunction` route outside
+  the filtered path, fails the start. Backend paths are only `/mcp`, `/mcp/prilozi`, `/mcp/slike` (nginx `/api/mcp...`),
+  **never under `/public/**`**.
+- **Package `mcp`:** `alati/` (`KontekstAlati`, `BankaAlati`, `VarijanteAlati`, `PrezentacijaAlati`; 28 `@McpTool` methods in
+  A1, Serbian snake_case ASCII names, object parameter types (`Long`, `Boolean`), never primitives, every write tool takes a
+  required `serija`), `servis/` (facades `McpKontekst`, `McpBanka`, `McpPrezentacije`, the MCP DTO records `Mcp*` and the helpers
+  `McpSlika`, `PrezentacijaPregled`, `PlatnoPregled`, `VodicTema`, `ZahtevSlike`), `rest/McpUploadRest`, and the core
+  `McpKonfig`, `McpKljucevi`, `McpKljucFilter`, `McpUkljucenje`, `McpOmotac`, `McpGreske`, `McpPoziv`, `McpZahtev`, `McpPatch`,
+  `McpOdgovor`, `McpLinkovi`, `McpBudzet`. Tools are thin and **never `@Transactional`**: the body is only
+  `return McpGreske.izvrsi("<alat>", serija, poziv -> odgovor.json(fasada.metoda(...)))`; the facades are the only place MCP
+  touches existing services.
+- **Access boundary (fail-closed tests):** `McpOpsegTest` (ArchUnit over the main classes): tools depend only on facades and
+  the rest of `mcp`, DTOs, exceptions, entity enums and the MCP/Spring AI API; nothing in `mcp` touches repositories,
+  `EntityManager`, JDBC, the context or bean factory, non-enum entities or REST controllers; no field or setter injection; every
+  call from `mcp` into `service..` is listed in `DOZVOLJENE_METODE` (`Vlasnik.metoda(Tip, Tip)`, service beans) or
+  `DOZVOLJENI_POMOCNICI` (static pure helpers), and none of the spec's forbidden methods (`VarijantaService.odobri/arhiviraj/
+  vratiUNacrt`, `PrezentacijaService.obrisi`, `MedijService.obrisi/sacuvajRender`, `LatexPreambulaService.postavi`, students,
+  grades, tests, ...) may be listed. `McpFasadeTest.METODE` pins the public methods of every facade. Plain data records a service
+  returns to a facade live in `dto..` (`SlikeRendera`, `UpisVarijante`, `ProbaSaSlikom`), not in `service..`.
+  **`McpAlatiTest.OCEKIVANO`** pins every tool with its annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint=false` everywhere, `_meta` `anthropic/requiresUserInteraction` through `TraziPotvrdu` for `obrisi_*`,
+  `ponisti_seriju`, `ukljuci_temu`, `izmeni_polja_grupe`), the full name length, the series check, and that the description of
+  every non-idempotent write ends with `McpAlati.NE_PONAVLJAJ`. A new tool = a row there, its facade method in
+  `McpFasadeTest.METODE` and, for a new service call, a row in `DOZVOLJENE_METODE`.
+- **Arguments:** `McpOmotac` wraps every stateless tool spec before Spring AI binds the arguments: a key outside the tool's
+  schema or inside an object argument (by the parameter's Java type) is `Nepoznato polje 'slajd.pitanje.x'.`, a wrong type or
+  `null` for a primitive is `Neispravan format podataka.`, as is a binding error before the method; an exception outside the
+  tool is `Sistemska greška.`; in all these cases the tool is not called (`ishod=neispravni-argumenti`). Inside the tool
+  `McpPatch` reads the raw arguments: `promena` is a merge patch (RFC 7386: absent = unchanged, `null` deletes only a deletable
+  field, otherwise `Polje 'x' se ne briše.`; value type `utility/Promena`), `strogo` a strict object.
+- **Errors and log (`McpGreske.izvrsi`):** a write tool checks `serija` first (`utility/Serija`, `^[a-z0-9-]{3,60}$`, same check
+  for REST; otherwise `Serija mora imati 3 do 60 malih slova, cifara ili crtica.` and nothing runs); a `SystemException` becomes
+  `isError` with its Serbian message, anything else `Sistemska greška.` (detail only in the ERROR log). **Exactly one INFO line
+  per call**, `MCP alat=<alat> kljuc=<oznaka> serija=<s> ids={...} trajanjeMs=<n> ishod=ok|greska-<kod>|sistemska`, never
+  arguments or content (LaTeX, slide text); a 401 logs only `MCP zahtev odbijen: neispravan ili bez ključa`; uploads log
+  `MCP upload=prilog|slika kljuc=... serija=... id=... vrsta=... velicina=...`. `McpDnevnikDbTest` checks that the output of a 401
+  and of a successful write never contains the key pattern `gfs_[A-Za-z0-9_-]{43}`, `Bearer` or content from the arguments.
+- **Results and limits:** JSON in the first text block (`McpOdgovor`, the app `JsonMapper`), an optional note in a second text
+  block and at most one PNG. A text over `McpOdgovor.MAX_ZNAKOVA` = 28 000 chars logs a WARN: lists are paged (`McpStrana`,
+  `strana` 1-based; 25 in `pretraga_banke`, 20 in `domaci_tekstovi`; `prezentacija` pages so that each page fits). MCP DTOs never
+  carry `svgId`/`resenjeSvgId` (public URLs) or drawing strokes (`potezi`). Links (`McpLinkovi`, base = first URL of
+  `gfs.front.url`): `/banka/varijante/{id}`, `/banka/grupe/{id}`, `/prezentacije/{id}`, `/banka/pregled?serija=<encoded>`. Daily
+  budget per key label (`McpBudzet`, in memory, reset at midnight by the `Clock`): 2 000 creations (groups, variants, slides,
+  presentations) and 200 MB of uploads, charged before the write; over it 429 `Dnevni limit za Kloda je potrošen.`.
+- **Images and the time limit:** the PNG comes from the **same compilation** as the SVG: `gfs-latex` takes
+  `formati: ["svg","png"]` (`pdftocairo -png -scale-to 1400`, see `latex-render/README.md`), `LatexRender.renderuj(List<String>
+  formati, ...)` and `RenderVarijante.renderuj(..., svg, png)`; a reply without every requested format is `RenderNedostupan`,
+  never a partial success. `McpSlika` joins task and solution (grey line between) and scales down to a longer edge of 1568 px;
+  the PNG is never stored. An image is returned only with `slika: true`; for a group of `namena` TEST it shows only the task
+  unless `slikaResenja: true`, for PREDAVANJE task and solution; `proba_rendera` always includes a sent solution. `varijanta`
+  with an image and `proba_rendera` render PNG only, through the 3 probe slots (`VarijantaService.slika`, `probaSaSlikom`,
+  nothing written). A tool has `McpPoziv.ROK` = 90 s (the front nginx waits 120 s, and a 504 after a write would make Claude
+  retry): a write renders at most 2 x 30 s and an extra image render starts only while the call is under 30 s
+  (`imaVremenaZaSliku`). An image that does not arrive (time, 503, 429, unreadable PNG) is not an error: the tool succeeds and
+  the note says `Slika nije stigla na vreme.`.
+- **Variants for Claude (`VarijantaService`: `kreiraj(grupaId, cmd, serija, png)`, `izmeniDelimicno`, `dupliraj(id, izvor,
+  serija)`, `obrisiSopstveniNacrt`):** Claude creates drafts only (`NACRT`, `izvor` CLAUDE whatever the command says, `serija`).
+  It changes in place and deletes **only its own never-approved draft** (NACRT + CLAUDE + `ikadOdobrena=false`; deleting
+  anything else is 409 `Klod briše samo svoje neodobrene nacrte.`). Editing any other variant (Novica's, or one approved
+  once) creates a **copy instead**: a new CLAUDE draft of the series at the end of the same group, `zamenjuje` = the original,
+  patch applied, original untouched. `odobri` sets `ikadOdobrena` (kept after `vratiUNacrt`), and approving a copy archives the
+  original in the same transaction (if it still exists and is not archived). The three steps are those of `izmeni`, but step 3
+  decides again under the lock (approved in the meantime = copy) and **never renders under the lock**: content or preamble
+  changed during the render is 409 `Varijanta ili preambula je u međuvremenu izmenjena; pokušaj ponovo.` and nothing is written.
+- **Groups for Claude (`GrupaZadatakaService`):** `kreiraj(cmd, izvor, serija)` (also under Novica's groups; `izvor` and
+  `serija` never change afterwards), `izmeniDelimicno(id, GrupaPatch)` (`null` deletes `opis`, `tezina`, `uputstvo`),
+  `izmeniPolja` (tries the schema change first, `isprobaj`: if any variant, archived too, would lose an answer or an AKTIVNA would
+  drop to NACRT, 409 `Izmena polja bi pogodila varijante: <ids ascending>.` and nothing is written), `premesti`, `obrisiPraznu`
+  (409 `Briše se samo prazna grupa.`). The facade lets Claude change, move and delete only CLAUDE groups (409 `Ovu grupu je
+  napravio Novica; izmenu radi on u UI-ju.`). Those methods start with an empty persistence context (`zaboraviProcitano`: with
+  open-in-view the facade already read the group in the same request). `KopijaGrupeService.kopiraj` (`kopiraj_grupu`) copies a
+  subtree of the same subject as a root of `ciljNamena` or under `ciljRoditeljId` (that parent must be in the same subject and
+  in `ciljNamena`, else 400 `Cilj kopije mora biti u istom predmetu i nameni.`), so PREDAVANJE <-> TEST works, in **one
+  transaction** (a name clash halfway leaves no row and no file): same fields and option ids, non-archived variants become
+  CLAUDE drafts of the series, an `OK` render is copied (new SVG media, same hash), not re-rendered.
+- **Series (`serija`):** one label per request of Novica, written on everything Claude creates (groups, variants,
+  presentations, slides, excluded topics). `SerijaService.serije(predmetId)` (`GET /banka/serije?predmetId=`, newest first,
+  without `predmetId` 400 `Predmet je obavezan.`) and `poslednje(n)` (for `kontekst`). `SerijaService.ponisti(serija, potvrdi)`
+  (`POST /banka/serije/{serija}/odbaci`, bank only) deletes the series' never-approved CLAUDE drafts, then its CLAUDE groups that
+  are or become empty, each in its own transaction under that service's locks; everything else is listed as skipped with
+  `Odobrena ili nije Klodov nacrt.` or `Grupa nije prazna.`; `potvrdi=false` computes the same outcome without locks or writes.
+  MCP `ponisti_seriju` (`McpBanka.ponistiSeriju`) joins it with `PrezentacijaService.ponistiSeriju` (never-run presentations of
+  the series go whole, the series' slides elsewhere one by one; skipped `Prezentacija je izvođena.` / `Prezentacija se upravo
+  izvodi.`) into one `PonistavanjeInfo`. `GET /banka/pretraga` takes `izvor` and `serija` (bad `serija` 400); tree nodes carry
+  `izvor` and `brojClaudeNacrta`, groups and variants `serija`, variants `ikadOdobrena` and `zamenjuje`.
+- **Excluded topics (`iskljucene_teme`, `IskljuceneTemeService`):** a topic with a group excludes that group and its whole
+  subtree (`GrupaCvor`/`GrupaDetails.iskljucena`, `iskljucenjeId` = topic of the nearest such node, own before ancestor); a topic
+  without a group only describes something Claude must not create. `GET|POST /predmeti/{id}/iskljucene-teme`, `DELETE
+  /iskljucene-teme/{id}`. At most one topic per group (DB `UNIQUE(predmet_id, grupa_id)`, 409 `Ova grupa je već isključena.`)
+  and one group-less topic per normalized description (strip, spaces collapsed, case-insensitive; checked under the subject
+  lock, 409 `Ova tema je već isključena.`), so a repeated `iskljuci_temu` is 409, never a second row. Deleting a group keeps its
+  topic without a group (FK `SET NULL`).
+- **Presentations for Claude (`PrezentacijaService`):** `kreiraj(cmd, serija)`, `dodajSlajdIzSerije` (types only from
+  `McpPrezentacije.DOZVOLJENI_TIPOVI` = INFO, PITANJE, else 400 `Klod u ovoj verziji dodaje samo INFO i PITANJE slajdove.`;
+  under the presentation lock 409 `Prezentacija se upravo izvodi; izmene posle časa.` while a run is active), `ponistiSeriju`,
+  and `slajd(id)` behind the new **`GET /slajdovi/{id}`** (full `SlajdDetails` with strokes, 404 `Slajd nije pronađen.`; the
+  front uses it from A2; the MCP `slajd` tool strips the strokes). Duplicating a slide or presentation does not copy the series
+  (the copy is Novica's). Homework texts as a source: `DomaciService.tekstoviPredmeta` (`DomaciTekst`, newest first).
+- **Markdown images only from GFS:** an image in INFO `sadrzaj`, PITANJE text or an option text may only target
+  `api/public/mediji/<uuid>` of an existing medium of kind `SLIKA` (`SlajdPP.slikeSlajda`/`slikeIzMarkdowna`: inline and
+  reference images and their definitions; `PrezentacijaService` checks existence and kind in one query), else 400 `Slika u
+  tekstu mora biti otpremljena u GFS.`. Applies to REST (`PUT /slajdovi/{id}`, `POST /prezentacije/{id}/slajdovi`, import) and
+  MCP alike; the front drops any other image and its CSP allows `img-src 'self' data: blob:`.
+- **Upload (`McpUploadRest`):** files never go through tool arguments; the wrapper script `gfs-mcp-upload` posts multipart
+  `fajl` + `serija` to `POST /mcp/prilozi` (task attachments: PNG/JPEG -> `PRILOG_SLIKA`, PDF -> `PRILOG_PDF`) or
+  `POST /mcp/slike` (slide images, `SLIKA`), behind the same key filter, -> 201 `{medijId, vrsta, mime, velicina}`. Type by magic
+  bytes (declared MIME and name are ignored), <= 10 MB, budget charged before the write, bad `serija` 400 before the file is read.
+- **Schema (`V12__mcp_banka.sql`; the number is provisional, see "Database"):** `grupe_zadataka.izvor` (`varchar(20) NOT NULL
+  DEFAULT 'RUCNO'`) and `serija`; `varijante.ikad_odobrena` (`tinyint(1) NOT NULL DEFAULT 0`, set to 1 for rows already AKTIVNA or
+  ARHIVIRANA), `zamenjuje_id` (FK to `varijante`, `ON DELETE SET NULL`) and `serija`; `prezentacije.serija`, `slajdovi.serija`
+  (every `serija` nullable `varchar(60)` with an index); table `iskljucene_teme` (`predmet_id` FK cascade, `opis` <= 300,
+  `grupa_id` FK `SET NULL`, `izvor`, `serija`, `kreirano`). Additive with defaults in the DDL, so the previous image starts and
+  writes over it (`flyway-provera.sh` scenario `rollback`).
+- **Tests:** `McpTestKlijent` (JSON-RPC over MockMvc with the synthetic key `gfs_TEST000...`: `initialize`, `alati`, `pozovi`,
+  raw `posalji`; static readers of text, JSON, `isError`, images) and `McpDbTestOsnova` (`@SpringBootTest` without
+  `@Transactional`, `@MockitoBean LatexRender`, MockMvc without printing (it would print the header on a failure), JDBC cleanup
+  of everything belonging to the subjects from `noviPredmet`). On MySQL: `McpOmotacDbTest`, `KontekstAlatiDbTest`,
+  `BankaAlatiCitanjeDbTest`, `BankaAlatiGrupeDbTest`, `VarijanteAlatiDbTest`, `PrezentacijaAlatiDbTest`, `McpUploadDbTest`,
+  `McpAlatiTest`, `McpDnevnikDbTest` (log without secrets), `McpKrajNaKrajDbTest` (`initialize` with "č", `tools/list` =
+  `McpAlatiTest.OCEKIVANO`, then `kontekst` -> `napravi_grupu` -> `napravi_varijantu` -> `izmeni_varijantu` on Novica's variant
+  (copy) -> `ponisti_seriju` -> `pretraga_banke` by series), `McpIskljucenIT` (no keys: 404 even with a once valid key) and
+  `McpRuteIT` (real Tomcat: no route answers 200 without a key, also `/mcp/`, `/mcp;x=1`, `/%6Dcp`, `//mcp`, `/MCP`). Without a DB:
+  `McpKljucFilterTest`, `McpKljuceviTest`, `McpPatchTest`, `McpBudzetTest`, `McpGreskeTest`, `McpOpsegTest`, `McpFasadeTest`,
+  `McpKonfigTest`, `McpUkljucenjeTest`, `McpLinkoviTest`, `McpSlikaTest`, `PrezentacijaPregledTest`, `VodicTest`. The domain parts
+  have their own tests: `V12MigracijaDbTest`, `BankaIzvorDbTest`, `VarijantaServiceMcpDbTest` (copy, 409 without a render under
+  the lock), `GrupaZadatakaMcpDbTest`, `KopijaGrupeDbTest`, `SerijaServiceDbTest`/`SerijaServiceTest`, `IskljuceneTemeDbTest`,
+  `PrezentacijaServiceMcpDbTest`, `PrezentacijaSlikeDbTest`, `SlajdPPMarkdownTest`, `DomaciTekstoviDbTest` and the
+  `@WebMvcTest`s `IskljuceneTemeRestTest`, `SerijaRestTest`, `SlajdRestTest`; `IstiZahtev` runs several service calls on one
+  `EntityManager`, like open-in-view in a facade's request. Parallel
+  worktrees each use their own database on the throwaway MySQL (e.g. `gftest_mcp`) and their own `DB_PREFIX`/`APP_PORT` for
+  `flyway-provera.sh`, so they never drop each other's data.
+
 ## Build & Run
 
 ```bash
@@ -386,8 +550,8 @@ Run the container with `SPRING_PROFILES_ACTIVE=server`. That profile expects the
   (basic-auth, synthetic data only). The result shows up as commit status `staging-deploy`. Deploy details live in the
   wrapper repo `Novke/GFS-deploy` (`README.md`).
 - CI: `.github/workflows/ci.yml`, job `build`, on PR and push to `staging`/`master`: temurin 21, service `mysql:8.0` (from `public.ecr.aws/docker/library/`, like the Dockerfile base images: anonymous Docker Hub pulls hit a per-IP rate limit on GitHub runners)
-  (empty root password, DB `gftest`), `./mvnw -B package` (all tests, including the `*IT` classes against real MySQL
-  with the Flyway schema), then `docker build`.
+  (empty root password, DB `gftest`), `scripts/provera-migracija.sh` against the PR base (see "Database"), `./mvnw -B package` (all tests,
+  including the `*IT` classes against real MySQL with the Flyway schema), then `docker build` and `bash latex-render/test/smoke.sh`.
 - **Local tests on novica-dev** (3306 is `shared-mysql`, never use it for tests): a throwaway MySQL on 3307,
   `docker run -d --name gfs-redizajn-mysql -p 127.0.0.1:3307:3306 -e MYSQL_ALLOW_EMPTY_PASSWORD=yes -e MYSQL_DATABASE=gftest mysql:8.0`,
   then `SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3307/gftest ./mvnw -B package` (runs every test, ITs included). If a
@@ -401,16 +565,30 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4 and V6-V11 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4 and V6-V12 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
-  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. `V11` = `banka_zadataka` (tables `grupe_zadataka`, `varijante`, `varijanta_prilozi`, column `mediji.vrsta` `varchar(20) NOT NULL DEFAULT 'SLIKA'`, nullable `predmeti.latex_preambula`), idempotent. **Next free version: `V12`.**
+  `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. `V11` = `banka_zadataka` (tables `grupe_zadataka`, `varijante`, `varijanta_prilozi`, column `mediji.vrsta` `varchar(20) NOT NULL DEFAULT 'SLIKA'`, nullable `predmeti.latex_preambula`), idempotent. `V12` = `mcp_banka` (`izvor`/`serija` on groups, `ikad_odobrena`,
+  `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
+  idempotent, **if it is merged first**. **Next free version: `V13`** (after V12 is on `staging`).
+- **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
+  first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
+  cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose
+  number is already taken on `staging` renames its file to the next free version (allowed because a migration of an unmerged
+  branch was never applied to a shared DB) and updates the comments that cite it; the PR description says the number is
+  provisional.
+  `scripts/provera-migracija.sh <ref>` (CI step "Verzije migracija su jedinstvene" against the PR base, `fetch-depth: 0`) fails on
+  two migrations with one version, on a new version not above the highest in `<ref>` (Flyway would reject it on staging as
+  "resolved locally but not applied") and on a file name that is not `V<n>__<opis>.sql`.
 - `sql/views.sql` is historical, the view lives in `V1`.
-- `scripts/flyway-provera.sh` checks the migrations against four starting states: empty DB, `gf` and `gf_staging` schema dumps
-  (`/data/tmp/redizajn-schema`) and `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history). Run
-  `./mvnw -B -DskipTests package` first; it uses the test MySQL on 3307.
+- `scripts/flyway-provera.sh` checks the migrations against five scenarios: empty DB, `gf` and `gf_staging` schema dumps
+  (`/data/tmp/redizajn-schema`), `vec_migrirana` (staging schema with the objects of every migration from V3 on already applied, no history)
+  and `rollback` (the new jar migrates a `gf` schema, then the previous image `OLD_IMAGE`, default `gfs-backend:latest`, must start over it
+  and pass one `PUT` of a slide; skipped with a message when the image is missing). Run `./mvnw -B -DskipTests package` first; it uses the
+  test MySQL on 3307. Parallel worktrees pass their own `DB_PREFIX` and `APP_PORT` (e.g. `DB_PREFIX=fw_mcp_ APP_PORT=18092`): the
+  script drops and recreates `${DB_PREFIX}*`.
 
 ## List and overview API conventions
 
