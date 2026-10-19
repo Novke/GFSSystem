@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.method.HandlerMethod;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.function.HandlerFunction;
 import org.springframework.web.servlet.function.RequestPredicate;
 import org.springframework.web.servlet.function.RequestPredicates;
@@ -23,6 +24,7 @@ import org.springframework.web.servlet.function.ServerResponse;
 import org.springframework.web.servlet.function.support.RouterFunctionMapping;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping;
+import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 import org.springframework.web.socket.server.support.WebSocketHandlerMapping;
 
 import java.io.IOException;
@@ -413,6 +415,10 @@ class PristupMatricaTest {
                         greske.add(e.red(k) + ": lanac ga je odbio (" + st + " "
                                 + r.getResponse().getContentAsString(StandardCharsets.UTF_8)
                                 + "); ANONIMNO mora stići do kontrolera. PristupMatrica.klasa i matcheri lanca se ne slažu");
+                    } else if (!e.uzorak().equals(uzorakHandlera(r))) {
+                        // npr. statički resursi (/**) ili drugi kontroler: nije dokaz da je stigao baš ovaj endpoint
+                        greske.add(e.red(k) + ": zahtev je stigao do drugog handlera (" + handler + ", uzorak "
+                                + uzorakHandlera(r) + "), ne do ovog endpointa");
                     }
                 }
                 case MCP -> {
@@ -425,6 +431,64 @@ class PristupMatricaTest {
         assertTrue(anonimnih > 0, "nijedan ANONIMNO endpoint: test ne proverava ništa za javne putanje");
         assertTrue(greske.isEmpty(), "Stvarni zahtevi se ne slažu sa klasom (" + greske.size() + "):\n  "
                 + String.join("\n  ", greske));
+    }
+
+    /**
+     * Obrnuti smer: svaka putanja koju lanac otvara (pravila ANONIMNO i STUDENT iz {@link PristupMatrica}, i ona čiji
+     * endpointi još ne postoje) sme da stigne samo do handlera iste klase. Inače bi nastavnički handler sa promenljivom ili
+     * catch-all uzorkom ({@code /{*putanja}}, {@code /{a}/nalog/stanje}) imao ADMIN red u snimku i 401 na svojoj probi,
+     * a {@code GET /public/nalog/stanje} bi ga bez kolačića dosegao kroz otvoreno pravilo. Pravilo bez metode se proba
+     * svakom metodom. Prihvatljivo: nema handlera (endpoint još ne postoji), statički resursi, Springov ugrađeni OPTIONS
+     * odgovor (samo {@code Allow}), ili handler čiji
+     * {@code BEST_MATCHING_PATTERN} ima istu klasu (za {@code /public/ws} to je WebSocket handler).
+     * STUDENT pravila su bez studentskog kolačića (do B7) zatvorena lancem; sa njim ({@link #studentskiKolacic()}) se
+     * proveravaju isto.
+     */
+    @Test
+    void otvorenaPravilaVodeSamoNaHandlereSvojeKlase() throws Exception {
+        List<String> greske = new ArrayList<>();
+        Optional<Cookie> student = studentskiKolacic();
+        Map<KlasaPristupa, List<PristupMatrica.Pravilo>> otvorena = new LinkedHashMap<>();
+        otvorena.put(KlasaPristupa.ANONIMNO, PristupMatrica.anonimno());
+        otvorena.put(KlasaPristupa.STUDENT, PristupMatrica.student());
+        int proba = 0;
+        for (Map.Entry<KlasaPristupa, List<PristupMatrica.Pravilo>> grupa : otvorena.entrySet()) {
+            KlasaPristupa ocekivana = grupa.getKey();
+            Cookie kolacic = ocekivana == KlasaPristupa.STUDENT ? student.orElse(null) : null;
+            for (PristupMatrica.Pravilo p : grupa.getValue()) {
+                List<HttpMethod> metode = p.metod() == null ? List.of(HttpMethod.values()) : List.of(p.metod());
+                for (HttpMethod m : metode) {
+                    proba++;
+                    Endpoint e = new Endpoint(m, p.uzorak(), MediaType.APPLICATION_JSON, "pravilo " + ocekivana);
+                    MvcResult r = posalji(e, greske, kolacic);
+                    if (r == null || r.getHandler() == null) continue;
+                    Object handler = r.getHandler();
+                    if (handler instanceof ResourceHttpRequestHandler || jeUgradjenOptions(handler)) continue;
+                    String uzorak = uzorakHandlera(r);
+                    KlasaPristupa stvarna = uzorak == null ? null : PristupMatrica.klasa(m, uzorak);
+                    if (stvarna != ocekivana) {
+                        greske.add(m + " " + p.uzorak() + " je " + ocekivana + " u PristupMatrica, ali stiže do handlera "
+                                + handler + " (uzorak " + uzorak + ", klasa " + stvarna + "). Lanac ga pušta bez "
+                                + "nastavničke sesije: preimenuj uzorak tog handlera ili suzi pravilo u PristupMatrica (spec 3)");
+                    }
+                }
+            }
+        }
+        assertTrue(proba > 0, "nema otvorenih pravila: test ne proverava ništa");
+        assertTrue(greske.isEmpty(), "Otvorena pravila vode do tuđih handlera (" + greske.size() + "):\n  "
+                + String.join("\n  ", greske));
+    }
+
+    /** Springov ugrađeni odgovor na OPTIONS (samo zaglavlje {@code Allow}, bez koda aplikacije). */
+    private static boolean jeUgradjenOptions(Object handler) {
+        return handler instanceof HandlerMethod hm
+                && hm.getBeanType().getName().equals(RequestMappingInfoHandlerMapping.class.getName() + "$HttpOptionsHandler");
+    }
+
+    /** Uzorak handlera koji je obradio zahtev ({@code BEST_MATCHING_PATTERN_ATTRIBUTE}), ili {@code null}. */
+    private static String uzorakHandlera(MvcResult r) {
+        Object u = r.getRequest().getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        return u == null ? null : u.toString();
     }
 
     /**
