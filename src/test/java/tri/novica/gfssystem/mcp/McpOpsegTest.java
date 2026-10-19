@@ -101,7 +101,11 @@ class McpOpsegTest {
             "PrezentacijaService.slajd(Long)",
             "PrezentacijaService.prezentacijaSlajda(Long)",
             "PrezentacijaService.kreiraj(CreatePrezentacijaCmd, String)",
-            "PrezentacijaService.dodajSlajdIzSerije(Long, SlajdCmd, Long, String)");
+            "PrezentacijaService.dodajSlajdIzSerije(Long, SlajdCmd, Long, String)",
+            // McpBanka i McpPrezentacije: upload priloga i slika (/mcp/prilozi, /mcp/slike), tip po prvim bajtovima
+            "MedijService.sacuvaj(byte[], String)",
+            "MedijService.sacuvajPrilog(byte[], String)",
+            "MedijService.vrsta(String)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(

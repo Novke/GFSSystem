@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.mcp.servis;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,10 +25,12 @@ import tri.novica.gfssystem.dto.banka.VarijantaCmd;
 import tri.novica.gfssystem.dto.banka.VarijantaDetails;
 import tri.novica.gfssystem.dto.banka.VarijantaInfo;
 import tri.novica.gfssystem.dto.banka.VarijantaPatch;
+import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.banka.RenderStatus;
 import tri.novica.gfssystem.entity.banka.StatusVarijante;
+import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.mcp.McpBudzet;
 import tri.novica.gfssystem.mcp.McpGreske;
@@ -40,6 +43,7 @@ import tri.novica.gfssystem.service.banka.IskljuceneTemeService;
 import tri.novica.gfssystem.service.banka.KopijaGrupeService;
 import tri.novica.gfssystem.service.banka.SerijaService;
 import tri.novica.gfssystem.service.banka.VarijantaService;
+import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 import tri.novica.gfssystem.utility.Serija;
 
@@ -69,8 +73,12 @@ import java.util.Set;
  * odlučuje ponovo pod ključem). Nova varijanta, kopija i duplikat troše po jedno pravljenje pre upisa. {@code UpisVarijante}
  * i {@code VarijantaDetails} se ovde prevode u {@link McpUpisVarijante} i {@link McpVarijanta}, pa alat ne vidi id-jeve
  * SVG-a; PNG upisa i probe ide kroz {@link McpSlika} po istom pravilu namene kao {@link #varijanta}.
+ * <p>
+ * Prilozi (spec MCP 4.5): fajl stiže kroz {@code POST /mcp/prilozi} ({@code McpUploadRest}), ne kroz argument alata;
+ * {@link #sacuvajPrilog} troši dnevni budžet upload-a pre upisa, a tip prepoznaje {@code MedijService} po prvim bajtovima.
  */
 @Service
+@Slf4j
 public class McpBanka {
 
     /** Napomena uz uspeh bez slike (spec MCP 4.1). */
@@ -97,11 +105,12 @@ public class McpBanka {
     private final KopijaGrupeService kopijaService;
     private final SerijaService serijaService;
     private final PrezentacijaService prezentacijaService;
+    private final MedijService medijService;
 
     public McpBanka(McpLinkovi linkovi, McpBudzet budzet, GrupaZadatakaService grupaService,
                     VarijantaService varijantaService, BankaPretragaService pretragaService,
                     IskljuceneTemeService temeService, KopijaGrupeService kopijaService, SerijaService serijaService,
-                    PrezentacijaService prezentacijaService) {
+                    PrezentacijaService prezentacijaService, MedijService medijService) {
         this.linkovi = linkovi;
         this.budzet = budzet;
         this.grupaService = grupaService;
@@ -111,6 +120,7 @@ public class McpBanka {
         this.kopijaService = kopijaService;
         this.serijaService = serijaService;
         this.prezentacijaService = prezentacijaService;
+        this.medijService = medijService;
     }
 
     // ---------------------------------------------------------------- čitanje
@@ -320,6 +330,28 @@ public class McpBanka {
         }
         byte[] png = McpSlika.spoji(slike.zadatak(), slika.resenje() ? slike.resenje() : null);
         return new McpSaSlikom<>(rezultat, png, png == null ? SLIKA_NIJE_STIGLA : null);
+    }
+
+    // ---------------------------------------------------------------- prilozi
+
+    /**
+     * Prilog zadatka ({@code POST /mcp/prilozi}): PNG i JPEG kao {@code PRILOG_SLIKA}, PDF kao {@code PRILOG_PDF}, po prvim
+     * bajtovima (deklarisani MIME i ime se ne veruju; ostalo je 400 {@code Dozvoljeni prilozi: PNG, JPEG i PDF.}). Veličina
+     * se troši iz dnevnog budžeta upload-a ključa pre upisa (preko granice 429 i ništa se ne upisuje); prilog ostaje van
+     * javnog serviranja kao i Novicin. Vrsta se čita iz sačuvanog reda; jedan INFO red: oznaka ključa, serija, id, vrsta,
+     * veličina.
+     */
+    public McpMedij sacuvajPrilog(byte[] sadrzaj, String naziv, String serija) {
+        Serija.proveri(serija);
+        String oznaka = McpZahtev.oznaka();
+        budzet.trosiUpload(oznaka, sadrzaj == null ? 0 : sadrzaj.length);
+        MedijInfo info = medijService.sacuvajPrilog(sadrzaj, naziv);
+        VrstaMedija vrsta = medijService.vrsta(info.id())
+                .orElseThrow(() -> new IllegalStateException("Sačuvan prilog bez reda: " + info.id()));
+        // nikad ime fajla ni sadržaj
+        log.info("MCP upload=prilog kljuc={} serija={} id={} vrsta={} velicina={}", oznaka, serija, info.id(), vrsta,
+                info.velicina());
+        return new McpMedij(info.id(), vrsta, info.mime(), info.velicina());
     }
 
     // ---------------------------------------------------------------- poništavanje serije

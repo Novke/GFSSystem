@@ -1,18 +1,22 @@
 package tri.novica.gfssystem.mcp.servis;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tri.novica.gfssystem.dto.uzivo.CreatePrezentacijaCmd;
+import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaInfo;
 import tri.novica.gfssystem.dto.uzivo.SlajdCmd;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
+import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.mcp.McpBudzet;
 import tri.novica.gfssystem.mcp.McpGreske;
 import tri.novica.gfssystem.mcp.McpLinkovi;
 import tri.novica.gfssystem.mcp.McpZahtev;
+import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 import tri.novica.gfssystem.utility.Serija;
 
@@ -29,8 +33,12 @@ import java.util.Set;
  * ({@link McpSlajd}). Klod pravi prezentacije i dodaje slajdove sa serijom; u A1 samo tipove iz {@link #DOZVOLJENI_TIPOVI}
  * (B dodaje ZADATAK, A2 PLATNO), a postojeće slajdove ne menja. Pravljenje troši jedno pravljenje iz dnevnog budžeta ključa
  * pre upisa; prezentacija koja se upravo izvodi se ne menja ({@code PrezentacijaService.dodajSlajdIzSerije}, 409).
+ * <p>
+ * Slike za slajdove (spec MCP 4.5) stižu kroz {@code POST /mcp/slike} ({@code McpUploadRest}), ne kroz argument alata;
+ * {@link #sacuvajSliku} troši dnevni budžet upload-a pre upisa i vraća {@code medijId} vrste {@code SLIKA}.
  */
 @Service
+@Slf4j
 public class McpPrezentacije {
 
     /** Tipovi slajda koje Klod dodaje kroz {@code dodaj_slajd}. */
@@ -42,11 +50,14 @@ public class McpPrezentacije {
     private final McpLinkovi linkovi;
     private final McpBudzet budzet;
     private final PrezentacijaService prezentacijaService;
+    private final MedijService medijService;
 
-    public McpPrezentacije(McpLinkovi linkovi, McpBudzet budzet, PrezentacijaService prezentacijaService) {
+    public McpPrezentacije(McpLinkovi linkovi, McpBudzet budzet, PrezentacijaService prezentacijaService,
+                           MedijService medijService) {
         this.linkovi = linkovi;
         this.budzet = budzet;
         this.prezentacijaService = prezentacijaService;
+        this.medijService = medijService;
     }
 
     // ---------------------------------------------------------------- čitanje
@@ -103,6 +114,25 @@ public class McpPrezentacije {
         }
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         return PrezentacijaPregled.sazetak(prezentacijaService.dodajSlajdIzSerije(id, cmd, posle, serija));
+    }
+
+    /**
+     * Slika za slajd ili pitanje ({@code POST /mcp/slike}): PNG, JPEG, GIF ili WebP po prvim bajtovima, vrsta {@code SLIKA}
+     * (deklarisani MIME i ime se ne veruju; ostalo, i SVG i PDF, je 400 {@code Dozvoljene su samo slike PNG, JPEG, GIF i
+     * WebP.}). Veličina se troši iz dnevnog budžeta upload-a ključa pre upisa (preko granice 429 i ništa se ne upisuje).
+     * Vrsta se čita iz sačuvanog reda; jedan INFO red: oznaka ključa, serija, id, vrsta, veličina.
+     */
+    public McpMedij sacuvajSliku(byte[] sadrzaj, String naziv, String serija) {
+        Serija.proveri(serija);
+        String oznaka = McpZahtev.oznaka();
+        budzet.trosiUpload(oznaka, sadrzaj == null ? 0 : sadrzaj.length);
+        MedijInfo info = medijService.sacuvaj(sadrzaj, naziv);
+        VrstaMedija vrsta = medijService.vrsta(info.id())
+                .orElseThrow(() -> new IllegalStateException("Sačuvana slika bez reda: " + info.id()));
+        // nikad ime fajla ni sadržaj
+        log.info("MCP upload=slika kljuc={} serija={} id={} vrsta={} velicina={}", oznaka, serija, info.id(), vrsta,
+                info.velicina());
+        return new McpMedij(info.id(), vrsta, info.mime(), info.velicina());
     }
 
     // ---------------------------------------------------------------- pomoćno
