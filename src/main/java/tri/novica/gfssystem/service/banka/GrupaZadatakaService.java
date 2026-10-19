@@ -69,7 +69,7 @@ public class GrupaZadatakaService {
     static final String NIJE_PRONADJENA = "Grupa nije pronađena.";
     static final String PREDMET_NIJE_PRONADJEN = "Predmet nije pronađen.";
     static final String PREDMET_OBAVEZAN = "Predmet je obavezan.";
-    static final String NAMENA_OBAVEZNA = "Namena je obavezna.";
+    public static final String NAMENA_OBAVEZNA = "Namena je obavezna.";
     static final String NAMENA_ZA_KOREN = "Namena je obavezna za koren.";
     static final String NAZIV_POSTOJI = "Grupa sa tim nazivom već postoji.";
     static final String PREDUBOKO = "Najveća dubina stabla je 6.";

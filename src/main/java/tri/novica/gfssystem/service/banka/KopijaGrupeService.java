@@ -48,7 +48,7 @@ import java.util.*;
 @Transactional(isolation = Isolation.READ_COMMITTED)
 public class KopijaGrupeService {
 
-    static final String CILJ_VAN_STABLA = "Cilj kopije mora biti u istom predmetu i nameni.";
+    public static final String CILJ_VAN_STABLA = "Cilj kopije mora biti u istom predmetu i nameni.";
 
     private final GrupaZadatakaService grupaZadatakaService;
     private final GrupaZadatakaRepository grupaRepository;
