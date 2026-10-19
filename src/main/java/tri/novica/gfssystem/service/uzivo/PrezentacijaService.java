@@ -45,7 +45,8 @@ import java.util.function.Consumer;
  * <p>
  * Klod (MCP, spec MCP 4.1 i 4.4) piše seriju na prezentacije i slajdove koje napravi ({@link #kreiraj(CreatePrezentacijaCmd,
  * String)}, {@link #dodajSlajdIzSerije}), ne menja prezentaciju koja se upravo izvodi i poništava seriju
- * ({@link #ponistiSeriju}). Dupliranje slajda ili prezentacije seriju ne kopira: kopija je Novicina.
+ * ({@link #ponistiSeriju}). Dupliranje slajda ili prezentacije seriju ne kopira: kopija je Novicina, pa je poništavanje
+ * serije ne briše, a prezentacija serije sa njom ostaje.
  */
 @Service
 @RequiredArgsConstructor
@@ -63,6 +64,7 @@ public class PrezentacijaService {
     static final String IZVODI_SE = "Prezentacija se upravo izvodi; izmene posle časa.";
     static final String RAZLOG_IZVODJENA = "Prezentacija je izvođena.";
     static final String RAZLOG_IZVODI_SE = "Prezentacija se upravo izvodi.";
+    static final String RAZLOG_NOVICINI_SLAJDOVI = "Prezentacija ima Novicine slajdove.";
 
     private static final int MAX_NAZIV = 200;
     private static final int MAX_OPIS = 1000;
@@ -395,12 +397,16 @@ public class PrezentacijaService {
 
     /**
      * Poništava Klodovu seriju u prezentacijama (spec MCP 4.3, {@code ponisti_seriju}; banku poništava
-     * {@code SerijaService}). Prezentacija serije koja nikad nije izvođena briše se cela (sa svim slajdovima), a izvođena
-     * (i ona koja se upravo izvodi) se preskače: {@value #RAZLOG_IZVODJENA}. Slajdovi serije u drugim prezentacijama se
-     * brišu (sa pitanjem i opcijama) i ostali prenumerišu, osim dok se prezentacija izvodi: tada je svaki slajd serije
-     * preskočen, {@value #RAZLOG_IZVODI_SE}. Ključevi prezentacija idu rastuće po id-ju (posle svakog, kao i inače,
-     * njena aktivna izvođenja), a pre ključa se čitaju samo id-jevi. {@code potvrdi=false} ništa ne zaključava ni menja:
-     * {@code obrisano} je spisak onoga što bi se obrisalo. Stavke idu redom prezentacija (id), u prezentaciji po {@code rb}.
+     * {@code SerijaService}). Nijedan slajd van serije se ne briše. Prezentacija serije koja nikad nije izvođena i ima
+     * samo slajdove te serije (ili nijedan) briše se cela. Neizvođena prezentacija serije sa ijednim slajdom van serije
+     * (Novica ga je dodao ili duplirao u UI-ju, ili ga je dodala druga serija) ostaje i preskočena je
+     * ({@value #RAZLOG_NOVICINI_SLAJDOVI}), a brišu se samo njeni slajdovi serije, kao u Novicinoj prezentaciji.
+     * Izvođena prezentacija serije se preskače cela, sa svim slajdovima: {@value #RAZLOG_IZVODJENA}, a dok se upravo
+     * izvodi {@value #RAZLOG_IZVODI_SE}. Slajdovi serije u drugim prezentacijama se brišu (sa pitanjem i opcijama) i
+     * ostali prenumerišu, osim dok se prezentacija izvodi: tada je svaki slajd serije preskočen, {@value #RAZLOG_IZVODI_SE}.
+     * Ključevi prezentacija idu rastuće po id-ju (posle svakog, kao i inače, njena aktivna izvođenja), a pre ključa se
+     * čitaju samo id-jevi. {@code potvrdi=false} ništa ne zaključava ni menja, a odlučuje istim pravilima: {@code obrisano}
+     * je spisak onoga što bi se obrisalo. Stavke idu redom prezentacija (id), u prezentaciji po {@code rb}.
      */
     public PonistavanjeInfo ponistiSeriju(String serija, boolean potvrdi) {
         Serija.proveri(serija);
@@ -414,21 +420,27 @@ public class PrezentacijaService {
                 continue;   // obrisana u međuvremenu
             }
             Prezentacija p = nadjena.get();
-            if (serija.equals(p.getSerija())) {
-                if (izvodjenjeRepository.countByPrezentacijaId(id) > 0) {
-                    preskoceno.add(stavka(p, RAZLOG_IZVODJENA));
-                } else {
-                    obrisano.add(stavka(p, null));
-                    if (potvrdi) {
-                        obrisiZakljucanu(p);
-                    }
-                }
+            boolean prezentacijaSerije = serija.equals(p.getSerija());
+            if (prezentacijaSerije && izvodjenjeRepository.countByPrezentacijaId(id) > 0) {
+                preskoceno.add(stavka(p, izvodjenjeRepository.existsByPrezentacijaIdAndStatus(id, StatusIzvodjenja.AKTIVNO)
+                        ? RAZLOG_IZVODI_SE : RAZLOG_IZVODJENA));
                 continue;
             }
             List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(id);
             List<Slajd> izSerije = slajdovi.stream().filter(s -> serija.equals(s.getSerija())).toList();
+            if (prezentacijaSerije) {
+                if (izSerije.size() == slajdovi.size()) {
+                    obrisano.add(stavka(p, null));
+                    if (potvrdi) {
+                        obrisiZakljucanu(p);
+                    }
+                    continue;
+                }
+                // Novica je dodao ili duplirao slajd: prezentacija ostaje, brišu se samo slajdovi serije (ispod)
+                preskoceno.add(stavka(p, RAZLOG_NOVICINI_SLAJDOVI));
+            }
             if (izSerije.isEmpty()) {
-                continue;   // slajdovi serije obrisani u međuvremenu
+                continue;   // nema (više) slajdova serije: obrisani u međuvremenu ili ranijim poništavanjem
             }
             if (izvodjenjeRepository.existsByPrezentacijaIdAndStatus(id, StatusIzvodjenja.AKTIVNO)) {
                 izSerije.forEach(s -> preskoceno.add(stavka(p, s, RAZLOG_IZVODI_SE)));
@@ -628,7 +640,10 @@ public class PrezentacijaService {
         return o;
     }
 
-    /** Kopija sadržaja slajda bez serije (kopija je Novicina, poništavanje serije je ne briše). */
+    /**
+     * Kopija sadržaja slajda bez serije: kopija je Novicina, pa je poništavanje serije ne briše, a prezentacija serije u
+     * kojoj je ostaje ({@value #RAZLOG_NOVICINI_SLAJDOVI}).
+     */
     private static Slajd kopija(Slajd s) {
         Slajd k = new Slajd();
         k.setTip(s.getTip());

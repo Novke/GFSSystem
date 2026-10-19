@@ -157,6 +157,11 @@
                         <include>**/*TestCase.java</include>
                         <include>**/*IT.java</include>
                     </includes>
+                    <!-- mediji testova u target/ svakog checkout-a: testovi koji broje fajlove ne smeju videti fajlove
+                         drugog worktree-ja koji testira u isto vreme (test application.properties ima rezervu za IDE) -->
+                    <systemPropertyVariables>
+                        <gfs.mediji.dir>${project.build.directory}/gfs-mediji-test</gfs.mediji.dir>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

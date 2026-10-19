@@ -23,7 +23,9 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -294,8 +296,14 @@ class BankaAlatiGrupeDbTest extends McpDbTestOsnova {
         assertEquals(1, g.path("brojNacrta").asInt());
         assertEquals("RUCNO", grupaService.detalji(rucniTest.id()).izvor().name(), "original je netaknut");
 
+        // pogrešan cilj i kopija bez namene se odbijaju pre troška celog podstabla
+        clearInvocations(budzet);
+        int pre = brojGrupa();
         ocekujGresku("kopiraj_grupu", mapa("serija", serija, "grupaId", rucniTest.id(), "ciljNamena", "PREDAVANJE",
                 "ciljRoditeljId", rucniTest.id()), "Cilj kopije mora biti u istom predmetu i nameni.");
+        ocekujGresku("kopiraj_grupu", mapa("serija", serija, "grupaId", rucniTest.id()), "Namena je obavezna.");
+        verify(budzet, never()).trosiPravljenje(anyString(), anyInt());
+        assertEquals(pre, brojGrupa());
     }
 
     // ---------------------------------------------------------------- poništavanje serije

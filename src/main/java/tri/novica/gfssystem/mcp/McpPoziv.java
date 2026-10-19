@@ -7,9 +7,10 @@ import java.util.Map;
 
 /**
  * Jedan poziv MCP alata, kako ga vidi posao u {@link McpGreske#izvrsi}: ime alata, proverena serija (ili {@code null} za
- * alate bez serije), id-jevi za dnevnik ({@link #id}) i proteklo vreme. Rok celog alata je {@link #ROK} (frontend nginx
- * čeka 120 s, a 504 posle upisa bi naveo Kloda da ponovi); dodatna slika se traži samo dok je proteklo najviše
- * {@link #MAX_ZA_DODATNU_SLIKU}.
+ * alate bez serije), id-jevi za dnevnik ({@link #id}) i proteklo vreme. {@link #ROK} je projektovani budžet celog alata
+ * (spec MCP 4.1; frontend nginx čeka 120 s, a 504 posle upisa bi naveo Kloda da ponovi), ne tajmer koji neko proverava:
+ * drže ga rokovi rendera (upis najviše 2 x 30 s) i to što se dodatna slika traži samo dok je proteklo najviše
+ * {@link #MAX_ZA_DODATNU_SLIKU}. Čekanje na ključ baze ide preko toga; novi alat mora stati u isti budžet.
  */
 public final class McpPoziv {
 

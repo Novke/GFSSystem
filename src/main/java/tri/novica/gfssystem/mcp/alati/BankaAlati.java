@@ -326,9 +326,11 @@ public class BankaAlati {
 
     @McpTool(name = "ponisti_seriju", description = "Poništava ono što je serija napravila a još sme da se obriše: tvoje "
             + "neodobrene nacrte, tvoje grupe koje time ostanu prazne, slajdove serije i prezentacije serije koje nikad nisu "
-            + "izvođene; ostalo (odobreno, Novicino, izvođeno) navodi kao preskočeno sa razlogom. Prvo pozovi sa "
-            + "`potvrdi: false` (samo spisak, ništa se ne briše), pokaži ga Novici i tek posle njegove potvrde pozovi sa "
-            + "`potvrdi: true`. Vraća `{potvrdjeno, obrisano, preskoceno, linkPregleda}`.",
+            + "izvođene; ostalo (odobreno, Novicino, izvođeno) navodi kao preskočeno sa razlogom. Nijedan slajd van serije se "
+            + "ne briše: prezentacija serije u koju je Novica dodao ili duplirao slajd ostaje (preskočena: `Prezentacija ima "
+            + "Novicine slajdove.`), a iz nje se brišu samo slajdovi serije. Prvo pozovi sa `potvrdi: false` (samo spisak, "
+            + "ništa se ne briše), pokaži ga Novici i tek posle njegove potvrde pozovi sa `potvrdi: true`. Vraća "
+            + "`{potvrdjeno, obrisano, preskoceno, linkPregleda}`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
                     openWorldHint = false),
             metaProvider = TraziPotvrdu.class)

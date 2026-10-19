@@ -399,8 +399,9 @@ through the plan's "Tačke proširenja za B i A2".
   required `serija`), `servis/` (facades `McpKontekst`, `McpBanka`, `McpPrezentacije`, the MCP DTO records `Mcp*` and the helpers
   `McpSlika`, `PrezentacijaPregled`, `PlatnoPregled`, `VodicTema`, `ZahtevSlike`), `rest/McpUploadRest`, and the core
   `McpKonfig`, `McpKljucevi`, `McpKljucFilter`, `McpUkljucenje`, `McpOmotac`, `McpGreske`, `McpPoziv`, `McpZahtev`, `McpPatch`,
-  `McpOdgovor`, `McpLinkovi`, `McpBudzet`. Tools are thin and **never `@Transactional`**: the body is only
-  `return McpGreske.izvrsi("<alat>", serija, poziv -> odgovor.json(fasada.metoda(...)))`; the facades are the only place MCP
+  `McpOdgovor`, `McpLinkovi`, `McpBudzet`. Tools are thin and **never `@Transactional`**: the body is
+  `return McpGreske.izvrsi("<alat>", serija, poziv -> odgovor.json(fasada.metoda(...)))`, where the lambda may also log ids
+  (`poziv.id`) and read raw arguments through `McpPatch`, but holds no logic of its own; the facades are the only place MCP
   touches existing services.
 - **Access boundary (fail-closed tests):** `McpOpsegTest` (ArchUnit over the main classes): tools depend only on facades and
   the rest of `mcp`, DTOs, exceptions, entity enums and the MCP/Spring AI API; nothing in `mcp` touches repositories,
@@ -442,12 +443,17 @@ through the plan's "Tačke proširenja za B i A2".
   the PNG is never stored. An image is returned only with `slika: true`; for a group of `namena` TEST it shows only the task
   unless `slikaResenja: true`, for PREDAVANJE task and solution; `proba_rendera` always includes a sent solution. `varijanta`
   with an image and `proba_rendera` render PNG only, through the 3 probe slots (`VarijantaService.slika`, `probaSaSlikom`,
-  nothing written). A tool has `McpPoziv.ROK` = 90 s (the front nginx waits 120 s, and a 504 after a write would make Claude
-  retry): a write renders at most 2 x 30 s and an extra image render starts only while the call is under 30 s
-  (`imaVremenaZaSliku`). An image that does not arrive (time, 503, 429, unreadable PNG) is not an error: the tool succeeds and
+  nothing written). A tool is designed to finish within `McpPoziv.ROK` = 90 s (the front nginx waits 120 s, and a 504 after a
+  write would make Claude retry). No timer enforces it: it holds because a write renders at most 2 x 30 s and an extra image
+  render starts only while the call is under 30 s (`imaVremenaZaSliku`); DB lock waits come on top, and a new tool must fit the
+  same budget. An image that does not arrive (time, 503, 429, unreadable PNG) is not an error: the tool succeeds and
   the note says `Slika nije stigla na vreme.`.
-- **Variants for Claude (`VarijantaService`: `kreiraj(grupaId, cmd, serija, png)`, `izmeniDelimicno`, `dupliraj(id, izvor,
-  serija)`, `obrisiSopstveniNacrt`):** Claude creates drafts only (`NACRT`, `izvor` CLAUDE whatever the command says, `serija`).
+- **Variants for Claude (`VarijantaService`: `kreiraj(grupaId, cmd, serija, png)`, `izmeniDelimicno`, `dupliraj(id, serija)`,
+  `obrisiSopstveniNacrt`):** Claude creates drafts only (`NACRT`, `serija`). Every row these methods create (`kreiraj`,
+  `dupliraj`, the copy of `izmeniDelimicno`) gets `izvor` CLAUDE from the service itself, whatever `cmd.izvor()` says
+  (`VarijantaServiceMcpDbTest.mcpKreiranjeIDuplikatSuUvekClaude`), so a new MCP facade cannot create a RUCNO draft by passing a
+  command without `izvor`; the REST `kreiraj(grupaId, cmd)` keeps `cmd.izvor()` or RUCNO and `dupliraj(id)` keeps the
+  original's `izvor`.
   It changes in place and deletes **only its own never-approved draft** (NACRT + CLAUDE + `ikadOdobrena=false`; deleting
   anything else is 409 `Klod briše samo svoje neodobrene nacrte.`). Editing any other variant (Novica's, or one approved
   once) creates a **copy instead**: a new CLAUDE draft of the series at the end of the same group, `zamenjuje` = the original,
@@ -461,7 +467,11 @@ through the plan's "Tačke proširenja za B i A2".
   drop to NACRT, 409 `Izmena polja bi pogodila varijante: <ids ascending>.` and nothing is written), `premesti`, `obrisiPraznu`
   (409 `Briše se samo prazna grupa.`). The facade lets Claude change, move and delete only CLAUDE groups (409 `Ovu grupu je
   napravio Novica; izmenu radi on u UI-ju.`). Those methods start with an empty persistence context (`zaboraviProcitano`: with
-  open-in-view the facade already read the group in the same request). `KopijaGrupeService.kopiraj` (`kopiraj_grupu`) copies a
+  open-in-view the facade already read the group in the same request). Two traps for new callers: `kreiraj(cmd, izvor, serija)`
+  and `VarijantaService.obrisiSopstveniNacrt` do **not** clear it, so a facade must not read those groups or that variant
+  earlier in the same request (or the lock and checks run on stale entities); and no clearing method (`izmeniDelimicno`,
+  `izmeniPolja`, `premesti`, `obrisiPraznu`, `KopijaGrupeService.kopiraj`) may run inside an outer transaction, because the
+  clear silently drops that transaction's unflushed changes. `KopijaGrupeService.kopiraj` (`kopiraj_grupu`) copies a
   subtree of the same subject as a root of `ciljNamena` or under `ciljRoditeljId` (that parent must be in the same subject and
   in `ciljNamena`, else 400 `Cilj kopije mora biti u istom predmetu i nameni.`), so PREDAVANJE <-> TEST works, in **one
   transaction** (a name clash halfway leaves no row and no file): same fields and option ids, non-archived variants become
@@ -472,10 +482,15 @@ through the plan's "Tačke proširenja za B i A2".
   (`POST /banka/serije/{serija}/odbaci`, bank only) deletes the series' never-approved CLAUDE drafts, then its CLAUDE groups that
   are or become empty, each in its own transaction under that service's locks; everything else is listed as skipped with
   `Odobrena ili nije Klodov nacrt.` or `Grupa nije prazna.`; `potvrdi=false` computes the same outcome without locks or writes.
-  MCP `ponisti_seriju` (`McpBanka.ponistiSeriju`) joins it with `PrezentacijaService.ponistiSeriju` (never-run presentations of
-  the series go whole, the series' slides elsewhere one by one; skipped `Prezentacija je izvođena.` / `Prezentacija se upravo
-  izvodi.`) into one `PonistavanjeInfo`. `GET /banka/pretraga` takes `izvor` and `serija` (bad `serija` 400); tree nodes carry
-  `izvor` and `brojClaudeNacrta`, groups and variants `serija`, variants `ikadOdobrena` and `zamenjuje`.
+  MCP `ponisti_seriju` (`McpBanka.ponistiSeriju`) joins it with `PrezentacijaService.ponistiSeriju` into one `PonistavanjeInfo`.
+  **No slide outside the series is ever deleted:** a never-run presentation of the series goes whole only while every slide in
+  it belongs to the series; one with any other slide (Novica added or duplicated it in the UI, or another series added it)
+  stays, is skipped with `Prezentacija ima Novicine slajdove.`, and only the series' slides in it go. A run presentation of the
+  series is skipped whole (`Prezentacija je izvođena.`, or `Prezentacija se upravo izvodi.` while a run is active); the
+  series' slides in other presentations go one by one and are renumbered, except while that presentation is being run
+  (skipped, `Prezentacija se upravo izvodi.`). `potvrdi=false` applies the same rules without locks or writes. `GET /banka/pretraga` takes `izvor` and `serija` (bad
+  `serija` 400); tree nodes carry `izvor` and `brojClaudeNacrta`, groups and variants `serija`, variants `ikadOdobrena` and
+  `zamenjuje`.
 - **Excluded topics (`iskljucene_teme`, `IskljuceneTemeService`):** a topic with a group excludes that group and its whole
   subtree (`GrupaCvor`/`GrupaDetails.iskljucena`, `iskljucenjeId` = topic of the nearest such node, own before ancestor); a topic
   without a group only describes something Claude must not create. `GET|POST /predmeti/{id}/iskljucene-teme`, `DELETE

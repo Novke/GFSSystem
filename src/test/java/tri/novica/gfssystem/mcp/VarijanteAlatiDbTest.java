@@ -46,8 +46,8 @@ import static org.mockito.Mockito.when;
  * argumenti ne pominju izvor, PNG iz istog prevođenja po nameni grupe, greška rendera sa linijom i delom, jedno pravljenje
  * iz budžeta, {@code linkPregleda}), {@code izmeni_varijantu} (merge patch: na mestu samo sopstveni neodobren nacrt, inače
  * kopija sa {@code linkOriginala}; nepoznat ključ, {@code null} za polje koje se ne briše i prazna izmena ne upisuju ništa;
- * keš rendera daje sliku sačuvanog sadržaja; 409 kad Novica promeni sadržaj tokom rendera), {@code dupliraj_varijantu}
- * (Klodov nacrt), {@code obrisi_varijantu} (samo sopstveni neodobren nacrt) i {@code proba_rendera} (ništa se ne upisuje,
+ * keš rendera daje sliku sačuvanog sadržaja, a greška te slike je napomena; 409 kad Novica promeni sadržaj tokom
+ * rendera), {@code dupliraj_varijantu} (Klodov nacrt, nepostojeća bez troška), {@code obrisi_varijantu} (samo sopstveni neodobren nacrt) i {@code proba_rendera} (ništa se ne upisuje,
  * slika sa rešenjem). Nijedan rezultat ne nosi id-jeve SVG-a.
  */
 class VarijanteAlatiDbTest extends McpDbTestOsnova {
@@ -458,6 +458,29 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
     }
 
     @Test
+    void greskaSlikePosleSacuvanogUpisaJeNapomena() {
+        Long id = klodovNacrt(list, TEKST, RESENJE);
+        int pre = brojVarijanti();
+
+        // keš važi (menja se samo naziv), pa slika dolazi iz VarijantaService.slika posle commit-a upisa, i tada pukne:
+        // 404 (npr. prilog bez fajla) i neočekivan izuzetak su napomena, ne greška alata (Klod bi ponovio sačuvan upis)
+        doThrow(new SystemException("Slika nije pronađena.", 404))
+                .when(latexRender).renderuj(eq(SAMO_PNG), anyString(), anyList());
+        JsonNode r = uspeh("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "naziv", "Zbirka 4"));
+        assertEquals("izmenjena", McpTestKlijent.json(r).path("radnja").asString());
+        assertEquals(List.of(), McpTestKlijent.slike(r));
+        assertEquals(List.of(McpTestKlijent.tekst(r), NIJE_STIGLA), tekstovi(r));
+        assertEquals("Zbirka 4", red(id).get("naziv"));
+
+        doThrow(new IllegalStateException("render"))
+                .when(latexRender).renderuj(eq(SAMO_PNG), anyString(), anyList());
+        JsonNode n = uspeh("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "naziv", "Zbirka 5"));
+        assertEquals(List.of(McpTestKlijent.tekst(n), NIJE_STIGLA), tekstovi(n));
+        assertEquals("Zbirka 5", red(id).get("naziv"));
+        assertEquals(pre, brojVarijanti());
+    }
+
+    @Test
     void izmenaKojuNovicaPromeniTokomRenderaJe409BezSlike() throws Exception {
         Long id = klodovNacrt(list, TEKST, null);
         int pre = brojVarijanti();
@@ -509,6 +532,11 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
         assertEquals(serija, red(id).get("serija"));
         assertEquals(pre + 1, brojVarijanti());
         verify(budzet, times(1)).trosiPravljenje("test", 1);
+
+        // nepostojeća varijanta je 404 bez troška
+        ocekujGresku("dupliraj_varijantu", mapa("serija", serija, "varijantaId", 999_999_999L), "Varijanta nije pronađena.");
+        verify(budzet, times(1)).trosiPravljenje(anyString(), anyInt());
+        assertEquals(pre + 1, brojVarijanti());
     }
 
     @Test

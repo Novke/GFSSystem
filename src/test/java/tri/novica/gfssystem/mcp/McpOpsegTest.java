@@ -93,7 +93,7 @@ class McpOpsegTest {
             // McpBanka: varijante (Klodovi nacrti, kopija umesto izmene tuđe ili odobrene, proba rendera)
             "VarijantaService.kreiraj(Long, VarijantaCmd, String, boolean)",
             "VarijantaService.izmeniDelimicno(Long, VarijantaPatch, String, boolean)",
-            "VarijantaService.dupliraj(Long, IzvorVarijante, String)",
+            "VarijantaService.dupliraj(Long, String)",
             "VarijantaService.obrisiSopstveniNacrt(Long)",
             "VarijantaService.probaSaSlikom(RenderProbaCmd)",
             // McpPrezentacije: pregled, slajd (i id njegove prezentacije za link), pravljenje i INFO/PITANJE slajd iz serije

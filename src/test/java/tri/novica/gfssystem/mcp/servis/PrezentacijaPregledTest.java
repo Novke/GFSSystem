@@ -133,11 +133,17 @@ class PrezentacijaPregledTest {
 
     // ---------------------------------------------------------------- strane
 
+    /**
+     * Mera 2026-10-19: 24 slajda daju ~25 900 znakova prema granici od 26 000, oko 1 080 po slajdu (rezerva ~100 znakova).
+     * Svako novo ne-null polje sažetka slajda (B, A2: npr. {@code verzija}) traži novu meru: ili kraće polje ili
+     * svesno pomeranje ovog testa (24 slajda na dve strane).
+     */
     @Test
     void sestVezbiStajeUJednuStranuIspodGranice() {
         for (int n : VEZBE) {
             McpPrezentacijaPregled pregled = PrezentacijaPregled.pregled(prezentacija(slajdovi(n, 1)), 1, LINK);
-            assertEquals(1, pregled.brojStrana(), n + " slajdova");
+            assertEquals(1, pregled.brojStrana(), n + " slajdova: " + duzina(pregled) + " znakova, granica " + GRANICA
+                    + " (oko " + GRANICA / 24 + " po slajdu za 24)");
             assertEquals(n, pregled.slajdovi().size(), n + " slajdova");
             assertEquals(n, pregled.brojSlajdova());
             assertTrue(duzina(pregled) <= GRANICA, n + " slajdova: " + duzina(pregled) + " znakova");

@@ -497,11 +497,33 @@ class VarijantaServiceMcpDbTest {
     }
 
     @Test
+    void mcpKreiranjeIDuplikatSuUvekClaude() {
+        // MCP kreiraj ne čita cmd.izvor(): i bez izvora i sa RUCNO nastaje Klodov nacrt serije
+        for (IzvorVarijante izvor : Arrays.asList(null, IzvorVarijante.RUCNO)) {
+            VarijantaDetails d = service.kreiraj(grupa.id(), cmd("Pretvori 1011.", null, izvor), "uvoz-1", false).varijanta();
+            assertEquals(IzvorVarijante.CLAUDE, d.izvor(), "izvor komande " + izvor);
+            assertEquals(StatusVarijante.NACRT, d.status());
+            assertEquals(Map.of("izvor", "CLAUDE", "serija", "uvoz-1"),
+                    jdbc.queryForMap("select izvor, serija from varijante where id = ?", d.id()));
+        }
+        // REST kreiraj i dalje uzima izvor iz komande, bez njega RUCNO
+        assertEquals(IzvorVarijante.RUCNO, service.kreiraj(grupa.id(), cmd("Ručna.", null, null)).izvor());
+        assertEquals(IzvorVarijante.CLAUDE, service.kreiraj(grupa.id(), cmd("Iz komande.", null, IzvorVarijante.CLAUDE)).izvor());
+        // MCP duplikat Novicine varijante je Klodov, REST duplikat čuva izvor originala
+        VarijantaDetails r = rucna("Pretvori 1100.");
+        VarijantaDetails klodov = service.dupliraj(r.id(), "uvoz-1");
+        assertEquals(IzvorVarijante.CLAUDE, klodov.izvor());
+        assertEquals("uvoz-1", klodov.serija());
+        assertEquals(IzvorVarijante.RUCNO, service.dupliraj(r.id()).izvor());
+        assertEquals(7, brojVarijanti());
+    }
+
+    @Test
     void duplirajKaoClaude() {
         VarijantaDetails r = rucna("Pretvori 1011.");
         service.odobri(r.id());
 
-        VarijantaDetails k = service.dupliraj(r.id(), IzvorVarijante.CLAUDE, "uvoz-1");
+        VarijantaDetails k = service.dupliraj(r.id(), "uvoz-1");
 
         assertNotEquals(r.id(), k.id());
         assertEquals(IzvorVarijante.CLAUDE, k.izvor());
@@ -522,7 +544,7 @@ class VarijantaServiceMcpDbTest {
         assertEquals(IzvorVarijante.RUCNO, stari.izvor());
         assertNull(stari.serija());
 
-        SystemException e = assertThrows(SystemException.class, () -> service.dupliraj(r.id(), IzvorVarijante.CLAUDE, "Uvoz"));
+        SystemException e = assertThrows(SystemException.class, () -> service.dupliraj(r.id(), "Uvoz"));
         assertEquals(400, e.getCode());
         assertEquals(Serija.PORUKA, e.getMessage());
         assertEquals(3, brojVarijanti());
@@ -544,7 +566,7 @@ class VarijantaServiceMcpDbTest {
 
         CompletableFuture<VarijantaDetails> duplikat = CompletableFuture.supplyAsync(() -> {
             klodovaNit.set(Thread.currentThread());
-            return service.dupliraj(r.id(), IzvorVarijante.CLAUDE, "uvoz-1");
+            return service.dupliraj(r.id(), "uvoz-1");
         });
         assertTrue(uRenderu.await(10, TimeUnit.SECONDS));
         service.izmeni(r.id(), new VarijantaCmd("V1", "Novicin tekst.", RESENJE, ODGOVOR_A, List.of(), null));
