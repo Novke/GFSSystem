@@ -14,10 +14,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import tri.novica.gfssystem.dto.banka.BankaFilter;
 import tri.novica.gfssystem.dto.banka.BankaPretragaStavka;
 import tri.novica.gfssystem.dto.banka.GrupaPutanja;
+import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.banka.RenderStatus;
 import tri.novica.gfssystem.entity.banka.StatusVarijante;
 import tri.novica.gfssystem.service.banka.BankaPretragaService;
+import tri.novica.gfssystem.utility.Serija;
 
 import java.util.List;
 
@@ -28,7 +30,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** {@code GET /banka/pretraga}: stranica kao {@code PagedModel}, sort sa bele liste, upit od bar 2 znaka. */
+/** {@code GET /banka/pretraga}: stranica kao {@code PagedModel}, sort sa bele liste, upit od bar 2 znaka, izvor i serija. */
 @WebMvcTest(BankaPretragaRest.class)
 class BankaPretragaRestTest {
 
@@ -48,7 +50,7 @@ class BankaPretragaRestTest {
     void srecanSlucajVracaContentIPage() throws Exception {
         BankaPretragaStavka stavka = new BankaPretragaStavka(11L, 5L, "2 → 10",
                 List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), null,
-                StatusVarijante.AKTIVNA, RenderStatus.OK, "Pretvori broj 1011 u dekadni sistem.");
+                StatusVarijante.AKTIVNA, RenderStatus.OK, "Pretvori broj 1011 u dekadni sistem.", IzvorVarijante.CLAUDE, "uvoz-1");
         when(service.pretraga(any(), any())).thenAnswer(i ->
                 new PagedModel<>(new PageImpl<>(List.of(stavka), i.<Pageable>getArgument(1), 31)));
 
@@ -63,6 +65,8 @@ class BankaPretragaRestTest {
            .andExpect(jsonPath("$.content[0].status").value("AKTIVNA"))
            .andExpect(jsonPath("$.content[0].renderStatus").value("OK"))
            .andExpect(jsonPath("$.content[0].isecak").value("Pretvori broj 1011 u dekadni sistem."))
+           .andExpect(jsonPath("$.content[0].izvor").value("CLAUDE"))
+           .andExpect(jsonPath("$.content[0].serija").value("uvoz-1"))
            .andExpect(jsonPath("$.page.size").value(25))
            .andExpect(jsonPath("$.page.number").value(0))
            .andExpect(jsonPath("$.page.totalElements").value(31))
@@ -98,6 +102,28 @@ class BankaPretragaRestTest {
         ArgumentCaptor<BankaFilter> f = ArgumentCaptor.forClass(BankaFilter.class);
         verify(service, times(2)).pretraga(f.capture(), any());
         assertEquals("ab", f.getAllValues().get(0).q());
+    }
+
+    @Test
+    void izvorISerijaIduUFilter() throws Exception {
+        praznaStrana();
+        mvc.perform(get("/banka/pretraga").param("izvor", "CLAUDE").param("serija", "uvoz-1")).andExpect(status().isOk());
+        ArgumentCaptor<BankaFilter> f = ArgumentCaptor.forClass(BankaFilter.class);
+        verify(service).pretraga(f.capture(), any());
+        assertEquals(new BankaFilter(null, null, null, null, IzvorVarijante.CLAUDE, "uvoz-1"), f.getValue());
+    }
+
+    @Test
+    void serijaVanObrascaIliNepoznatIzvorJe400() throws Exception {
+        for (String serija : List.of("Uvoz", "uv", "", "uvoz 1", "a".repeat(61))) {
+            mvc.perform(get("/banka/pretraga").param("serija", serija))
+               .andExpect(status().isBadRequest())
+               .andExpect(jsonPath("$.reason").value(Serija.PORUKA));
+        }
+        mvc.perform(get("/banka/pretraga").param("izvor", "XYZ"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value("Neispravan parametar: izvor."));
+        verifyNoInteractions(service);
     }
 
     @Test

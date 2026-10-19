@@ -53,6 +53,13 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             where v.grupa.id in :ids group by v.grupa.id, v.status, v.renderStatus""")
     List<Object[]> brojaciPoGrupi(@Param("ids") Collection<Long> ids);
 
+    /** Klodovi nacrti (CLAUDE, NACRT) po grupi za stablo, jedan upit: redovi {@code [grupaId, broj]}, grupe bez njih nisu tu. */
+    @Query("""
+            select v.grupa.id, count(v) from Varijanta v
+            where v.grupa.id in :ids and v.izvor = tri.novica.gfssystem.entity.banka.IzvorVarijante.CLAUDE
+            and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.NACRT group by v.grupa.id""")
+    List<Object[]> claudeNacrtiPoGrupi(@Param("ids") Collection<Long> ids);
+
     /**
      * Sve varijante predmeta (ponovni render cele banke posle izmene preambule) u jednom upitu: grupa sa precima (dubina
      * je najviše 6) i predmetom, oba SVG medija i prilozi sa medijima (sve EAGER veze, inače upit po varijanti i grupi).

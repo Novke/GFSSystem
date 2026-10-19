@@ -6,6 +6,7 @@ import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Root;
 import org.springframework.data.jpa.domain.Specification;
 import tri.novica.gfssystem.entity.banka.GrupaZadataka;
+import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.banka.StatusVarijante;
 import tri.novica.gfssystem.entity.banka.Varijanta;
@@ -56,6 +57,18 @@ public final class BankaSpecs {
     public static Specification<Varijanta> status(StatusVarijante status) {
         if (status == null) return Specification.unrestricted();
         return (root, query, cb) -> cb.equal(root.get("status"), status);
+    }
+
+    /** Izvor varijante (ne grupe). */
+    public static Specification<Varijanta> izvor(IzvorVarijante izvor) {
+        if (izvor == null) return Specification.unrestricted();
+        return (root, query, cb) -> cb.equal(root.get("izvor"), izvor);
+    }
+
+    /** Klodova serija upisa varijante (tačno poklapanje; obrazac proverava {@code BankaFilter}). */
+    public static Specification<Varijanta> serija(String serija) {
+        if (serija == null) return Specification.unrestricted();
+        return (root, query, cb) -> cb.equal(root.get("serija"), serija);
     }
 
     /** {@code lower(naziv) / lower(tekst) / lower(naziv grupe) like %q%}; q se trim-uje, prazan q je bez filtera. */

@@ -38,7 +38,7 @@ class VarijantaRestTest {
             List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), 1, "V1", "Pretvori $1011_2$.", "\\foo",
             ODGOVORI, List.of(POLJE), List.of(new PrilogInfo("skica", new MedijInfo(PNG, "skica.png", "image/png", 120))),
             StatusVarijante.NACRT, IzvorVarijante.RUCNO, RenderStatus.GRESKA, SVG, null,
-            new RenderGreskaInfo(1, "Undefined control sequence."), "resenje", T, T);
+            new RenderGreskaInfo(1, "Undefined control sequence."), "resenje", T, T, true, 9L, "uvoz-1");
     static final VarijantaCmd CMD = new VarijantaCmd("V1", "Pretvori $1011_2$.", null, ODGOVORI,
             List.of(new PrilogCmd("skica", PNG)), IzvorVarijante.CLAUDE);
     static final String TELO = """
@@ -51,7 +51,7 @@ class VarijantaRestTest {
     @Test
     void listaVraca200IFiltriraPoStatusu() throws Exception {
         when(service.lista(5L, StatusVarijante.AKTIVNA)).thenReturn(List.of(new VarijantaInfo(11L, 5L, 1, "V1",
-                StatusVarijante.AKTIVNA, IzvorVarijante.RUCNO, RenderStatus.OK, SVG, null, T)));
+                StatusVarijante.AKTIVNA, IzvorVarijante.RUCNO, RenderStatus.OK, SVG, null, T, true, null, null)));
         mvc.perform(get("/banka/grupe/5/varijante").param("status", "AKTIVNA"))
            .andExpect(status().isOk())
            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -60,7 +60,10 @@ class VarijantaRestTest {
            .andExpect(jsonPath("$[0].svgId").value(SVG))
            .andExpect(jsonPath("$[0].resenjeSvgId").value(nullValue()))
            .andExpect(jsonPath("$[0].renderStatus").value("OK"))
-           .andExpect(jsonPath("$[0].izmenjeno").value("2026-10-17T12:00:00"));
+           .andExpect(jsonPath("$[0].izmenjeno").value("2026-10-17T12:00:00"))
+           .andExpect(jsonPath("$[0].ikadOdobrena").value(true))
+           .andExpect(jsonPath("$[0].zamenjuje").value(nullValue()))
+           .andExpect(jsonPath("$[0].serija").value(nullValue()));
 
         when(service.lista(5L, null)).thenReturn(List.of());
         mvc.perform(get("/banka/grupe/5/varijante")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
@@ -89,7 +92,10 @@ class VarijantaRestTest {
            .andExpect(jsonPath("$.renderGreska.linija").value(1))
            .andExpect(jsonPath("$.renderGreska.poruka").value("Undefined control sequence."))
            .andExpect(jsonPath("$.renderDeo").value("resenje"))
-           .andExpect(jsonPath("$.kreirano").value("2026-10-17T12:00:00"));
+           .andExpect(jsonPath("$.kreirano").value("2026-10-17T12:00:00"))
+           .andExpect(jsonPath("$.ikadOdobrena").value(true))
+           .andExpect(jsonPath("$.zamenjuje").value(9))
+           .andExpect(jsonPath("$.serija").value("uvoz-1"));
         verify(service).kreiraj(5L, CMD);
     }
 

@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tri.novica.gfssystem.dto.banka.*;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.banka.GrupaZadataka;
+import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.banka.RenderStatus;
 import tri.novica.gfssystem.entity.banka.StatusVarijante;
@@ -19,6 +20,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
+import tri.novica.gfssystem.utility.Serija;
 import tri.novica.gfssystem.validation.BankaPP;
 
 import java.nio.charset.StandardCharsets;
@@ -66,6 +68,7 @@ public class GrupaZadatakaService {
     static final String SEMA_PREVELIKA = "Šema polja je prevelika.";
     static final String NEISPRAVAN_OPIS = "Opis može imati najviše 5 000 znakova.";
     static final String IMA_PODGRUPE = "Grupa ima podgrupe.";
+    static final String SAMO_PRAZNA = "Briše se samo prazna grupa.";
     static final String KORISCENO_NA_CASU = "Korišćeno na času; arhiviraj.";
     static final String SOPSTVENO_PODSTABLO = "Grupa se ne može premestiti u sopstveno podstablo.";
     static final String ISTO_STABLO = "Grupa se premešta samo unutar istog predmeta i namene.";
@@ -126,11 +129,21 @@ public class GrupaZadatakaService {
 
     // ---------------------------------------------------------------- izmene
 
+    /** Nova grupa koju je napravio nastavnik u UI-ju: {@link #kreiraj(GrupaCmd, IzvorVarijante, String)} sa RUCNO, bez serije. */
+    public GrupaDetails kreiraj(GrupaCmd cmd) {
+        return kreiraj(cmd, IzvorVarijante.RUCNO, null);
+    }
+
     /**
      * Nova grupa na kraj braće ({@code rb} = najveći + 1). Koren traži {@code predmetId} i {@code namena}; podgrupa ih
-     * uzima od roditelja, koji ne sme imati varijante (409) i ne sme biti na dnu dubine.
+     * uzima od roditelja, koji ne sme imati varijante (409) i ne sme biti na dnu dubine. {@code izvor} ({@code null} =
+     * RUCNO) i {@code serija} (Klodova serija upisa, {@code null} za ručno napravljenu; van {@link Serija#OBRAZAC} 400) se
+     * upisuju na grupu i posle se ne menjaju. Roditelj može biti bilo kog izvora (Klod dopunjuje i Novicino stablo).
      */
-    public GrupaDetails kreiraj(GrupaCmd cmd) {
+    public GrupaDetails kreiraj(GrupaCmd cmd, IzvorVarijante izvor, String serija) {
+        if (serija != null) {
+            Serija.proveri(serija);
+        }
         Sadrzaj s = proveren(cmd);
         Predmet predmet;
         Namena namena;
@@ -163,11 +176,13 @@ public class GrupaZadatakaService {
         g.setNamena(namena);
         g.setRb(braca.stream().mapToInt(GrupaZadataka::getRb).max().orElse(0) + 1);
         primeni(g, s);
+        g.setIzvor(izvor == null ? IzvorVarijante.RUCNO : izvor);
+        g.setSerija(serija);
         g.setKreirano(sada);
         g.setIzmenjeno(sada);
         g = grupaRepository.save(g);
-        log.info("Grupa zadataka kreirana: id={}, predmet={}, roditelj={}", g.getId(), predmet.getId(),
-                roditelj == null ? null : roditelj.getId());
+        log.info("Grupa zadataka kreirana: id={}, predmet={}, roditelj={}, izvor={}, serija={}", g.getId(), predmet.getId(),
+                roditelj == null ? null : roditelj.getId(), g.getIzvor(), serija);
         return details(g);
     }
 
@@ -218,6 +233,27 @@ public class GrupaZadatakaService {
         if (koriscenoNaCasu(id)) {
             throw new SystemException(KORISCENO_NA_CASU, HttpStatus.CONFLICT);
         }
+        obrisiZakljucanu(g, predmetId);
+    }
+
+    /**
+     * Briše grupu samo kad je prazna (MCP i poništavanje serije): pod ključevima predmet -> grupa 409 {@value #SAMO_PRAZNA}
+     * kad ima varijanti ili podgrupa, inače kao {@link #obrisi}. Ključ grupe je isti koji {@code VarijantaService} uzima pre
+     * dodavanja varijante, pa istovremeno dodavanje ili vidi obrisanu grupu (404) ili brisanje vidi njegovu varijantu (409).
+     */
+    public void obrisiPraznu(Long id) {
+        Long predmetId = predmetGrupe(id);
+        zakljucajPredmet(predmetId);
+        GrupaZadataka g = zakljucaj(id);
+        if (varijantaRepository.countByGrupaId(id) > 0 || grupaRepository.countByRoditeljId(id) > 0) {
+            throw new SystemException(SAMO_PRAZNA, HttpStatus.CONFLICT);
+        }
+        obrisiZakljucanu(g, predmetId);
+    }
+
+    /** Briše zaključanu grupu bez podgrupa sa njenim varijantama i SVG medijima, pa prenumeriše braću. */
+    private void obrisiZakljucanu(GrupaZadataka g, Long predmetId) {
+        Long id = g.getId();
         List<Varijanta> varijante = varijantaRepository.findByGrupaIdForUpdate(id);
         List<String> svg = varijante.stream()
                 .flatMap(v -> Stream.of(v.getRenderSvg(), v.getRenderResenjeSvg()))
@@ -468,22 +504,26 @@ public class GrupaZadatakaService {
     private GrupaDetails details(GrupaZadataka g) {
         Stablo stablo = ucitajStablo(g.getPredmet().getId(), g.getNamena(), false);
         List<Long> podstablo = stablo.podstablo(g);
-        Map<Long, Brojevi> brojaci = brojaci(podstablo);
+        Map<Long, Brojevi> brojaci = brojaci(podstablo, false);
         Brojevi b = podstablo.stream().map(brojaci::get).filter(Objects::nonNull).reduce(Brojevi.NULA, Brojevi::plus);
         return new GrupaDetails(g.getId(), g.getPredmet().getId(), roditeljId(g), g.getNamena(), g.getNaziv(),
                 g.getOpis(), g.getRb(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja()), putanja(g),
-                stablo.deca(g).isEmpty(), b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), g.getIzmenjeno());
+                stablo.deca(g).isEmpty(), b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), g.getIzmenjeno(),
+                g.getIzvor(), g.getSerija(), false, null);
     }
 
-    /** Sve grupe predmeta i namene jednim upitom; brojači (drugi upit) samo kad se traže. */
+    /** Sve grupe predmeta i namene jednim upitom; brojači (sa Klodovim nacrtima, još dva upita) samo kad se traže. */
     private Stablo ucitajStablo(Long predmetId, Namena namena, boolean saBrojacima) {
         List<GrupaZadataka> grupe = grupaRepository.findByPredmetIdAndNamenaOrderByRoditeljIdAscRbAsc(predmetId, namena);
-        Map<Long, Brojevi> brojaci = saBrojacima ? brojaci(grupe.stream().map(GrupaZadataka::getId).toList()) : Map.of();
+        Map<Long, Brojevi> brojaci = saBrojacima ? brojaci(grupe.stream().map(GrupaZadataka::getId).toList(), true) : Map.of();
         return new Stablo(grupe, brojaci);
     }
 
-    /** Sopstveni brojači grupa (bez podstabla) iz redova {@code [grupaId, status, renderStatus, broj]}. */
-    private Map<Long, Brojevi> brojaci(Collection<Long> ids) {
+    /**
+     * Sopstveni brojači grupa (bez podstabla) iz redova {@code [grupaId, status, renderStatus, broj]}; Klodovi nacrti
+     * (drugi upit, {@code [grupaId, broj]}) samo kad su traženi ({@code GrupaDetails} ih nema), inače 0.
+     */
+    private Map<Long, Brojevi> brojaci(Collection<Long> ids, boolean saClaudeNacrtima) {
         if (ids.isEmpty()) {
             return Map.of();
         }
@@ -493,16 +533,23 @@ public class GrupaZadatakaService {
             rezultat.merge(((Number) red[0]).longValue(), new Brojevi(n,
                     red[1] == StatusVarijante.AKTIVNA ? n : 0,
                     red[1] == StatusVarijante.NACRT ? n : 0,
-                    red[2] == RenderStatus.GRESKA ? n : 0), Brojevi::plus);
+                    red[2] == RenderStatus.GRESKA ? n : 0, 0), Brojevi::plus);
+        }
+        if (saClaudeNacrtima) {
+            for (Object[] red : varijantaRepository.claudeNacrtiPoGrupi(ids)) {
+                rezultat.merge(((Number) red[0]).longValue(), new Brojevi(0, 0, 0, 0, ((Number) red[1]).intValue()),
+                        Brojevi::plus);
+            }
         }
         return rezultat;
     }
 
-    private record Brojevi(int varijanti, int aktivnih, int nacrta, int gresaka) {
-        static final Brojevi NULA = new Brojevi(0, 0, 0, 0);
+    private record Brojevi(int varijanti, int aktivnih, int nacrta, int gresaka, int claudeNacrta) {
+        static final Brojevi NULA = new Brojevi(0, 0, 0, 0, 0);
 
         Brojevi plus(Brojevi o) {
-            return new Brojevi(varijanti + o.varijanti, aktivnih + o.aktivnih, nacrta + o.nacrta, gresaka + o.gresaka);
+            return new Brojevi(varijanti + o.varijanti, aktivnih + o.aktivnih, nacrta + o.nacrta, gresaka + o.gresaka,
+                    claudeNacrta + o.claudeNacrta);
         }
     }
 
@@ -554,10 +601,12 @@ public class GrupaZadatakaService {
         GrupaCvor cvor(GrupaZadataka g) {
             List<GrupaCvor> podcvorovi = deca(g).stream().map(this::cvor).toList();
             Brojevi b = podcvorovi.stream()
-                    .map(c -> new Brojevi(c.brojVarijanti(), c.brojAktivnih(), c.brojNacrta(), c.brojGresaka()))
+                    .map(c -> new Brojevi(c.brojVarijanti(), c.brojAktivnih(), c.brojNacrta(), c.brojGresaka(),
+                            c.brojClaudeNacrta()))
                     .reduce(brojaci.getOrDefault(g.getId(), Brojevi.NULA), Brojevi::plus);
             return new GrupaCvor(g.getId(), g.getNaziv(), g.getRb(), g.getTezina(), podcvorovi.isEmpty(),
-                    b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), podcvorovi);
+                    b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), podcvorovi, g.getIzvor(), b.claudeNacrta(),
+                    false, null);
         }
     }
 

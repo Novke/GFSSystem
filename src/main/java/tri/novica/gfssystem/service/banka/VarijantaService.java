@@ -219,7 +219,12 @@ public class VarijantaService {
 
     /**
      * U AKTIVNU (i iz ARHIVIRANE): render mora biti uspeo (409) i odgovori potpuni po trenutnoj šemi grupe (400, poruke
-     * {@code BankaPP.proveriOdgovore}). Već aktivna ostaje kakva je.
+     * {@code BankaPP.proveriOdgovore}). Već aktivna ostaje kakva je. Odobrena varijanta pamti da je bila odobrena
+     * ({@code ikadOdobrena}, vraćanje u nacrt to ne briše). Kopija koja zamenjuje original ({@code zamenjuje}, Klodova izmena
+     * tuđe ili odobrene varijante) pri prelasku u AKTIVNU u istoj transakciji arhivira original, ako on još postoji i nije
+     * arhiviran, pa se aktivni skup grupe ne menja do odobrenja. Original je u istoj grupi (kopija se pravi u grupi
+     * originala, a varijanta ne menja grupu), čiji red je već zaključan; zaključava se posle kopije. Ponovno odobrenje već
+     * aktivne kopije ne dira original (Novica ga je možda posle vratio).
      */
     public VarijantaDetails odobri(Long id) {
         Varijanta v = zakljucaj(id);
@@ -227,7 +232,18 @@ public class VarijantaService {
             throw new SystemException(RENDER_NIJE_USPEO, HttpStatus.CONFLICT);
         }
         proveriOdgovore(v.getGrupa(), PoljaJson.odgovoriIzKolone(v.getOdgovori()));
+        boolean prelazi = v.getStatus() != StatusVarijante.AKTIVNA;
         promeniStatus(v, StatusVarijante.AKTIVNA);
+        v.setIkadOdobrena(true);
+        Long originalId = zamenjujeId(v);
+        if (prelazi && originalId != null && !originalId.equals(id)) {
+            varijantaRepository.findByIdForUpdate(originalId)
+                    .filter(o -> o.getStatus() != StatusVarijante.ARHIVIRANA)
+                    .ifPresent(o -> {
+                        promeniStatus(o, StatusVarijante.ARHIVIRANA);
+                        log.info("Varijanta {} odobrena umesto {}: original arhiviran", id, originalId);
+                    });
+        }
         return details(v);
     }
 
@@ -740,7 +756,8 @@ public class VarijantaService {
 
     private static VarijantaInfo info(Varijanta v) {
         return new VarijantaInfo(v.getId(), v.getGrupa().getId(), v.getRb(), v.getNaziv(), v.getStatus(), v.getIzvor(),
-                v.getRenderStatus(), id(v.getRenderSvg()), id(v.getRenderResenjeSvg()), v.getIzmenjeno());
+                v.getRenderStatus(), id(v.getRenderSvg()), id(v.getRenderResenjeSvg()), v.getIzmenjeno(), v.isIkadOdobrena(),
+                zamenjujeId(v), v.getSerija());
     }
 
     private VarijantaDetails details(Varijanta v) {
@@ -753,7 +770,13 @@ public class VarijantaService {
         return new VarijantaDetails(v.getId(), g.getId(), grupaZadatakaService.putanja(g), v.getRb(), v.getNaziv(),
                 v.getTekst(), v.getResenje(), PoljaJson.odgovoriIzKolone(v.getOdgovori()), PoljaJson.izKolone(g.getPolja()),
                 prilozi, v.getStatus(), v.getIzvor(), v.getRenderStatus(), id(v.getRenderSvg()), id(v.getRenderResenjeSvg()),
-                greska == null ? null : greska.info(), greska == null ? null : greska.deo(), v.getKreirano(), v.getIzmenjeno());
+                greska == null ? null : greska.info(), greska == null ? null : greska.deo(), v.getKreirano(), v.getIzmenjeno(),
+                v.isIkadOdobrena(), zamenjujeId(v), v.getSerija());
+    }
+
+    /** Id originala bez učitavanja (lenja veza: id je u proksiju). */
+    private static Long zamenjujeId(Varijanta v) {
+        return v.getZamenjuje() == null ? null : v.getZamenjuje().getId();
     }
 
     private static MedijInfo medijInfo(Medij m) {
