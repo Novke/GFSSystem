@@ -33,7 +33,8 @@ import java.util.Optional;
 @Slf4j
 public class NastavnikSesijaServis {
 
-    static final Duration TRAJANJE = Duration.ofDays(90);
+    /** Trajanje sesije od poslednjeg korišćenja; isto je Max-Age kolačića {@code gfs_nastavnik}. */
+    public static final Duration TRAJANJE = Duration.ofDays(90);
     static final Duration PRODUZENJE_NAJCESCE = Duration.ofMinutes(10);
     static final int LIMIT_GRESAKA = 10;
     static final Duration PROZOR_GRESAKA = Duration.ofMinutes(15);

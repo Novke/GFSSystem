@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  * DISCONNECT uvek prolazi i ne vraća kapacitet; sintetički DISCONNECT na kraju veze se ne naplaćuje, pa ponovno
  * povezivanje košta 5 tokena (CONNECT i četiri pretplate) i dva brza reload-a staju u kofu. Kofa se briše samo kad je
  * puna (posle kraja sesije ili periodično), jer je puna kofa ista kao nova. ACK/NACK i transakcije nisu dozvoljeni
- * nikome; nastavnik (iza basic-auth-a) se ne meri.
+ * nikome; nastavnik (sesija nastavnika u bezbednosnom lancu) se ne meri.
  * <p>
  * Granice po studentu (memorija i broj poruka koje server šalje ne rastu bez kraja): u jednoj sesiji isto odredište
  * (ili isti id pretplate) najviše jednom i najviše {@value #MAX_PRETPLATA} pretplata; najviše {@value #MAX_SESIJA}

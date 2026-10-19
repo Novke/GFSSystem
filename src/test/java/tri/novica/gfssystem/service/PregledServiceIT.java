@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * sreda 5. 3. 2087, tekuća nedelja je ponedeljak 3. 3. - nedelja 9. 3. 2087.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class PregledServiceIT {
 

@@ -1,6 +1,8 @@
 package tri.novica.gfssystem.config;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -12,6 +14,8 @@ import org.springframework.web.client.RestClient;
 import jakarta.servlet.http.HttpServletRequest;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.security.PrijavaTestUtil;
+import tri.novica.gfssystem.service.prijava.NastavnikSesijaServis;
 import tri.novica.gfssystem.utility.KlijentIp;
 
 import java.util.Map;
@@ -24,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Pravi Tomcat (RANDOM_PORT) iza "dva nginx-a": {@code server.forward-headers-strategy=native} (RemoteIpValve) ide
  * {@code X-Forwarded-For} zdesna i preskače pouzdane (privatne) proksije, pa je klijent prva javna adresa, šta god je
  * sam upisao levo od nje. Test-kontroler živi samo ovde i registruje se kroz {@code @TestConfiguration} (ne kroz
- * skeniranje), pa ga drugi testovi ne vide.
+ * skeniranje), pa ga drugi testovi ne vide. Kao svaka putanja van matrice pristupa je ADMIN, pa zahtev nosi nastavnički
+ * kolačić.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ProksiZagljavljaIT.ProbaConfig.class)
@@ -33,6 +38,14 @@ class ProksiZagljavljaIT {
     static final String PUTANJA = "/test-proksi/klijent";
 
     @LocalServerPort int port;
+    @Autowired NastavnikSesijaServis nastavnici;
+
+    String kolacic;
+
+    @BeforeEach
+    void prijava() {
+        kolacic = PrijavaTestUtil.nastavnickiKolacic(nastavnici);
+    }
 
     @TestConfiguration
     static class ProbaConfig {
@@ -51,7 +64,8 @@ class ProksiZagljavljaIT {
     }
 
     private JsonNode pozovi(String... zaglavlja) {
-        RestClient.RequestHeadersSpec<?> zahtev = RestClient.create("http://127.0.0.1:" + port).get().uri(PUTANJA);
+        RestClient.RequestHeadersSpec<?> zahtev = RestClient.create("http://127.0.0.1:" + port).get().uri(PUTANJA)
+                .header("Cookie", kolacic);
         for (int i = 0; i < zaglavlja.length; i += 2) {
             zahtev = zahtev.header(zaglavlja[i], zaglavlja[i + 1]);
         }

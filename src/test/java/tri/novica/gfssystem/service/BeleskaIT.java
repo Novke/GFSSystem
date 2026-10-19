@@ -17,7 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** Beleške kroz HTTP nad pravom MySQL bazom (Flyway V4, {@code ddl-auto=validate}); svaki test se vraća unazad. */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class BeleskaIT {
 

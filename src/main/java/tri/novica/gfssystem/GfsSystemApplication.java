@@ -7,10 +7,12 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import tri.novica.gfssystem.config.NastavnikSvojstva;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 
 import java.time.Clock;
 
-@SpringBootApplication
+// bez korisnika sa generisanom lozinkom: nastavnik i studenti se prijavljuju našim sesijama (security/SecurityConfig)
+@SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
 @EnableConfigurationProperties(NastavnikSvojstva.class)
 public class GfsSystemApplication {
 
