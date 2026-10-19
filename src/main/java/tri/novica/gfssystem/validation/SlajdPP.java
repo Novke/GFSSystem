@@ -14,9 +14,15 @@ import tri.novica.gfssystem.entity.uzivo.TipPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Pravila za {@link SlajdCmd} (spec 4.1 "Validacija SlajdCmd", granice 2.12). Ne dira bazu: postojanje slike proverava
@@ -34,6 +40,10 @@ public final class SlajdPP {
     public static final int MAX_PRELAZ_MS = 5000;
     public static final int PODRAZUMEVANO_PRELAZ_MS = 500;
     public static final String PRELAZ_TRAJANJE = "Trajanje prelaza mora biti od 0,1 do 5 sekundi.";
+    /** Jedini dozvoljen cilj Markdown slike (spec 6.5): medij otpremljen u GFS, relativno prema {@code <base href>}. */
+    public static final Pattern DOZVOLJENA_SLIKA =
+            Pattern.compile("^api/public/mediji/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
+    public static final String SLIKA_VAN_GFS = "Slika u tekstu mora biti otpremljena u GFS.";
 
     private static final int MAX_NASLOV = 300;
     private static final int MAX_SADRZAJ = 20_000;
@@ -47,6 +57,16 @@ public final class SlajdPP {
     private static final int MAX_PRIHVATLJIVIH = 20;
     private static final int MAX_PRIHVATLJIV = 100;
     private static final int MAX_OZNAKA_SKALE = 60;
+    private static final String PUTANJA_MEDIJA = "api/public/mediji/";
+    /**
+     * Inline slika koju marked (i CommonMark) sigurno čita kao inline: natpis u jednom redu bez zagrada, {@code `} i
+     * {@code <}, cilj bez razmaka, zagrada i {@code \}, opcioni naslov pod navodnicima. Na tom mestu nema referentne slike.
+     */
+    private static final Pattern SIGURNA_INLINE = Pattern.compile(
+            "!\\[(?:\\\\[^\\n]|[^\\[\\]\\\\`<\\n])*+\\]\\([ \\t\\n]*+(?:<[^<>\\n\\\\]++>|[^\\x00-\\x20()<>\\\\]++)"
+            + "(?:(?:[ \\t]+(?:\\n[ \\t]*)?|\\n[ \\t]*)(?:\"[^\"\\\\]*\"|'[^'\\\\]*'))?[ \\t\\n]*\\)");
+    /** {@code [oznaka]:} bilo gde u tekstu (i u citatu ili listi), kao oznaka definicije u marked-u. */
+    private static final Pattern DEFINICIJA = Pattern.compile("\\[(?:\\\\[\\s\\S]|[^\\[\\]\\\\])++\\]:");
 
     private SlajdPP() {}
 
@@ -201,6 +221,162 @@ public final class SlajdPP {
         if (p.tip() == TipPitanja.VISE_TACNIH && tacnih < 1) {
             throw greska("Označi bar jedan tačan odgovor.");
         }
+    }
+
+    /**
+     * Slike iz Markdown-a slajda (spec 6.5): INFO {@code sadrzaj}, PITANJE tekst pitanja i tekstovi opcija. Vraća UUID-ove
+     * medija; postojanje i vrstu ({@code SLIKA}) proverava servis. Cilj van GFS-a je 400 {@link #SLIKA_VAN_GFS}.
+     */
+    public static Set<String> slikeSlajda(SlajdCmd n) {
+        Set<String> uuidi = new LinkedHashSet<>();
+        if (n == null) return uuidi;
+        if (n.tip() == TipSlajda.INFO) {
+            uuidi.addAll(slikeIzMarkdowna(n.sadrzaj()));
+        }
+        if (n.tip() == TipSlajda.PITANJE && n.pitanje() != null) {
+            uuidi.addAll(slikeIzMarkdowna(n.pitanje().tekst()));
+            if (n.pitanje().opcije() != null) {
+                for (OpcijaCmd o : n.pitanje().opcije()) {
+                    if (o != null) uuidi.addAll(slikeIzMarkdowna(o.tekst()));
+                }
+            }
+        }
+        return uuidi;
+    }
+
+    /**
+     * UUID-ovi slika iz Markdown teksta; cilj slike sme biti samo {@link #DOZVOLJENA_SLIKA}, inače 400
+     * {@link #SLIKA_VAN_GFS}. Proverava sve što bi marked mogao da prikaže kao sliku, i nešto više (sumnjivo je 400):
+     * <ul>
+     *   <li>inline {@code ![natpis](cilj "naslov")} i {@code ![natpis](<cilj>)}: svaki {@code ](} na kom bi se natpis neke
+     *       slike mogao završiti ({@code krajeviNatpisa}); cilj se poredi doslovno, pa {@code \}, {@code %} i entiteti
+     *       padaju;</li>
+     *   <li>referentni {@code ![natpis][oznaka]}, {@code ![natpis][]}, {@code ![natpis]}: kad tekst ima bar jedan
+     *       {@code ![} koji nije sigurno inline ({@code SIGURNA_INLINE}), svaka definicija {@code [oznaka]: cilj} u tekstu
+     *       mora biti dozvoljena (i definicija običnog linka).</li>
+     * </ul>
+     * HTML ({@code <img>}) front ne prikazuje (marked {@code html: ''}), pa ovde ne smeta.
+     */
+    public static Set<String> slikeIzMarkdowna(String md) {
+        Set<String> uuidi = new LinkedHashSet<>();
+        if (md == null || md.isEmpty()) return uuidi;
+        String s = md.replace("\r\n", "\n").replace('\r', '\n');   // kao marked pre parsiranja
+        for (int kraj : krajeviNatpisa(s)) {
+            uuidi.add(uuidSlike(ciljInline(s, kraj + 2)));
+        }
+        boolean referentna = false;
+        Matcher sigurna = SIGURNA_INLINE.matcher(s);
+        for (int i = s.indexOf("!["); i >= 0 && !referentna; i = s.indexOf("![", i + 1)) {
+            referentna = !sigurna.region(i, s.length()).lookingAt();
+        }
+        if (referentna) {
+            Matcher definicija = DEFINICIJA.matcher(s);
+            while (definicija.find()) {
+                String cilj = ciljDefinicije(s, definicija.end());
+                if (cilj == null || !cilj.isEmpty()) uuidi.add(uuidSlike(cilj));
+            }
+        }
+        return uuidi;
+    }
+
+    /**
+     * Mesta {@code ]} (pre {@code (}) na kojima bi se natpis neke slike mogao završiti, u jednom prolazu po pasusima (prazna
+     * linija završava natpis): {@code ]} koji zatvara {@code [} iz {@code ![} (zagrade u ravnoteži, uz {@code \}), a kad
+     * posle još nezatvorenog {@code ![} dođe {@code `}, svaki {@code ](} do kraja pasusa, jer kod u natpisu može sakriti
+     * zagrade.
+     */
+    private static List<Integer> krajeviNatpisa(String s) {
+        List<Integer> krajevi = new ArrayList<>();
+        Deque<Boolean> otvorene = new ArrayDeque<>();   // true: [ iz ![
+        int otvorenihSlika = 0;
+        boolean kod = false;
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            if (c == '\\') {
+                k++;
+            } else if (c == '\n' && praznaLinija(s, k + 1)) {
+                otvorene.clear();
+                otvorenihSlika = 0;
+                kod = false;
+            } else if (c == '`') {
+                kod |= otvorenihSlika > 0;
+            } else if (c == '[') {
+                boolean slika = k > 0 && s.charAt(k - 1) == '!';
+                otvorene.push(slika);
+                if (slika) otvorenihSlika++;
+            } else if (c == ']') {
+                boolean zatvaraSliku = !otvorene.isEmpty() && otvorene.pop();
+                if (zatvaraSliku) otvorenihSlika--;
+                if ((zatvaraSliku || kod) && k + 1 < s.length() && s.charAt(k + 1) == '(') {
+                    krajevi.add(k);
+                }
+            }
+        }
+        return krajevi;
+    }
+
+    /**
+     * Cilj inline slike posle {@code (}, kao u marked-u: {@code <cilj>} (iza {@code >} sme samo razmak ili {@code )},
+     * inače {@code null}), ili niz bez razmaka i kontrolnih znakova do prve {@code )} van ravnoteže.
+     */
+    private static String ciljInline(String s, int od) {
+        int k = od;
+        while (k < s.length() && (s.charAt(k) == ' ' || s.charAt(k) == '\t' || s.charAt(k) == '\n')) k++;
+        if (k < s.length() && s.charAt(k) == '<') {
+            int kraj = k + 1;
+            while (kraj < s.length() && "<>\\\n".indexOf(s.charAt(kraj)) < 0) kraj++;
+            boolean zatvoren = kraj < s.length() && s.charAt(kraj) == '>'
+                    && (kraj + 1 == s.length() || " \t\n)".indexOf(s.charAt(kraj + 1)) >= 0);
+            return zatvoren ? s.substring(k + 1, kraj) : null;
+        }
+        int dubina = 0;
+        int kraj = k;
+        while (kraj < s.length()) {
+            char c = s.charAt(kraj);
+            if (c <= ' ' || (c == ')' && dubina == 0)) break;
+            if (c == '(') dubina++;
+            if (c == ')') dubina--;
+            kraj += c == '\\' ? 2 : 1;
+        }
+        return s.substring(k, Math.min(kraj, s.length()));
+    }
+
+    /**
+     * Cilj definicije posle {@code [oznaka]:} (razmaci, najviše jedan prelom reda): {@code <cilj>} do prvog {@code >} (bez
+     * drugog {@code >} u istom redu, inače {@code null}) ili niz do razmaka; prazan string kad cilja nema (to nije definicija).
+     */
+    private static String ciljDefinicije(String s, int od) {
+        int k = od;
+        while (k < s.length() && (s.charAt(k) == ' ' || s.charAt(k) == '\t')) k++;
+        if (k < s.length() && s.charAt(k) == '\n') {
+            k++;
+            while (k < s.length() && (s.charAt(k) == ' ' || s.charAt(k) == '\t')) k++;
+        }
+        int krajReda = s.indexOf('\n', k);
+        if (krajReda < 0) krajReda = s.length();
+        if (k < s.length() && s.charAt(k) == '<') {
+            int kraj = s.indexOf('>', k + 1);
+            if (kraj < 0 || kraj > krajReda || s.lastIndexOf('>', krajReda - 1) != kraj) return null;
+            return s.substring(k + 1, kraj);
+        }
+        int kraj = k;
+        while (kraj < s.length() && " \t\n".indexOf(s.charAt(kraj)) < 0) kraj++;
+        return s.substring(k, kraj);
+    }
+
+    /** Linija od {@code od} je prazna (samo razmaci) ili je kraj teksta. */
+    private static boolean praznaLinija(String s, int od) {
+        int k = od;
+        while (k < s.length() && (s.charAt(k) == ' ' || s.charAt(k) == '\t')) k++;
+        return k == s.length() || s.charAt(k) == '\n';
+    }
+
+    /** UUID iz dozvoljenog cilja; svaki drugi cilj (i {@code null}) je 400 {@link #SLIKA_VAN_GFS}. */
+    private static String uuidSlike(String cilj) {
+        if (cilj == null || !DOZVOLJENA_SLIKA.matcher(cilj).matches()) {
+            throw greska(SLIKA_VAN_GFS);
+        }
+        return cilj.substring(PUTANJA_MEDIJA.length());
     }
 
     /** Pre dodavanja slajda: {@code postojeci} je trenutni broj slajdova prezentacije. */

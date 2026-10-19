@@ -256,6 +256,13 @@ public class PrezentacijaService {
         return SlajdMapper.uDetails(s, platnoJson);
     }
 
+    /** Jedan slajd, pun (PLATNO sa potezima crteža), za {@code GET /slajdovi/{id}}. Samo čitanje, bez zaključavanja. */
+    @Transactional(readOnly = true)
+    public SlajdDetails slajd(Long id) {
+        Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
+        return SlajdMapper.uDetails(s, platnoJson);
+    }
+
     /** Potezi svih CRTEZ slojeva slajda, redom slojeva; prazno za INFO i PITANJE. Samo čitanje, bez zaključavanja. */
     @Transactional(readOnly = true)
     public List<PoteziSloja> poteziSlajda(Long id) {
@@ -364,12 +371,13 @@ public class PrezentacijaService {
     }
 
     /**
-     * Normalizuje i proverava komandu (400 pri grešci), uključujući čitanje dokumenta platna i postojanje slika. Radi
-     * se pre zaključavanja (red zaključavanja), kao i upit o slikama.
+     * Normalizuje i proverava komandu (400 pri grešci), uključujući čitanje dokumenta platna, postojanje slika i slike
+     * u Markdown-u (spec 6.5). Radi se pre zaključavanja (red zaključavanja), kao i upiti o slikama.
      */
     private ProverenSlajd proveren(SlajdCmd cmd) {
         SlajdCmd n = SlajdPP.normalizuj(cmd);
         SlajdPP.proveri(n);
+        proveriSlikeUTekstu(SlajdPP.slikeSlajda(n));
         proveriSliku(n.slikaId());
         if (n.pitanje() != null) {
             proveriSliku(n.pitanje().slikaId());
@@ -391,6 +399,20 @@ public class PrezentacijaService {
             }
         }
         return new ProverenSlajd(n, platno);
+    }
+
+    /**
+     * Markdown slike slajda ({@link SlajdPP#slikeSlajda}) su postojeći mediji vrste {@code SLIKA}, jednim upitom; nepostojeći
+     * UUID, render SVG i prilozi banke su 400 {@link SlajdPP#SLIKA_VAN_GFS} (kao i cilj van GFS-a).
+     */
+    private void proveriSlikeUTekstu(Set<String> ids) {
+        if (ids.isEmpty()) {
+            return;
+        }
+        List<VrstaMedija> vrste = medijRepository.vrste(ids);
+        if (vrste.size() != ids.size() || vrste.stream().anyMatch(v -> v != VrstaMedija.SLIKA)) {
+            throw new SystemException(SlajdPP.SLIKA_VAN_GFS, HttpStatus.BAD_REQUEST);
+        }
     }
 
     /**
