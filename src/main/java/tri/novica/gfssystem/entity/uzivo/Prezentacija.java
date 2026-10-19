@@ -31,6 +31,9 @@ public class Prezentacija {
     private boolean detaljiDozvoljeni;
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
     private Tema tema = Tema.NACRT;
+    /** Klodova serija upisa (MCP); null za prezentacije napravljene u UI-ju. */
+    @Column(length = 60)
+    private String serija;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     @Column(nullable = false)

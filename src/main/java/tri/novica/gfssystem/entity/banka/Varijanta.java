@@ -48,6 +48,18 @@ public class Varijanta {
     /** SHA-256 (heksadecimalno) nad preambulom, tekstom, rešenjem i prilozima poslednjeg rendera; null = ponoviti render. */
     @JdbcTypeCode(SqlTypes.CHAR) @Column(length = 64)
     private String renderHash;
+    /**
+     * Bila je bar jednom odobrena ({@code odobri}); vraćanje u nacrt ga ne briše. Klod takvu ne menja na mestu (pravi
+     * kopiju) i ne briše.
+     */
+    @Column(nullable = false)
+    private boolean ikadOdobrena;
+    /** Original koji ova kopija (Klodova izmena tuđe ili odobrene varijante) zamenjuje; brisanje originala ga postavlja na null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Varijanta zamenjuje;
+    /** Klodova serija upisa; null za ručno unete varijante. */
+    @Column(length = 60)
+    private String serija;
     @OneToMany(mappedBy = "varijanta", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("ime")
     private List<VarijantaPrilog> prilozi = new ArrayList<>();
