@@ -47,7 +47,10 @@ import java.util.stream.Stream;
  * izmene jednog stabla (braća, {@code rb}, dubina, premeštanje) idu redom, a više redova grupa odjednom drži samo ko
  * drži red predmeta (među njima nema ciklusa). Red grupe se zaključava kad grupa dobija dete (kreiraj, premesti) ili se
  * menja/briše. Koreni nemaju red roditelja, zato ključ predmeta. Pre zaključavanja se čita samo id predmeta
- * ({@code findPredmetId}): entitet učitan pre zaključavanja Hibernate ne osvežava. Izmene rade u READ COMMITTED (kao
+ * ({@code findPredmetId}): entitet učitan pre zaključavanja Hibernate ne osvežava. Izmene koje MCP fasada zove posle
+ * čitanja u istom zahtevu ({@link #izmeniDelimicno}, {@link #izmeniPolja}, {@link #premesti}, {@link #obrisiPraznu}) zato
+ * počinju praznim persistence context-om ({@link #zaboraviProcitano}): uz open-in-view jedan EntityManager traje ceo
+ * zahtev, pa bi ključ i upiti braće i stabla vratili entitete pročitane pre ključa. Izmene rade u READ COMMITTED (kao
  * {@code PrezentacijaService}): čitanje posle čekanja na ključ vidi ono što je prethodnik upisao. Ključ predmeta traje
  * koliko i izmena stabla i za to vreme kratko zadržava i upise drugih tabela sa FK na taj predmet (InnoDB pri upisu
  * deteta uzima deljeni ključ reda roditelja: novo predavanje, test, prezentacija tog predmeta).
@@ -150,6 +153,9 @@ public class GrupaZadatakaService {
      * uzima od roditelja, koji ne sme imati varijante (409) i ne sme biti na dnu dubine. {@code izvor} ({@code null} =
      * RUCNO) i {@code serija} (Klodova serija upisa, {@code null} za ručno napravljenu; van {@link Serija#OBRAZAC} 400) se
      * upisuju na grupu i posle se ne menjaju. Roditelj može biti bilo kog izvora (Klod dopunjuje i Novicino stablo).
+     * Ne prazni persistence context ({@link #zaboraviProcitano}): radi i unutar transakcije
+     * {@code KopijaGrupeService.kopiraj}, čije bi neupisane izmene to odbacilo; pozivalac koji je u istom zahtevu već čitao
+     * grupe prazni ga sam, pre svog prvog čitanja.
      */
     public GrupaDetails kreiraj(GrupaCmd cmd, IzvorVarijante izvor, String serija) {
         if (serija != null) {
@@ -214,15 +220,17 @@ public class GrupaZadatakaService {
     /**
      * Klodova delimična izmena (MCP {@code izmeni_grupu}, spec MCP 4.1): pod ključevima predmet -> grupa patch se spaja nad
      * zaključanim stanjem (izostavljeno ostaje, {@code null} briše), pa ista pravila kao {@link #izmeni}; šema polja i
-     * varijante ostaju netaknute ({@link #izmeniPolja}). Ko sme da menja koju grupu (samo CLAUDE) proverava fasada.
+     * varijante ostaju netaknute ({@link #izmeniPolja}). Ko sme da menja koju grupu (samo CLAUDE) proverava fasada, čitanjem
+     * grupe u istom zahtevu: zato prvo {@link #zaboraviProcitano}.
      */
     public GrupaDetails izmeniDelimicno(Long id, GrupaPatch patch) {
         if (patch == null) {
             throw new SystemException(NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
+        zaboraviProcitano();
         Long predmetId = predmetGrupe(id);
         zakljucajPredmet(predmetId);
-        GrupaZadataka g = zakljucajSveze(id);
+        GrupaZadataka g = zakljucaj(id);
         return izmeniZakljucanu(g, predmetId, proveren(spoji(g, patch, null)), null, false);
     }
 
@@ -231,15 +239,16 @@ public class GrupaZadatakaService {
      * varijante prvo isproba prilagođavanje ({@link #isprobaj}) bez upisa; kad bi ijedna varijanta (i arhivirana)
      * izgubila postojeći odgovor ili ijedna AKTIVNA pala u NACRT, 409 sa id-jevima pogođenih rastuće i ništa se ne upisuje.
      * Inače kao {@link #izmeni} sa tom šemom i trenutnim nazivom, opisom, težinom i uputstvom. Opcije bez id-ja dobijaju nov
-     * id; opcija sa id-jem zadržava odgovore koji je pominju (preimenovanje prolazi).
+     * id; opcija sa id-jem zadržava odgovore koji je pominju (preimenovanje prolazi). Počinje sa {@link #zaboraviProcitano}.
      */
     public GrupaDetails izmeniPolja(Long id, List<Polje> polja) {
         if (polja == null) {
             throw new SystemException(NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
+        zaboraviProcitano();
         Long predmetId = predmetGrupe(id);
         zakljucajPredmet(predmetId);
-        GrupaZadataka g = zakljucajSveze(id);
+        GrupaZadataka g = zakljucaj(id);
         return izmeniZakljucanu(g, predmetId, proveren(spoji(g, BEZ_IZMENE, polja)), polja, true);
     }
 
@@ -297,8 +306,10 @@ public class GrupaZadatakaService {
      * Briše grupu samo kad je prazna (MCP i poništavanje serije): pod ključevima predmet -> grupa 409 {@value #SAMO_PRAZNA}
      * kad ima varijanti ili podgrupa, inače kao {@link #obrisi}. Ključ grupe je isti koji {@code VarijantaService} uzima pre
      * dodavanja varijante, pa istovremeno dodavanje ili vidi obrisanu grupu (404) ili brisanje vidi njegovu varijantu (409).
+     * Počinje sa {@link #zaboraviProcitano} (fasada i poništavanje serije čitaju pre njega u istom zahtevu).
      */
     public void obrisiPraznu(Long id) {
+        zaboraviProcitano();
         Long predmetId = predmetGrupe(id);
         zakljucajPredmet(predmetId);
         GrupaZadataka g = zakljucaj(id);
@@ -329,12 +340,14 @@ public class GrupaZadatakaService {
 
     /**
      * Premešta grupu (sa celim podstablom) pod drugog roditelja istog predmeta i namene ili u korene, na mesto
-     * {@code rb} među novom braćom; stara i nova braća se prenumerišu 1..n.
+     * {@code rb} među novom braćom; stara i nova braća se prenumerišu 1..n. Počinje sa {@link #zaboraviProcitano} (MCP
+     * fasada čita grupu pre njega u istom zahtevu).
      */
     public GrupaDetails premesti(Long id, PremestiCmd cmd) {
         if (cmd == null) {
             throw new SystemException(NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
+        zaboraviProcitano();
         Long predmetId = predmetGrupe(id);
         Long ciljId = cmd.roditeljId();
         // tuđ predmet se odbija pre ključa, da se ne drže redovi dva stabla
@@ -564,14 +577,14 @@ public class GrupaZadatakaService {
     }
 
     /**
-     * Zaključan red grupe sa stanjem iz baze, za izmene koje spajaju patch nad trenutnim stanjem (MCP). Fasada pre izmene
-     * čita grupu u istom zahtevu, a uz open-in-view isti EntityManager traje ceo zahtev, pa bi ključ vratio entitet pročitan
-     * pre njega (Hibernate ga ne osvežava): {@code refresh} ga ponovo čita, pod ključem.
+     * Prazan persistence context pre prvog čitanja izmene (obrazac {@code VarijantaService}): fasada (MCP) u istom zahtevu
+     * već čita grupu i celo stablo ({@code detalji}), a uz open-in-view isti EntityManager traje ceo zahtev, pa bi ključ
+     * ({@code findByIdForUpdate}) i upiti braće i stabla vratili te entitete sa stanjem od pre ključa (Hibernate ih ne
+     * osvežava). Zove se samo na početku metode koju niko ne zove unutar svoje transakcije (REST, MCP fasada, poništavanje
+     * serije), pa nema neupisanih izmena koje bi se izgubile.
      */
-    private GrupaZadataka zakljucajSveze(Long id) {
-        GrupaZadataka g = zakljucaj(id);
-        em.refresh(g);
-        return g;
+    private void zaboraviProcitano() {
+        em.clear();
     }
 
     /** Deca roditelja, ili koreni predmeta i namene kad roditelja nema; po {@code rb}. */

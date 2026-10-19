@@ -1,6 +1,5 @@
 package tri.novica.gfssystem.service.banka;
 
-import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,8 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.orm.jpa.EntityManagerHolder;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tri.novica.gfssystem.dto.banka.*;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.banka.*;
@@ -275,15 +272,71 @@ class GrupaZadatakaMcpDbTest {
         assertTrue(((String) grupaRed(g.id()).get("polja")).contains("\"b\""));
     }
 
-    /** Kao open-in-view: jedan EntityManager za sve transakcije posla (fasada zove više metoda servisa u jednom zahtevu). */
+    // ---------------------------------------------------------------- open-in-view: braća i stablo iz baze
+
+    /**
+     * Fasada je pre izmene učitala celo stablo ({@code detalji}) u istom EntityManager-u; Novica u međuvremenu preimenuje
+     * brata. Provera naziva pod ključem mora videti novo ime iz baze, ne brata pročitanog pre ključa.
+     */
+    @Test
+    void delimicnaIzmenaPosleCitanjaVidiNovoImeBrata() {
+        GrupaDetails a = grupa("2 → 10", 3, List.of(BROJ_A));
+        GrupaDetails b = grupa("16 → 2", null, List.of());
+
+        uIstomZahtevu(() -> {
+            service.detalji(a.id());
+            jdbc.update("update grupe_zadataka set naziv = 'X' where id = ?", b.id());
+            ocekuj(400, "Grupa sa tim nazivom već postoji.",
+                    () -> service.izmeniDelimicno(a.id(), new GrupaPatch(na("X"), null, null, null)));
+            return null;
+        });
+
+        assertEquals("2 → 10", grupaRed(a.id()).get("naziv"));
+    }
+
+    /** Premeštanje posle čitanja u istom zahtevu proverava naziv nad decom cilja iz baze. */
+    @Test
+    void premestanjePosleCitanjaVidiNovoImeDeteta() {
+        GrupaDetails a = grupa("X", null, List.of());
+        GrupaDetails nedelja = grupa("Nedelja 3", null, List.of());
+        GrupaDetails uvod = service.kreiraj(new GrupaCmd(null, nedelja.id(), null, "Uvod", null, null, null, List.of()));
+
+        uIstomZahtevu(() -> {
+            service.detalji(a.id());
+            jdbc.update("update grupe_zadataka set naziv = 'x' where id = ?", uvod.id());
+            ocekuj(400, "Grupa sa tim nazivom već postoji.",
+                    () -> service.premesti(a.id(), new PremestiCmd(nedelja.id(), null)));
+            return null;
+        });
+
+        assertNull(jdbc.queryForObject("select roditelj_id from grupe_zadataka where id = ?", Long.class, a.id()));
+    }
+
+    /**
+     * Brisanje prazne posle čitanja u istom zahtevu prenumeriše braću nad {@code rb} iz baze: C je pročitan sa {@code rb}
+     * 3 i posle brisanja opet dobija 3, pa bi se zastareo entitet smatrao nepromenjenim i u bazi bi ostao Novicin 4.
+     */
+    @Test
+    void brisanjePrazneUIstomZahtevuPrenumeriseBracuIzBaze() {
+        grupa("A", null, List.of());
+        GrupaDetails b = grupa("B", null, List.of());
+        GrupaDetails c = grupa("C", null, List.of());
+        GrupaDetails d = grupa("D", null, List.of());
+
+        uIstomZahtevu(() -> {
+            service.detalji(b.id());
+            // Novica je u međuvremenu zamenio mesta C i D
+            jdbc.update("update grupe_zadataka set rb = case id when ? then 4 when ? then 3 end where id in (?, ?)",
+                    c.id(), d.id(), c.id(), d.id());
+            service.obrisiPraznu(b.id());
+            return null;
+        });
+
+        assertEquals(List.of("A:1", "D:2", "C:3"), jdbc.queryForList("select concat(naziv, ':', rb) from grupe_zadataka "
+                + "where predmet_id = ? order by rb, id", String.class, predmet.getId()));
+    }
+
     <T> T uIstomZahtevu(Supplier<T> posao) {
-        EntityManager em = emf.createEntityManager();
-        TransactionSynchronizationManager.bindResource(emf, new EntityManagerHolder(em));
-        try {
-            return posao.get();
-        } finally {
-            TransactionSynchronizationManager.unbindResource(emf);
-            em.close();
-        }
+        return IstiZahtev.uIstomZahtevu(emf, posao);
     }
 }

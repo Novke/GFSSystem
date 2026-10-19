@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,10 @@ import java.util.*;
  * <b>Zaključavanje</b> (red iz {@link GrupaZadatakaService}): red predmeta, pa red cilja, pa redovi grupa izvora (pre-order),
  * pa {@code kreiraj} za svaku kopiju. Ključ predmeta drži stablo nepromenjenim, a ključevi grupa izvora njihove varijante
  * i SVG medije ({@code VarijantaService} pre svake izmene varijante zaključa red njene grupe). Tuđ predmet se odbija pre ključa.
+ * To važi samo za stanje pročitano posle ključeva: fasada u istom zahtevu prvo zove {@link #brojStavki} (budžet), koji
+ * učita izvor i celo stablo, a uz open-in-view isti EntityManager traje ceo zahtev i ključ bi vratio te entitete sa
+ * stanjem od pre ključa (Hibernate ih ne osvežava). Zato {@link #kopiraj} počinje praznim persistence context-om
+ * ({@code em.clear()}, obrazac {@code VarijantaService}; niko ga ne zove unutar svoje transakcije, pa nema neupisanih izmena).
  */
 @Service
 @RequiredArgsConstructor
@@ -50,6 +55,7 @@ public class KopijaGrupeService {
     private final PredmetRepository predmetRepository;
     private final MedijRepository medijRepository;
     private final MedijService medijService;
+    private final EntityManager em;
     private final Clock clock;
 
     /** Broj stavki koje bi kopija napravila (budžet pravljenja): grupe podstabla i njihove varijante osim arhiviranih. */
@@ -76,6 +82,7 @@ public class KopijaGrupeService {
         if (ciljNamena == null) {
             throw new SystemException(GrupaZadatakaService.NAMENA_OBAVEZNA, HttpStatus.BAD_REQUEST);
         }
+        em.clear();   // open-in-view: brojStavki je u istom zahtevu već učitao izvor i stablo (vidi opis klase)
         Long predmetId = predmetGrupe(grupaId);
         if (ciljRoditeljId != null && !predmetId.equals(predmetGrupe(ciljRoditeljId))) {
             throw new SystemException(CILJ_VAN_STABLA, HttpStatus.BAD_REQUEST);

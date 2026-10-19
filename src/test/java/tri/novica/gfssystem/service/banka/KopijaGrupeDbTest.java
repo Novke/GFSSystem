@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,7 @@ class KopijaGrupeDbTest {
     @Autowired PredmetRepository predmetRepository;
     @Autowired MedijService medijService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired EntityManagerFactory emf;
     @Autowired Clock clock;
     @Value("${gfs.mediji.dir}") String medijiDir;
 
@@ -295,6 +297,34 @@ class KopijaGrupeDbTest {
         assertEquals(Namena.TEST, uTestu.namena());
         assertNull(uTestu.roditeljId());
         assertEquals(2, uTestu.rb());
+    }
+
+    /**
+     * Kao fasada {@code kopiraj_grupu}: {@code brojStavki} (budžet) pa {@code kopiraj} u istom zahtevu (open-in-view, jedan
+     * EntityManager). {@code brojStavki} je učitao izvornu grupu i celo stablo; Novica u međuvremenu menja naziv, uputstvo i
+     * šemu. Kopija mora nositi stanje iz baze, ne stablo pročitano pre ključa, a odgovori kopija važe za kopiranu šemu.
+     */
+    @Test
+    void kopijaPosleBrojaStavkiUIstomZahtevuCitaStanjeIzBaze() {
+        GrupaDetails kopija = IstiZahtev.uIstomZahtevu(emf, () -> {
+            assertEquals(5, service.brojStavki(koren.id()));
+            jdbc.update("update grupe_zadataka set uputstvo = 'Novicino uputstvo' where id = ?", koren.id());
+            jdbc.update("update grupe_zadataka set naziv = 'Konverzije brojeva', polja = replace(polja, '\"Mili\"', "
+                    + "'\"Milijev automat\"') where id = ?", konverzije.id());
+            return service.kopiraj(koren.id(), Namena.PREDAVANJE, null, "kopija-kol1");
+        });
+
+        assertEquals("Novicino uputstvo", kopija.uputstvo());
+        List<Map<String, Object>> izvor = grupe(Namena.TEST);
+        List<Map<String, Object>> nove = grupe(Namena.PREDAVANJE);
+        assertEquals(3, nove.size());
+        assertEquals("Konverzije brojeva", nove.get(1).get("naziv"));
+        List<Polje> sema = PoljaJson.izKolone((String) nove.get(1).get("polja"));
+        assertEquals(PoljaJson.izKolone((String) izvor.get(1).get("polja")), sema);
+        assertEquals(List.of("Mur", "Milijev automat", "Tjuring"), sema.get(1).opcije().stream().map(PoljeOpcija::tekst).toList());
+        Map<String, Object> v = varijanteGrupe(nove.get(1).get("id")).get(0);
+        assertDoesNotThrow(() -> BankaPP.proveriOdgovore(BankaPP.normalizujPolja(sema),
+                PoljaJson.odgovoriIzKolone((String) v.get("odgovori"))));
     }
 
     @Test
