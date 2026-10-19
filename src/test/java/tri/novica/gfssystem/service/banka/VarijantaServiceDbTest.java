@@ -185,7 +185,7 @@ class VarijantaServiceDbTest {
         VarijantaDetails ista = service.izmeni(d.id(), new VarijantaCmd("V2", "Pretvori 1011.", "$11$",
                 Map.of("a", new OdgovorPolja(12.0, null, null, null)), List.of(new PrilogCmd("skica", png)), null));
 
-        verify(latexRender, never()).renderuj(any(), any(), any());
+        verifyNoInteractions(latexRender);
         assertEquals(d.svgId(), ista.svgId());
         assertEquals(d.svgId(), red(d.id()).get("render_svg_id"));
         assertEquals("V2", jdbc.queryForObject("select naziv from varijante where id = ?", String.class, d.id()));

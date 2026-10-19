@@ -1,10 +1,11 @@
-"""Render servis gfs-latex (spec banke 3.1): POST /render pretvara ceo LaTeX dokument u SVG ili PDF, GET /zdravlje.
+"""Render servis gfs-latex (spec banke 3.1): POST /render pretvara ceo LaTeX dokument u SVG, PDF i/ili PNG, GET /zdravlje.
 
 Samo Python stdlib. Svaki zahtev dobija svoj radni direktorijum u /tmp (tmpfs u kontejneru), koji se briše posle
 odgovora. pdflatex radi bez shell escape-a, sa openin_any/openout_any=p (bez apsolutnih putanja, ../ i skrivenih
 fajlova), bez mktex* skripti i sa ograničenjima procesa (prlimit: CPU, memorija, veličina fajla); pdftocairo pravi SVG
-(glifovi kao putanje, bez skripti). Ovo je samo prvi sloj: prava granica je kontejner (read-only, bez mreže, bez
-capability-ja). Izvor dokumenta se nikad ne loguje i ne vraća u odgovoru.
+(glifovi kao putanje, bez skripti) i PNG, svi traženi formati iz istog prevođenja (spec MCP 6.4). Ovo je samo prvi
+sloj: prava granica je kontejner (read-only, bez mreže, bez capability-ja). Izvor dokumenta se nikad ne loguje i ne
+vraća u odgovoru.
 """
 import base64
 import binascii
@@ -45,9 +46,10 @@ MAX_IZLAZ = _broj_iz_okruzenja("RENDER_MAX_OUTPUT", 5 * 1024 * 1024, 64 * 1024)
 MAX_TELO = _broj_iz_okruzenja("RENDER_MAX_BODY", 60 * 1024 * 1024, 1024 * 1024)
 
 PODRAZUMEVANI_TIMEOUT = 20
-SVG_TIMEOUT = 20
-# pdftocairo deli rok kompajliranja uz ovu rezervu: ceo odgovor stiže pre nego što Java klijent odustane (rok + 10 s)
-SVG_REZERVA = 5
+# Sva pretvaranja jednog zahteva (SVG, PNG) zajedno: najviše PRETVARANJE_TIMEOUT s i deo roka kompajliranja uz
+# PRETVARANJE_REZERVA, pa ceo odgovor stiže pre nego što Java klijent odustane (rok + 10 s)
+PRETVARANJE_TIMEOUT = 20
+PRETVARANJE_REZERVA = 5
 MAX_TEX = 2 * 1024 * 1024
 ISTOVREMENO = threading.BoundedSemaphore(4)
 NAJVISE_LINIJA_LOGA = 60
@@ -57,7 +59,11 @@ MEMORIJA_PROCESA = 1024 ** 3
 NAJVECI_FAJL = 64 * 1024 ** 2
 SOKET_TIMEOUT = 30
 
+# Staro polje "format" (jedan format); "formati" (lista bez ponavljanja) ima prednost i zna i PNG.
 FORMATI = frozenset({"svg", "pdf"})
+FORMATI_LISTE = frozenset({"svg", "pdf", "png"})
+# Duža ivica PNG-a u pikselima (pdftocairo -scale-to); backend ga po potrebi smanjuje za Kloda.
+PNG_IVICA = 1400
 # Samo ono što pdflatex ume da uključi (\includegraphics); WebP nije LaTeX prilog.
 EKSTENZIJE = frozenset({"pdf", "png", "jpg", "jpeg"})
 NAJVISE_PRILOGA = 20
@@ -115,8 +121,22 @@ def zabelezi(linija):
 
 # --- zahtev -------------------------------------------------------------------------------------------------------
 
+def procitaj_formate(z):
+    """Traženi formati redom: "formati" (neprazna lista bez ponavljanja iz FORMATI_LISTE) ili, bez nje, staro "format"."""
+    formati = z.get("formati")
+    if formati is None:
+        format_ = z.get("format")
+        if not isinstance(format_, str) or format_ not in FORMATI:
+            raise OdbijenZahtev(400, NEISPRAVAN)
+        return [format_]
+    if (not isinstance(formati, list) or not formati
+            or not all(isinstance(f, str) and f in FORMATI_LISTE for f in formati) or len(set(formati)) != len(formati)):
+        raise OdbijenZahtev(400, NEISPRAVAN)
+    return formati
+
+
 def procitaj_zahtev(telo):
-    """JSON telo -> (format, tex u UTF-8, {fajl: bajtovi}, rok u s); OdbijenZahtev(400) za sve što ne odgovara."""
+    """JSON telo -> (formati, tex u UTF-8, {fajl: bajtovi}, rok u s); OdbijenZahtev(400) za sve što ne odgovara."""
     try:
         z = json.loads(telo)
     except (ValueError, UnicodeDecodeError, RecursionError):  # RecursionError: preduboko ugnežđen JSON
@@ -124,9 +144,9 @@ def procitaj_zahtev(telo):
     if not isinstance(z, dict):
         raise OdbijenZahtev(400, NEISPRAVAN)
 
-    format_ = z.get("format")
+    formati = procitaj_formate(z)
     tex = z.get("tex")
-    if not isinstance(format_, str) or format_ not in FORMATI or not isinstance(tex, str) or not tex.strip():
+    if not isinstance(tex, str) or not tex.strip():
         raise OdbijenZahtev(400, NEISPRAVAN)
     try:
         tex_bajtovi = tex.encode("utf-8")
@@ -164,7 +184,7 @@ def procitaj_zahtev(telo):
             fajlovi[fajl] = base64.b64decode(sadrzaj, validate=True)
         except (binascii.Error, ValueError):
             raise OdbijenZahtev(400, NEISPRAVAN)
-    return format_, tex_bajtovi, fajlovi, timeout
+    return formati, tex_bajtovi, fajlovi, timeout
 
 
 # --- kompajliranje ------------------------------------------------------------------------------------------------
@@ -248,8 +268,68 @@ def neuspeh_procesa(kod, log, rok):
     return neuspeh(linija, poruka, log)
 
 
-def renderuj(format_, tex, prilozi, rok):
-    """Prevodi dokument (najviše dva prolaza pdflatex-a, drugi samo kad log traži Rerun) i vraća odgovor za JSON."""
+def prevedi(radni, kraj_roka, rok):
+    """pdflatex nad dokument.tex u radnom dir-u (najviše dva prolaza, drugi samo kad log traži Rerun), u roku.
+    Vraća (log, None) kad je dokument.pdf napravljen, inače (log, odgovor neuspeha za JSON)."""
+    pdf = os.path.join(radni, DOKUMENT + ".pdf")
+    izlaz_tex = os.path.join(radni, "pdflatex.izlaz")
+    istek = "Prekoračeno vreme kompajliranja (%d s)." % rok
+
+    def procitaj_log():  # dokument.log; bez njega ono što je pdflatex ispisao (npr. nije ni počeo)
+        return kraj_fajla(os.path.join(radni, DOKUMENT + ".log")) or kraj_fajla(izlaz_tex)
+
+    log = ""
+    for _ in range(2):
+        preostalo = kraj_roka - time.monotonic()
+        if preostalo <= 0:
+            return log, neuspeh(None, istek, log)
+        try:
+            kod = pokreni(PDFLATEX, radni, preostalo, izlaz_tex)
+        except subprocess.TimeoutExpired:
+            log = procitaj_log()
+            return log, neuspeh(None, istek, log)
+        log = procitaj_log()
+        if kod != 0:
+            return log, neuspeh_procesa(kod, log, rok)
+        # Bez strana pdflatex ne piše PDF, a dokument.pdf je mogao da napiše sam dokument (\openout).
+        if "No pages of output" in log or not pocinje_kao_pdf(pdf):
+            return log, neuspeh(None, "Dokument nema stranica.", log)
+        if "Rerun to get" not in log:
+            break
+    return log, None
+
+
+# Pretvaranje dokument.pdf: format -> (argv za pdftocairo, izlazni fajl, ime formata u porukama)
+PRETVARANJA = {
+    "svg": (["pdftocairo", "-svg", DOKUMENT + ".pdf", DOKUMENT + ".svg"], DOKUMENT + ".svg", "SVG"),
+    # -singlefile: samo prva strana, fajl dokument.png (bez sufiksa broja strane); -scale-to: duža ivica u px
+    "png": (["pdftocairo", "-png", "-singlefile", "-scale-to", str(PNG_IVICA), DOKUMENT + ".pdf", DOKUMENT],
+            DOKUMENT + ".png", "PNG"),
+}
+
+
+def pretvori(format_, radni, kraj_pretvaranja):
+    """dokument.pdf -> traženi format pre kraj_pretvaranja; vraća (putanja izlaza, None) ili (None, odgovor neuspeha)."""
+    argv, ime, naziv = PRETVARANJA[format_]
+    izlaz = os.path.join(radni, ime)
+    izlaz_procesa = os.path.join(radni, "pdftocairo-%s.izlaz" % format_)
+    istek = "Prekoračeno vreme pretvaranja u %s." % naziv
+    preostalo = kraj_pretvaranja - time.monotonic()
+    if preostalo <= 0:
+        return None, neuspeh(None, istek, "")
+    try:
+        kod = pokreni(argv, radni, preostalo, izlaz_procesa)
+    except subprocess.TimeoutExpired:
+        return None, neuspeh(None, istek, kraj_fajla(izlaz_procesa))
+    if kod == -signal.SIGXFSZ:
+        return None, neuspeh(None, "Prevelik izlaz.", kraj_fajla(izlaz_procesa))
+    if kod != 0 or not os.path.isfile(izlaz) or os.path.getsize(izlaz) == 0:
+        return None, neuspeh(None, "Pretvaranje PDF-a u %s nije uspelo." % naziv, kraj_fajla(izlaz_procesa))
+    return izlaz, None
+
+
+def renderuj(formati, tex, prilozi, rok):
+    """Jedno prevođenje dokumenta, pa svaki traženi format iz istog PDF-a; vraća odgovor za JSON."""
     pocetak = time.monotonic()
     kraj_roka = pocetak + rok
     radni = tempfile.mkdtemp(prefix="render-", dir="/tmp")
@@ -259,53 +339,33 @@ def renderuj(format_, tex, prilozi, rok):
         for fajl, sadrzaj in prilozi.items():
             with open(os.path.join(radni, fajl), "wb") as f:
                 f.write(sadrzaj)
-        pdf = os.path.join(radni, DOKUMENT + ".pdf")
-        izlaz_tex = os.path.join(radni, "pdflatex.izlaz")
-        istek = "Prekoračeno vreme kompajliranja (%d s)." % rok
 
-        def procitaj_log():  # dokument.log; bez njega ono što je pdflatex ispisao (npr. nije ni počeo)
-            return kraj_fajla(os.path.join(radni, DOKUMENT + ".log")) or kraj_fajla(izlaz_tex)
+        pocetak_prevodjenja = time.monotonic()
+        log, greska = prevedi(radni, kraj_roka, rok)
+        # jedan red po prevođenju, ma koliko formata (smoke test broji ove redove)
+        zabelezi("prevođenje: %d ms" % int((time.monotonic() - pocetak_prevodjenja) * 1000))
+        if greska is not None:
+            return greska
 
-        log = ""
-        for _ in range(2):
-            preostalo = kraj_roka - time.monotonic()
-            if preostalo <= 0:
-                return neuspeh(None, istek, log)
-            try:
-                kod = pokreni(PDFLATEX, radni, preostalo, izlaz_tex)
-            except subprocess.TimeoutExpired:
-                return neuspeh(None, istek, procitaj_log())
-            log = procitaj_log()
-            if kod != 0:
-                return neuspeh_procesa(kod, log, rok)
-            # Bez strana pdflatex ne piše PDF, a dokument.pdf je mogao da napiše sam dokument (\openout).
-            if "No pages of output" in log or not pocinje_kao_pdf(pdf):
-                return neuspeh(None, "Dokument nema stranica.", log)
-            if "Rerun to get" not in log:
-                break
-
-        izlaz = pdf
-        if format_ == "svg":
-            izlaz = os.path.join(radni, DOKUMENT + ".svg")
-            izlaz_svg = os.path.join(radni, "pdftocairo.izlaz")
-            rok_svg = min(SVG_TIMEOUT, max(0.0, kraj_roka - time.monotonic()) + SVG_REZERVA)
-            try:
-                kod = pokreni(["pdftocairo", "-svg", DOKUMENT + ".pdf", DOKUMENT + ".svg"], radni, rok_svg, izlaz_svg)
-            except subprocess.TimeoutExpired:
-                return neuspeh(None, "Prekoračeno vreme pretvaranja u SVG.", kraj_fajla(izlaz_svg))
-            if kod == -signal.SIGXFSZ:
-                return neuspeh(None, "Prevelik izlaz.", kraj_fajla(izlaz_svg))
-            if kod != 0 or not os.path.isfile(izlaz) or os.path.getsize(izlaz) == 0:
-                return neuspeh(None, "Pretvaranje PDF-a u SVG nije uspelo.", kraj_fajla(izlaz_svg))
-
-        velicina = os.path.getsize(izlaz)
-        if velicina > MAX_IZLAZ:
-            return neuspeh(None, "Prevelik izlaz.", log)
-        if velicina == 0:
-            return neuspeh(None, "LaTeX nije uspeo, vidi log.", log)
-        with open(izlaz, "rb") as f:
-            sadrzaj = base64.b64encode(f.read()).decode("ascii")
-        return {"ok": True, format_: sadrzaj, "trajanjeMs": int((time.monotonic() - pocetak) * 1000)}
+        sada = time.monotonic()
+        kraj_pretvaranja = sada + min(PRETVARANJE_TIMEOUT, max(0.0, kraj_roka - sada) + PRETVARANJE_REZERVA)
+        odgovor = {"ok": True}
+        for format_ in formati:
+            if format_ == "pdf":
+                izlaz = os.path.join(radni, DOKUMENT + ".pdf")
+            else:
+                izlaz, greska = pretvori(format_, radni, kraj_pretvaranja)
+                if greska is not None:
+                    return greska
+            velicina = os.path.getsize(izlaz)
+            if velicina > MAX_IZLAZ:
+                return neuspeh(None, "Prevelik izlaz.", log)
+            if velicina == 0:
+                return neuspeh(None, "LaTeX nije uspeo, vidi log.", log)
+            with open(izlaz, "rb") as f:
+                odgovor[format_] = base64.b64encode(f.read()).decode("ascii")
+        odgovor["trajanjeMs"] = int((time.monotonic() - pocetak) * 1000)
+        return odgovor
     finally:
         shutil.rmtree(radni, ignore_errors=True)
 
@@ -353,9 +413,9 @@ class Rukovalac(BaseHTTPRequestHandler):
                 raise OdbijenZahtev(413, PREVELIK)
             with ISTOVREMENO:
                 telo = self._procitaj_telo(duzina)
-                format_, tex, prilozi, rok = procitaj_zahtev(telo)
+                formati, tex, prilozi, rok = procitaj_zahtev(telo)
                 del telo
-                odgovor = renderuj(format_, tex, prilozi, rok)
+                odgovor = renderuj(formati, tex, prilozi, rok)
         except OdbijenZahtev as e:
             self._json(e.status, {"greska": e.poruka})
             return
