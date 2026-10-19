@@ -21,6 +21,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.utility.Serija;
 import tri.novica.gfssystem.validation.BankaPP;
@@ -96,6 +97,7 @@ public class GrupaZadatakaService {
     private final VarijantaRepository varijantaRepository;
     private final PredmetRepository predmetRepository;
     private final IskljucenaTemaRepository temaRepository;
+    private final ZadatakDodelaRepository dodelaRepository;
     private final MedijService medijService;
     private final EntityManager em;
     private final Clock clock;
@@ -134,11 +136,11 @@ public class GrupaZadatakaService {
     }
 
     /**
-     * Da li je neka varijanta grupe ikad dodeljena na času. Faza 1 nema dodela, pa je uvek {@code false}; faza 2 ovo
-     * puni preko {@code zadatak_dodele} (brisanje tada traži arhiviranje).
+     * Da li je neka varijanta grupe ikad dodeljena na času (red u {@code zadatak_dodele}); takva grupa se ne briše, njene
+     * varijante se arhiviraju (FK RESTRICT je poslednja brana).
      */
     public boolean koriscenoNaCasu(Long grupaId) {
-        return false;
+        return dodelaRepository.existsByVarijantaGrupaId(grupaId);
     }
 
     // ---------------------------------------------------------------- izmene
@@ -286,8 +288,11 @@ public class GrupaZadatakaService {
 
     /**
      * Briše list (409 za grupu sa podgrupama i za korišćenu na času): varijante sa prilozima (kaskada), pa grupu, pa
-     * SVG medije rendera. {@link MedijService#obrisi} briše red na commit-u, a fajl tek posle njega, pa pad commit-a ne
-     * ostavlja red medija bez fajla.
+     * SVG medije rendera varijanti koje nikad nisu bile odobrene. SVG varijante sa {@code ikadOdobrena} ostaje: ona je mogla
+     * ući u snimak runde Zadatak slajda (snimak čuva samo id-jeve SVG-ova, i za izvučenu varijantu koja nije dodeljena, pa
+     * je ne štiti ni RESTRICT dodele), a pregled časa ga prikazuje i posle brisanja; siročad {@code RENDER_SVG} su
+     * prihvaćena. {@link MedijService#obrisi} briše red na commit-u, a fajl tek posle njega, pa pad commit-a ne ostavlja red
+     * medija bez fajla.
      */
     public void obrisi(Long id) {
         Long predmetId = predmetGrupe(id);
@@ -319,11 +324,15 @@ public class GrupaZadatakaService {
         obrisiZakljucanu(g, predmetId);
     }
 
-    /** Briše zaključanu grupu bez podgrupa sa njenim varijantama i SVG medijima, pa prenumeriše braću. */
+    /**
+     * Briše zaključanu grupu bez podgrupa sa njenim varijantama i SVG medijima neodobrenih varijanti (vidi {@link #obrisi}),
+     * pa prenumeriše braću.
+     */
     private void obrisiZakljucanu(GrupaZadataka g, Long predmetId) {
         Long id = g.getId();
         List<Varijanta> varijante = varijantaRepository.findByGrupaIdForUpdate(id);
         List<String> svg = varijante.stream()
+                .filter(v -> !v.isIkadOdobrena())
                 .flatMap(v -> Stream.of(v.getRenderSvg(), v.getRenderResenjeSvg()))
                 .filter(Objects::nonNull).map(Medij::getId).distinct().toList();
         List<GrupaZadataka> braca = new ArrayList<>(braca(predmetId, g.getNamena(), g.getRoditelj()));

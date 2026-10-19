@@ -64,6 +64,8 @@ final class PrezentacijaPregled {
                     pitanje(s.pitanje()), null);
             case PLATNO -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(),
                     PlatnoPregled.brojKoraka(s.platno()), null, null, null, PlatnoPregled.slojevi(s.platno()));
+            // zasad samo zajednička polja, bez sažetka zadatka (grupa, putanja, broj varijanti)
+            case ZADATAK -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(), 0, null, null, null, null);
         };
     }
 

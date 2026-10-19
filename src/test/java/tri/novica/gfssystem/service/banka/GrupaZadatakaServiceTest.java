@@ -20,6 +20,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
 
@@ -49,6 +50,7 @@ class GrupaZadatakaServiceTest {
     static final Clock CLOCK = Clock.fixed(SADA.atZone(ZONA).toInstant(), ZONA);
     static final String SVG = "3f1c2b9a-6d7e-4c1a-9b2f-0a1b2c3d4e5f";
     static final String SVG_RESENJA = "4a2d3c0b-7e8f-4d2b-8c3a-1b2c3d4e5f60";
+    static final String SVG_NACRTA = "6c4f5e2d-9a01-4f4d-8e5c-3d4e5f607182";
     static final String PRILOG = "5b3e4d1c-8f90-4e3c-9d4b-2c3d4e5f6071";
 
     static final Polje BROJ_A = new Polje("a", "a) binarni u dekadni", TipPolja.BROJ, null, null, null, null, null, null);
@@ -62,6 +64,7 @@ class GrupaZadatakaServiceTest {
     @Mock VarijantaRepository varijantaRepository;
     @Mock PredmetRepository predmetRepository;
     @Mock IskljucenaTemaRepository temaRepository;
+    @Mock ZadatakDodelaRepository dodelaRepository;
     @Mock MedijService medijService;
     @Mock EntityManager em;
 
@@ -76,7 +79,7 @@ class GrupaZadatakaServiceTest {
     @BeforeEach
     void setUp() {
         service = new GrupaZadatakaService(grupaRepository, varijantaRepository, predmetRepository, temaRepository,
-                medijService, em, CLOCK);
+                dodelaRepository, medijService, em, CLOCK);
         predmet = predmet(7L, "Uvod u računarstvo");
         drugiPredmet = predmet(8L, "Statika");
 
@@ -733,6 +736,42 @@ class GrupaZadatakaServiceTest {
         assertFalse(grupe.contains(b));
         assertEquals(List.of("A", "C"), nazivi(deca(r)));
         assertEquals(List.of(1, 2), rb(List.of(a, c)));
+    }
+
+    @Test
+    void brisanjeGrupeZadrzavaSvgOdobrenihVarijanti() {
+        // odobrena varijanta je mogla ući u snimak runde Zadatak slajda (snimak čuva samo id-jeve SVG-ova)
+        GrupaZadataka g = koren("Konverzije", 1);
+        Varijanta odobrena = varijanta(g, StatusVarijante.ARHIVIRANA, RenderStatus.OK, "{}");
+        odobrena.setIkadOdobrena(true);
+        odobrena.setRenderSvg(medij(SVG));
+        odobrena.setRenderResenjeSvg(medij(SVG_RESENJA));
+        Varijanta nacrt = varijanta(g, StatusVarijante.NACRT, RenderStatus.OK, "{}");
+        nacrt.setRenderSvg(medij(SVG_NACRTA));
+
+        service.obrisi(g.getId());
+
+        assertTrue(varijante.isEmpty());
+        assertFalse(grupe.contains(g));
+        verify(medijService).obrisi(SVG_NACRTA);
+        verify(medijService, never()).obrisi(SVG);
+        verify(medijService, never()).obrisi(SVG_RESENJA);
+    }
+
+    @Test
+    void brisanjeGrupeKorisceneNaCasuJe409() {
+        GrupaZadataka g = koren("Konverzije", 1);
+        Varijanta v = varijanta(g, StatusVarijante.AKTIVNA, RenderStatus.OK, "{}");
+        v.setIkadOdobrena(true);
+        when(dodelaRepository.existsByVarijantaGrupaId(g.getId())).thenReturn(true);
+
+        assertTrue(service.koriscenoNaCasu(g.getId()));
+        ocekuj(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(g.getId()));
+
+        assertTrue(grupe.contains(g));
+        assertEquals(List.of(v), varijante);
+        verify(varijantaRepository, never()).deleteAll(anyIterable());
+        verify(medijService, never()).obrisi(anyString());
     }
 
     static Medij medij(String id) {
