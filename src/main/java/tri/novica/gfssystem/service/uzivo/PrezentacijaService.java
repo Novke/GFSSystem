@@ -317,6 +317,12 @@ public class PrezentacijaService {
         return SlajdMapper.uDetails(s, platnoJson);
     }
 
+    /** Id prezentacije kojoj slajd pripada (MCP {@code slajd}: link u UI); nepostojeći slajd je 404. Samo čitanje. */
+    @Transactional(readOnly = true)
+    public Long prezentacijaSlajda(Long slajdId) {
+        return slajdRepository.findPrezentacijaId(slajdId).orElseThrow(PrezentacijaService::slajdNijePronadjen);
+    }
+
     /** Potezi svih CRTEZ slojeva slajda, redom slojeva; prazno za INFO i PITANJE. Samo čitanje, bez zaključavanja. */
     @Transactional(readOnly = true)
     public List<PoteziSloja> poteziSlajda(Long id) {

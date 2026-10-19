@@ -33,7 +33,8 @@ class McpFasadeTest {
                     "izmeniVarijantu(Long, VarijantaPatch, String, ZahtevSlike, McpPoziv)",
                     "duplirajVarijantu(Long, String)", "obrisiVarijantu(Long, String)",
                     "probaRendera(RenderProbaCmd, ZahtevSlike)"),
-            McpPrezentacije.class, Set.of());
+            McpPrezentacije.class, Set.of("prezentacije(Long)", "prezentacija(Long, int)", "slajd(Long)",
+                    "napraviPrezentaciju(CreatePrezentacijaCmd, String)", "dodajSlajd(Long, Long, SlajdCmd, String)"));
 
     static String kljuc(Method m) {
         return m.getName() + Arrays.stream(m.getParameterTypes()).map(Class::getSimpleName)

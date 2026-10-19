@@ -95,13 +95,20 @@ class McpOpsegTest {
             "VarijantaService.izmeniDelimicno(Long, VarijantaPatch, String, boolean)",
             "VarijantaService.dupliraj(Long, IzvorVarijante, String)",
             "VarijantaService.obrisiSopstveniNacrt(Long)",
-            "VarijantaService.probaSaSlikom(RenderProbaCmd)");
+            "VarijantaService.probaSaSlikom(RenderProbaCmd)",
+            // McpPrezentacije: pregled, slajd (i id njegove prezentacije za link), pravljenje i INFO/PITANJE slajd iz serije
+            "PrezentacijaService.detalji(Long)",
+            "PrezentacijaService.slajd(Long)",
+            "PrezentacijaService.prezentacijaSlajda(Long)",
+            "PrezentacijaService.kreiraj(CreatePrezentacijaCmd, String)",
+            "PrezentacijaService.dodajSlajdIzSerije(Long, SlajdCmd, Long, String)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(
             "TokenHash.od(String)",
             "PoljaJson.polja(String)",
-            "PoljaJson.odgovori(String)");
+            "PoljaJson.odgovori(String)",
+            "Markdown.brojStavki(String)");
 
     /** Servisi van dozvoljenih oblasti (spec MCP 2): studenti, grupe, ocene, testovi i polaganja, predavanja i aktivnosti,
      * onboarding i prijave, beleške i pregledi, izvođenja i njihovi rezultati. Po punom imenu klase, ne po prefiksu. */
