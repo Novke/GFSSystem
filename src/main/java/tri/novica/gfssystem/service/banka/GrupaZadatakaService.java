@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -82,6 +83,8 @@ public class GrupaZadatakaService {
     static final String NEISPRAVAN_FORMAT = "Neispravan format podataka.";
 
     static final int MAX_DUBINA = 6;
+    /** Patch bez ijednog polja: {@link #izmeniPolja} menja samo šemu. */
+    private static final GrupaPatch BEZ_IZMENE = new GrupaPatch(null, null, null, null);
     private static final int MAX_OPIS = 5_000;
     /** Kolona {@code polja} je MySQL {@code text}: najviše 65 535 bajtova. */
     private static final int MAX_POLJA_BAJTOVA = 65_535;
@@ -91,6 +94,7 @@ public class GrupaZadatakaService {
     private final PredmetRepository predmetRepository;
     private final IskljucenaTemaRepository temaRepository;
     private final MedijService medijService;
+    private final EntityManager em;
     private final Clock clock;
 
     // ---------------------------------------------------------------- čitanje
@@ -196,7 +200,7 @@ public class GrupaZadatakaService {
     /**
      * Puna zamena naziva, opisa, težine i uputstva (predmet, roditelj i namena se ne menjaju); {@code polja == null}
      * ostavlja šemu i varijante netaknute, a brisanje šeme traži {@code []}. Promena šeme prilagođava varijante grupe
-     * (vidi {@link #prilagodiVarijante}); grupa sa varijantama mora imati težinu. Opcije bez id-ja dobijaju id pod ključem,
+     * (vidi {@link #isprobaj}); grupa sa varijantama mora imati težinu. Opcije bez id-ja dobijaju id pod ključem,
      * iznad najvećeg u sačuvanoj šemi za to polje ({@code BankaPP.normalizujPolja(polja, sacuvana)}).
      */
     public GrupaDetails izmeni(Long id, GrupaCmd cmd) {
@@ -204,11 +208,53 @@ public class GrupaZadatakaService {
         Long predmetId = predmetGrupe(id);
         zakljucajPredmet(predmetId);
         GrupaZadataka g = zakljucaj(id);
+        return izmeniZakljucanu(g, predmetId, s, cmd.polja(), false);
+    }
+
+    /**
+     * Klodova delimična izmena (MCP {@code izmeni_grupu}, spec MCP 4.1): pod ključevima predmet -> grupa patch se spaja nad
+     * zaključanim stanjem (izostavljeno ostaje, {@code null} briše), pa ista pravila kao {@link #izmeni}; šema polja i
+     * varijante ostaju netaknute ({@link #izmeniPolja}). Ko sme da menja koju grupu (samo CLAUDE) proverava fasada.
+     */
+    public GrupaDetails izmeniDelimicno(Long id, GrupaPatch patch) {
+        if (patch == null) {
+            throw new SystemException(NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        Long predmetId = predmetGrupe(id);
+        zakljucajPredmet(predmetId);
+        GrupaZadataka g = zakljucajSveze(id);
+        return izmeniZakljucanu(g, predmetId, proveren(spoji(g, patch, null)), null, false);
+    }
+
+    /**
+     * Klodova izmena šeme polja (MCP {@code izmeni_polja_grupe}, spec MCP 4.1): pod ključevima predmet -> grupa ->
+     * varijante prvo isproba prilagođavanje ({@link #isprobaj}) bez upisa; kad bi ijedna varijanta (i arhivirana)
+     * izgubila postojeći odgovor ili ijedna AKTIVNA pala u NACRT, 409 sa id-jevima pogođenih rastuće i ništa se ne upisuje.
+     * Inače kao {@link #izmeni} sa tom šemom i trenutnim nazivom, opisom, težinom i uputstvom. Opcije bez id-ja dobijaju nov
+     * id; opcija sa id-jem zadržava odgovore koji je pominju (preimenovanje prolazi).
+     */
+    public GrupaDetails izmeniPolja(Long id, List<Polje> polja) {
+        if (polja == null) {
+            throw new SystemException(NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        Long predmetId = predmetGrupe(id);
+        zakljucajPredmet(predmetId);
+        GrupaZadataka g = zakljucajSveze(id);
+        return izmeniZakljucanu(g, predmetId, proveren(spoji(g, BEZ_IZMENE, polja)), polja, true);
+    }
+
+    /**
+     * Izmena zaključane grupe proverenim sadržajem; {@code polja} su poslata šema ({@code null} = šema ostaje). Uz
+     * {@code bezPogodjenih} šema koja bi pogodila varijante je 409 {@code Izmena polja bi pogodila varijante: ...}.
+     */
+    private GrupaDetails izmeniZakljucanu(GrupaZadataka g, Long predmetId, Sadrzaj s, List<Polje> polja,
+                                          boolean bezPogodjenih) {
+        Long id = g.getId();
         proveriNaziv(braca(predmetId, g.getNamena(), g.getRoditelj()), s.naziv(), id);
 
         List<Polje> stara = PoljaJson.izKolone(g.getPolja());
-        if (cmd.polja() != null) {
-            s = s.saPoljima(proverenaPolja(cmd.polja(), stara));
+        if (polja != null) {
+            s = s.saPoljima(proverenaPolja(polja, stara));
         }
         boolean novaSema = s.polja() != null && !stara.equals(s.polja());
         List<Varijanta> varijante = novaSema ? varijantaRepository.findByGrupaIdForUpdate(id) : List.of();
@@ -217,7 +263,11 @@ public class GrupaZadatakaService {
             throw new SystemException(TEZINA_OBAVEZNA, HttpStatus.BAD_REQUEST);
         }
         if (novaSema) {
-            prilagodiVarijante(varijante, stara, s.polja());
+            List<Prilagodjavanje> plan = isprobaj(varijante, stara, s.polja());
+            if (bezPogodjenih) {
+                proveriNepogodjene(plan);
+            }
+            prilagodiVarijante(plan);
         }
         primeni(g, s);
         g.setIzmenjeno(sada());
@@ -362,13 +412,24 @@ public class GrupaZadatakaService {
     // ---------------------------------------------------------------- šema polja nad varijantama
 
     /**
-     * Prilagođava odgovore varijanti novoj šemi, tek pošto su varijante zaključane. Promena tipa postojećeg polja je 409
-     * dok grupa ima AKTIVNIH varijanti (ništa se ne upisuje). Inače svaka varijanta zadržava samo vrednosti koje i u
-     * novoj šemi važe ({@code BankaPP.proveriOdgovore} za to polje): uklonjeno polje, promenjen tip i uklonjena opcija
-     * brišu vrednost (u svakoj varijanti, i arhiviranoj). AKTIVNA varijanta kojoj posle toga fali vrednost (npr. dodato
-     * polje) postaje NACRT; NACRT i ARHIVIRANA zadržavaju status. Render se ne dira.
+     * Šta bi nova šema uradila jednoj varijanti: vrednosti koje i u novoj šemi važe, da li gubi neki postojeći odgovor i da
+     * li AKTIVNA pada u NACRT.
      */
-    private void prilagodiVarijante(List<Varijanta> varijante, List<Polje> stara, List<Polje> nova) {
+    private record Prilagodjavanje(Varijanta varijanta, Map<String, OdgovorPolja> vazeci, boolean gubiOdgovor,
+                                   boolean padaUNacrt) {
+        boolean pogadja() {
+            return gubiOdgovor || padaUNacrt;
+        }
+    }
+
+    /**
+     * Prilagođavanje odgovora varijanti novoj šemi, bez upisa, tek pošto su varijante zaključane. Promena tipa postojećeg
+     * polja je 409 dok grupa ima AKTIVNIH varijanti (ništa se ne upisuje). Inače svaka varijanta zadržava samo vrednosti
+     * koje i u novoj šemi važe ({@code BankaPP.proveriOdgovore} za to polje): uklonjeno polje, promenjen tip i uklonjena
+     * opcija brišu vrednost (u svakoj varijanti, i arhiviranoj). AKTIVNA varijanta kojoj posle toga fali vrednost (npr.
+     * dodato polje) pada u NACRT; NACRT i ARHIVIRANA zadržavaju status.
+     */
+    private static List<Prilagodjavanje> isprobaj(List<Varijanta> varijante, List<Polje> stara, List<Polje> nova) {
         Map<String, TipPolja> stariTipovi = new HashMap<>();
         stara.forEach(p -> stariTipovi.putIfAbsent(p.kljuc(), p.tip()));
         boolean imaAktivnih = varijante.stream().anyMatch(v -> v.getStatus() == StatusVarijante.AKTIVNA);
@@ -379,7 +440,7 @@ public class GrupaZadatakaService {
                         HttpStatus.CONFLICT);
             }
         }
-        LocalDateTime sada = sada();
+        List<Prilagodjavanje> plan = new ArrayList<>();
         for (Varijanta v : varijante) {
             Map<String, OdgovorPolja> odgovori = PoljaJson.odgovoriIzKolone(v.getOdgovori());
             Map<String, OdgovorPolja> vazeci = new LinkedHashMap<>();
@@ -389,16 +450,33 @@ public class GrupaZadatakaService {
                     vazeci.put(p.kljuc(), o);
                 }
             }
-            boolean izmenjena = false;
-            if (!vazeci.equals(odgovori)) {
-                v.setOdgovori(PoljaJson.uJson(vazeci));
-                izmenjena = true;
+            plan.add(new Prilagodjavanje(v, vazeci, !vazeci.equals(odgovori),
+                    vazeci.size() < nova.size() && v.getStatus() == StatusVarijante.AKTIVNA));
+        }
+        return plan;
+    }
+
+    /** 409 kad bi šema pogodila ijednu varijantu ({@link #isprobaj}); id-jevi rastuće, razdvojeni zarezom. */
+    private static void proveriNepogodjene(List<Prilagodjavanje> plan) {
+        List<Long> pogodjene = plan.stream().filter(Prilagodjavanje::pogadja).map(p -> p.varijanta().getId()).sorted().toList();
+        if (!pogodjene.isEmpty()) {
+            throw new SystemException("Izmena polja bi pogodila varijante: "
+                    + String.join(", ", pogodjene.stream().map(String::valueOf).toList()) + ".", HttpStatus.CONFLICT);
+        }
+    }
+
+    /** Upisuje prilagođavanje iz {@link #isprobaj}: važeće vrednosti i NACRT umesto AKTIVNE. Render se ne dira. */
+    private void prilagodiVarijante(List<Prilagodjavanje> plan) {
+        LocalDateTime sada = sada();
+        for (Prilagodjavanje p : plan) {
+            Varijanta v = p.varijanta();
+            if (p.gubiOdgovor()) {
+                v.setOdgovori(PoljaJson.uJson(p.vazeci()));
             }
-            if (vazeci.size() < nova.size() && v.getStatus() == StatusVarijante.AKTIVNA) {
+            if (p.padaUNacrt()) {
                 v.setStatus(StatusVarijante.NACRT);
-                izmenjena = true;
             }
-            if (izmenjena) {
+            if (p.gubiOdgovor() || p.padaUNacrt()) {
                 v.setIzmenjeno(sada);
             }
         }
@@ -452,6 +530,16 @@ public class GrupaZadatakaService {
         return new Polja(normalizovana, json);
     }
 
+    /**
+     * Komanda iz zaključanog stanja grupe i Klodovog patch-a: polje koje patch ne nosi ostaje kakvo jeste, {@code null} ga
+     * briše (pravila brisanja nosi alat; servis spojeno proverava kao punu komandu). {@code polja} su šema koja se šalje
+     * ({@code null} = ostaje).
+     */
+    private static GrupaCmd spoji(GrupaZadataka g, GrupaPatch p, List<Polje> polja) {
+        return new GrupaCmd(null, null, null, p.naziv().primeni(g.getNaziv()), p.opis().primeni(g.getOpis()),
+                p.tezina().primeni(g.getTezina()), p.uputstvo().primeni(g.getUputstvo()), polja);
+    }
+
     /** Upisuje sadržaj; bez poslatih polja kolona ostaje (nova grupa: {@code "[]"}). */
     private static void primeni(GrupaZadataka g, Sadrzaj s) {
         g.setNaziv(s.naziv());
@@ -473,6 +561,17 @@ public class GrupaZadatakaService {
 
     private GrupaZadataka zakljucaj(Long id) {
         return grupaRepository.findByIdForUpdate(id).orElseThrow(GrupaZadatakaService::nijePronadjena);
+    }
+
+    /**
+     * Zaključan red grupe sa stanjem iz baze, za izmene koje spajaju patch nad trenutnim stanjem (MCP). Fasada pre izmene
+     * čita grupu u istom zahtevu, a uz open-in-view isti EntityManager traje ceo zahtev, pa bi ključ vratio entitet pročitan
+     * pre njega (Hibernate ga ne osvežava): {@code refresh} ga ponovo čita, pod ključem.
+     */
+    private GrupaZadataka zakljucajSveze(Long id) {
+        GrupaZadataka g = zakljucaj(id);
+        em.refresh(g);
+        return g;
     }
 
     /** Deca roditelja, ili koreni predmeta i namene kad roditelja nema; po {@code rb}. */

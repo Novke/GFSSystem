@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,6 +63,7 @@ class GrupaZadatakaServiceTest {
     @Mock PredmetRepository predmetRepository;
     @Mock IskljucenaTemaRepository temaRepository;
     @Mock MedijService medijService;
+    @Mock EntityManager em;
 
     GrupaZadatakaService service;
     Predmet predmet;
@@ -74,7 +76,7 @@ class GrupaZadatakaServiceTest {
     @BeforeEach
     void setUp() {
         service = new GrupaZadatakaService(grupaRepository, varijantaRepository, predmetRepository, temaRepository,
-                medijService, CLOCK);
+                medijService, em, CLOCK);
         predmet = predmet(7L, "Uvod u računarstvo");
         drugiPredmet = predmet(8L, "Statika");
 
