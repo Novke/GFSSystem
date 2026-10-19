@@ -177,7 +177,8 @@ class PublicUzivoRestTest {
     @ExtendWith(OutputCaptureExtension.class)
     void prijavaSeLogujeSaIpBezImena(CapturedOutput izlaz) throws Exception {
         prijavaUspeva();
-        mvc.perform(post("/public/uzivo/" + KOD + "/prijava").header("X-Forwarded-For", "203.0.113.9, 172.18.0.3")
+        mvc.perform(post("/public/uzivo/" + KOD + "/prijava").header("X-Forwarded-For", "6.6.6.6, 172.18.0.3")
+                        .with(r -> { r.setRemoteAddr("203.0.113.9"); return r; })
                         .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))
            .andExpect(status().isCreated());
         String linija = izlaz.getOut().lines().filter(l -> l.contains("Uživo prijava:")).findFirst().orElseThrow();
