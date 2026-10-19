@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 /**
  * Šema V13 nad pravom MySQL bazom (Flyway, kao CI): dodela varijante učesniku u rundi ({@code zadatak_dodele},
  * {@code UNIQUE(runda_id, ucesnik_id)}, RESTRICT prema varijanti, CASCADE sa runde i učesnika), "korišćeno na času" u
- * {@link VarijantaService} i {@link GrupaZadatakaService} iz dodela, SET NULL kad nestane grupa slajda ili student
+ * {@link VarijantaService} i {@link GrupaZadatakaService} iz dodela i iz snimaka rundi (izvučena a nedodeljena varijanta), SET NULL kad nestane grupa slajda ili student
  * učesnika, i nova polja {@code Slajd}, {@code Izvodjenje}, {@code Ucesnik}, {@code Odgovor} kroz repozitorijume. Bez
  * {@code @Transactional}: svaki poziv se zaista commit-uje, pa test čisti za sobom (prezentacija kroz servis, banka i
  * mediji kroz JDBC i {@link MedijService}).
@@ -202,6 +202,80 @@ class ZadatakDodelaDbTest {
         // odobrena varijanta je mogla ući u snimak runde: njeni SVG mediji ostaju
         assertEquals(2, jdbc.queryForObject("select count(*) from mediji where id in (?, ?)", Integer.class,
                 varijanta.svgId(), varijanta.resenjeSvgId()));
+        grupaService.obrisi(grupa.id());
+        assertFalse(grupaRepository.existsById(grupa.id()));
+    }
+
+    /** Snimak ZADATAK runde (format iz plana, "Formati u bazi"): {@code varijantaId} je namerno poslednji ključ elementa. */
+    static String zadatakSnimak(long... varijanteIds) {
+        StringBuilder b = new StringBuilder("{\"vrsta\":\"ZADATAK\",\"grupaId\":1,\"grupaNaziv\":\"2 → 10\",\"varijante\":[");
+        for (int i = 0; i < varijanteIds.length; i++) {
+            b.append(i == 0 ? "" : ",").append("{\"naziv\":\"V").append(i + 1).append("\",\"svgId\":\"x\",\"varijantaId\":")
+                    .append(varijanteIds[i]).append('}');
+        }
+        return b.append("]}").toString();
+    }
+
+    void postaviSnimak(String snimak) {
+        jdbc.update("update pitanje_runde set snimak = ? where id = ?", snimak, rundaId);
+    }
+
+    @Test
+    void izvucenaAliNedodeljenaVarijantaSeNeBrise() {
+        // otvaranje je izvuklo više varijanti nego što ima učesnika: u snimku je, a bez reda u zadatak_dodele
+        postaviSnimak(zadatakSnimak(varijanta.id()));
+        assertEquals(0, brojDodela());
+        assertFalse(dodelaRepository.existsByVarijantaId(varijanta.id()));
+
+        assertTrue(varijantaService.koriscenoNaCasu(varijanta.id()));
+        assertTrue(grupaService.koriscenoNaCasu(grupa.id()));
+        ocekuj409(KORISCENO, () -> varijantaService.obrisi(varijanta.id()));
+        assertTrue(varijantaRepository.existsById(varijanta.id()));
+        ocekuj409(KORISCENO, () -> grupaService.obrisi(grupa.id()));
+        assertTrue(grupaRepository.existsById(grupa.id()));
+        assertTrue(varijantaRepository.existsById(varijanta.id()));
+
+        // kraj izvođenja bez čuvanja briše runde, pa varijanta opet može da se obriše
+        jdbc.update("update izvodjenja set status = 'ZAVRSENO', aktivan_kod = null, kraj = now(6) where id = ?", izvodjenjeId);
+        izvodjenjeService.obrisi(izvodjenjeId);
+        assertFalse(varijantaService.koriscenoNaCasu(varijanta.id()));
+        varijantaService.obrisi(varijanta.id());
+        assertFalse(varijantaRepository.existsById(varijanta.id()));
+    }
+
+    @Test
+    void snimakGrupeSeNadjeMedjuViseVarijanti() {
+        VarijantaDetails druga = varijanta(grupa.id());
+        postaviSnimak(zadatakSnimak(druga.id() + 5000, druga.id()));
+
+        assertTrue(varijantaService.koriscenoNaCasu(druga.id()));
+        assertFalse(varijantaService.koriscenoNaCasu(varijanta.id()));
+        assertTrue(grupaService.koriscenoNaCasu(grupa.id()));
+        // varijanta bez reda u snimku se briše i dok je druga iz iste grupe izvučena
+        varijantaService.obrisi(varijanta.id());
+        assertFalse(varijantaRepository.existsById(varijanta.id()));
+        ocekuj409(KORISCENO, () -> varijantaService.obrisi(druga.id()));
+    }
+
+    @Test
+    void snimakSeProveravaTacnoPoIdJuVarijante() {
+        // id koji počinje istim ciglama, tuđa grupa i tekst koji liči na ključ ne smeju da blokiraju brisanje
+        long prefiks = Long.parseLong(varijanta.id() + "0");
+        GrupaDetails tudja = grupaService.kreiraj(new GrupaCmd(predmet.getId(), null, Namena.PREDAVANJE, "10 → 2", null, 2, null, List.of(BROJ_A)));
+        VarijantaDetails tudjaVarijanta = varijanta(tudja.id());
+        postaviSnimak("{\"vrsta\":\"ZADATAK\",\"grupaId\":" + grupa.id() + ",\"varijante\":[{\"varijantaId\":" + prefiks
+                + ",\"naziv\":\"varijantaId\\\":" + varijanta.id() + "\"},{\"varijantaId\":" + tudjaVarijanta.id() + "}],"
+                + "\"tekst\":\"\\\"varijantaId\\\":" + varijanta.id() + ",\"}");
+
+        assertFalse(varijantaService.koriscenoNaCasu(varijanta.id()));
+        assertFalse(grupaService.koriscenoNaCasu(grupa.id()));
+        assertTrue(grupaService.koriscenoNaCasu(tudja.id()));
+        assertTrue(varijantaService.koriscenoNaCasu(tudjaVarijanta.id()));
+
+        // snimak PITANJE runde (bez varijanti) i stariji snimak bez "vrsta" ne smetaju
+        postaviSnimak("{\"tekst\":\"Koliko je 2+2?\",\"opcije\":[{\"id\":1,\"tekst\":\"4\"}]}");
+        assertFalse(grupaService.koriscenoNaCasu(tudja.id()));
+        varijantaService.obrisi(varijanta.id());
         grupaService.obrisi(grupa.id());
         assertFalse(grupaRepository.existsById(grupa.id()));
     }

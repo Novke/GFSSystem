@@ -20,6 +20,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
+import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
@@ -65,6 +66,7 @@ class GrupaZadatakaServiceTest {
     @Mock PredmetRepository predmetRepository;
     @Mock IskljucenaTemaRepository temaRepository;
     @Mock ZadatakDodelaRepository dodelaRepository;
+    @Mock PitanjeRundaRepository rundaRepository;
     @Mock MedijService medijService;
     @Mock EntityManager em;
 
@@ -79,7 +81,7 @@ class GrupaZadatakaServiceTest {
     @BeforeEach
     void setUp() {
         service = new GrupaZadatakaService(grupaRepository, varijantaRepository, predmetRepository, temaRepository,
-                dodelaRepository, medijService, em, CLOCK);
+                dodelaRepository, rundaRepository, medijService, em, CLOCK);
         predmet = predmet(7L, "Uvod u računarstvo");
         drugiPredmet = predmet(8L, "Statika");
 
@@ -772,6 +774,38 @@ class GrupaZadatakaServiceTest {
         assertEquals(List.of(v), varijante);
         verify(varijantaRepository, never()).deleteAll(anyIterable());
         verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void brisanjeGrupeSaVarijantomIzSnimkaBezDodeleJe409() {
+        GrupaZadataka g = koren("Konverzije", 1);
+        Varijanta v = varijanta(g, StatusVarijante.AKTIVNA, RenderStatus.OK, "{}");
+        v.setIkadOdobrena(true);
+        // izvučena na času, a nijednom učesniku još nije dodeljena (nema reda u zadatak_dodele)
+        when(dodelaRepository.existsByVarijantaGrupaId(g.getId())).thenReturn(false);
+        when(rundaRepository.varijanteGrupeUSnimku(g.getId())).thenReturn(true);
+
+        assertTrue(service.koriscenoNaCasu(g.getId()));
+        ocekuj(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(g.getId()));
+
+        assertTrue(grupe.contains(g));
+        assertEquals(List.of(v), varijante);
+        verify(varijantaRepository, never()).deleteAll(anyIterable());
+        verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void varijanteGrupeSeZakljucavajuPreProvereKorisceneNaCasu() {
+        GrupaZadataka g = koren("Konverzije", 1);
+        varijanta(g, StatusVarijante.AKTIVNA, RenderStatus.OK, "{}");
+        when(rundaRepository.varijanteGrupeUSnimku(g.getId())).thenReturn(true);
+
+        ocekuj(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(g.getId()));
+
+        // otvaranje runde zaključava iste redove, pa provera vidi snimak koji je upravo commit-ovan (ili otvaranje ne nalazi varijantu)
+        InOrder redosled = inOrder(varijantaRepository, rundaRepository);
+        redosled.verify(varijantaRepository).findByGrupaIdForUpdate(g.getId());
+        redosled.verify(rundaRepository).varijanteGrupeUSnimku(g.getId());
     }
 
     static Medij medij(String id) {

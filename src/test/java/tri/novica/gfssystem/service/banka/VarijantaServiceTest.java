@@ -23,6 +23,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
+import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
@@ -72,6 +73,7 @@ class VarijantaServiceTest {
     @Mock PredmetRepository predmetRepository;
     @Mock MedijRepository medijRepository;
     @Mock ZadatakDodelaRepository dodelaRepository;
+    @Mock PitanjeRundaRepository rundaRepository;
     @Mock MedijService medijService;
     @Mock LatexRender latexRender;
     @Mock GrupaZadatakaService grupaZadatakaService;
@@ -91,7 +93,7 @@ class VarijantaServiceTest {
     @BeforeEach
     void setUp() {
         service = new VarijantaService(grupaRepository, varijantaRepository, predmetRepository, medijRepository,
-                dodelaRepository, medijService, new RenderVarijante(latexRender, medijService), grupaZadatakaService,
+                dodelaRepository, rundaRepository, medijService, new RenderVarijante(latexRender, medijService), grupaZadatakaService,
                 transakcije, em, CLOCK);
         predmet = new Predmet();
         predmet.setId(7L);
@@ -495,6 +497,35 @@ class VarijantaServiceTest {
         assertEquals(1, varijante.size());
         verify(varijantaRepository, never()).delete(any(Varijanta.class));
         verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void izvucenaAliNedodeljenaVarijantaSeNeBrise() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        // u snimku runde (otvaranje izvuklo više varijanti nego što ima učesnika), a bez reda u zadatak_dodele
+        when(dodelaRepository.existsByVarijantaId(d.id())).thenReturn(false);
+        when(rundaRepository.varijantaUSnimku(d.id())).thenReturn(true);
+        clearInvocations(medijService);
+
+        assertTrue(service.koriscenoNaCasu(d.id()));
+        ocekujGresku(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(d.id()));
+
+        assertEquals(1, varijante.size());
+        verify(varijantaRepository, never()).delete(any(Varijanta.class));
+        verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void snimakDrugeVarijanteNeBlokiraBrisanje() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        when(rundaRepository.varijantaUSnimku(d.id() + 1)).thenReturn(true);
+
+        assertFalse(service.koriscenoNaCasu(d.id()));
+        service.obrisi(d.id());
+
+        assertTrue(varijante.isEmpty());
+        verify(rundaRepository, times(2)).varijantaUSnimku(d.id());   // provera i brisanje
     }
 
     @Test

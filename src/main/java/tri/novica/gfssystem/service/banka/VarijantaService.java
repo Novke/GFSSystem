@@ -24,6 +24,7 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
+import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.utility.Serija;
@@ -60,8 +61,10 @@ import java.util.stream.Stream;
  * ({@code svgId}, {@code resenjeSvgId}), a izvlače se samo AKTIVNE, pa svaka varijanta iz snimka ima {@code ikadOdobrena}
  * (ostaje i posle vraćanja u nacrt i arhiviranja). Za takvu varijantu render (izmena, prisilan render, render cele banke)
  * upisuje nove SVG medije, a stare ne briše, i brisanje varijante (ili njene grupe) briše red, a ne i SVG medije; tako
- * slike ranijih rundi u pregledu časa ostaju. Siročad {@code RENDER_SVG} su prihvaćena (mali SVG-ovi). Varijanta koja
- * nikad nije odobrena (nacrt, npr. Klodov) briše stare kao pre.
+ * slike ranijih rundi u pregledu časa ostaju. Brisanje varijante koja je u snimku neke runde ili ima dodelu odbija
+ * {@link #koriscenoNaCasu} (409), pa SVG ostaje pre svega zbog izmene (stari SVG ostaje u snimku) i kao mreža iza te
+ * provere. Siročad {@code RENDER_SVG} su prihvaćena (mali SVG-ovi). Varijanta koja nikad nije odobrena (nacrt, npr.
+ * Klodov) briše stare kao pre.
  * <p>
  * <b>Render pre ključa</b> (upis u tri koraka): (1) provera komande i kratka transakcija samo za čitanje (pravila grupe i
  * odgovora, preambula, sadržaj koji se renderuje), bez ključa; (2) render, van transakcije i bez ijednog ključa; (3) kratka
@@ -132,6 +135,7 @@ public class VarijantaService {
     private final PredmetRepository predmetRepository;
     private final MedijRepository medijRepository;
     private final ZadatakDodelaRepository dodelaRepository;
+    private final PitanjeRundaRepository rundaRepository;
     private final MedijService medijService;
     private final RenderVarijante renderVarijante;
     private final GrupaZadatakaService grupaZadatakaService;
@@ -158,11 +162,15 @@ public class VarijantaService {
     }
 
     /**
-     * Da li je varijanta ikad dodeljena na času (red u {@code zadatak_dodele}); takva se ne briše, nego arhivira (FK
-     * RESTRICT je poslednja brana).
+     * Da li je varijanta ikad izvučena na času: ima dodelu (red u {@code zadatak_dodele}) ili je u snimku neke runde
+     * (izvučena, a nijednom učesniku nije dodeljena: manje učesnika od varijanti, ili učesnik koji tek dolazi). Takva se ne
+     * briše, nego arhivira (banka spec 4.1). FK RESTRICT štiti samo dodeljenu, izvučenu štiti snimak. Provera vidi samo
+     * commit-ovane runde: otvaranje runde (komanda Zadatak slajda) mora da zaključa varijante koje izvlači
+     * ({@code findByIdForUpdate}, posle zaključanog izvođenja, pre upisa snimka), pa brisanje (koje zaključava varijantu pre
+     * ove provere) ili čeka otvaranje i vidi njegov snimak, ili ga otvaranje čeka i ne nalazi obrisanu varijantu.
      */
     public boolean koriscenoNaCasu(Long varijantaId) {
-        return dodelaRepository.existsByVarijantaId(varijantaId);
+        return dodelaRepository.existsByVarijantaId(varijantaId) || rundaRepository.varijantaUSnimku(varijantaId);
     }
 
     // ---------------------------------------------------------------- upis
