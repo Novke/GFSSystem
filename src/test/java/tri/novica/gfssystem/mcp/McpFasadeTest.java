@@ -25,7 +25,10 @@ class McpFasadeTest {
             McpKontekst.class, Set.of("kontekst()", "vodic(String)", "preambula(Long)", "domaciTekstovi(Long, int)"),
             McpBanka.class, Set.of("stablo(Long, Namena)", "grupa(Long)", "varijanta(Long, ZahtevSlike, McpPoziv)",
                     "pretraga(BankaFilter, int)", "iskljuceneTeme(Long)", "iskljuciTemu(Long, String, Long, String)",
-                    "ukljuciTemu(Long)"),
+                    "ukljuciTemu(Long)", "napraviGrupu(GrupaCmd, String)", "izmeniGrupu(Long, GrupaPatch, String)",
+                    "izmeniPoljaGrupe(Long, List, String)", "premestiGrupu(Long, PremestiCmd, String)",
+                    "obrisiGrupu(Long, String)", "kopirajGrupu(Long, Namena, Long, String)",
+                    "ponistiSeriju(String, boolean)"),
             McpPrezentacije.class, Set.of());
 
     static String kljuc(Method m) {

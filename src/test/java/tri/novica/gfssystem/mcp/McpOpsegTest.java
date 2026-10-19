@@ -79,7 +79,17 @@ class McpOpsegTest {
             "VarijantaService.slika(Long)",
             "BankaPretragaService.pretraga(BankaFilter, Pageable)",
             "IskljuceneTemeService.dodaj(Long, IskljucenaTemaCmd, IzvorVarijante, String)",
-            "IskljuceneTemeService.obrisi(Long)");
+            "IskljuceneTemeService.obrisi(Long)",
+            // McpBanka: grupe (samo Klodove, dopuna Novicinih), kopija podstabla i poništavanje serije
+            "GrupaZadatakaService.kreiraj(GrupaCmd, IzvorVarijante, String)",
+            "GrupaZadatakaService.izmeniDelimicno(Long, GrupaPatch)",
+            "GrupaZadatakaService.izmeniPolja(Long, List)",
+            "GrupaZadatakaService.premesti(Long, PremestiCmd)",
+            "GrupaZadatakaService.obrisiPraznu(Long)",
+            "KopijaGrupeService.brojStavki(Long)",
+            "KopijaGrupeService.kopiraj(Long, Namena, Long, String)",
+            "SerijaService.ponisti(String, boolean)",
+            "PrezentacijaService.ponistiSeriju(String, boolean)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(
