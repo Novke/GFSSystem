@@ -30,7 +30,11 @@ class McpAlatiTest {
     /** {@code ro} = readOnlyHint, {@code d} = destructiveHint, {@code i} = idempotentHint, {@code p} = traži potvrdu. */
     record Red(boolean ro, boolean d, boolean i, boolean p) {}
 
-    static final Map<String, Red> OCEKIVANO = Map.of();
+    static final Map<String, Red> OCEKIVANO = Map.of(
+            "kontekst", new Red(true, false, true, false),
+            "vodic", new Red(true, false, true, false),
+            "preambula", new Red(true, false, true, false),
+            "domaci_tekstovi", new Red(true, false, true, false));
 
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 

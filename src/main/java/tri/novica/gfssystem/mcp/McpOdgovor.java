@@ -10,9 +10,9 @@ import java.util.Base64;
 
 /**
  * Rezultat MCP alata (spec MCP 4.1): JSON u prvom tekstualnom bloku, opciono napomena u drugom (npr.
- * {@code Slika nije stigla na vreme.}) i jedna PNG slika. Aplikacioni {@link JsonMapper}, isti kao za REST. Tekst duži od
- * {@link #MAX_ZNAKOVA} (oko 8 000 tokena; Claude Code upozorava na 10k, seče na 25k) ostavlja WARN sa dužinom: spiskovi
- * su stranični, pa je to greška u alatu.
+ * {@code Slika nije stigla na vreme.}) i jedna PNG slika; vodič je običan tekst ({@link #tekst}). Aplikacioni
+ * {@link JsonMapper}, isti kao za REST. Tekst duži od {@link #MAX_ZNAKOVA} (oko 8 000 tokena; Claude Code upozorava na
+ * 10k, seče na 25k) ostavlja WARN sa dužinom: spiskovi su stranični, pa je to greška u alatu.
  */
 @Slf4j
 @Component
@@ -28,6 +28,14 @@ public class McpOdgovor {
 
     public CallToolResult json(Object podaci) {
         return jsonSaSlikom(podaci, null, null);
+    }
+
+    /** Običan tekst u jednom bloku, bez JSON-a (vodič). */
+    public CallToolResult tekst(String tekst) {
+        if (tekst.length() > MAX_ZNAKOVA) {
+            log.warn("MCP odgovor ima {} znakova (najviše {})", tekst.length(), MAX_ZNAKOVA);
+        }
+        return CallToolResult.builder().addTextContent(tekst).build();
     }
 
     public CallToolResult jsonSaSlikom(Object podaci, byte[] png, String napomena) {

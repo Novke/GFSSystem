@@ -63,7 +63,15 @@ class McpOpsegTest {
     static final String SERVIS = KOREN + ".service";
 
     /** Metode servisnih bean-ova koje fasade smeju da zovu. */
-    static final Set<String> DOZVOLJENE_METODE = Set.of();
+    static final Set<String> DOZVOLJENE_METODE = Set.of(
+            // McpKontekst: kontekst, preambula, tekstovi domaćih
+            "PredmetService.findAll()",
+            "GrupaZadatakaService.stablo(Long, Namena)",
+            "PrezentacijaService.lista(Long)",
+            "IskljuceneTemeService.lista(Long)",
+            "LatexPreambulaService.preambula(Long)",
+            "SerijaService.poslednje(int)",
+            "DomaciService.tekstoviPredmeta(Long, Pageable)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(

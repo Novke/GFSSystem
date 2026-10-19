@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class McpFasadeTest {
 
     static final Map<Class<?>, Set<String>> METODE = Map.of(
-            McpKontekst.class, Set.of(),
+            McpKontekst.class, Set.of("kontekst()", "vodic(String)", "preambula(Long)", "domaciTekstovi(Long, int)"),
             McpBanka.class, Set.of(),
             McpPrezentacije.class, Set.of());
 
