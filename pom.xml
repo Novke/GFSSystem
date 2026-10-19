@@ -75,6 +75,12 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Prijava: slanje mejla (SMTP); bez spring.mail.host slanje je isključeno -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Prijava: Spring Security lanac (stateless, sesije su naši tokeni u bazi); bcrypt (spring-security-crypto) dolazi uz njega -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
