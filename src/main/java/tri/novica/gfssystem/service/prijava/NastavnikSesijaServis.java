@@ -84,10 +84,12 @@ public class NastavnikSesijaServis {
     /**
      * Važeća sesija za token iz kolačića (nije opozvana, {@code istice} je u budućnosti). Korišćenje pomera
      * {@code poslednjiUlaz} i {@code istice} najviše jednom na 10 minuta (ne piše se u bazu pri svakom zahtevu).
+     * Kad prijava nastavnika nije podešena ({@link NastavnikSvojstva#podeseno()}), nijedna sesija ne važi, ni ona
+     * napravljena pre nego što su svojstva ispražnjena (spec 4.1: ADMIN putanje ostaju zaključane).
      */
     @Transactional
     public Optional<NastavnickaSesija> potvrdi(String token) {
-        if (token == null || !TokenGenerator.FORMAT.matcher(token).matches()) {
+        if (!svojstva.podeseno() || token == null || !TokenGenerator.FORMAT.matcher(token).matches()) {
             return Optional.empty();
         }
         LocalDateTime sada = LocalDateTime.now(clock);

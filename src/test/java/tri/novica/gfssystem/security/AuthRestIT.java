@@ -15,6 +15,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import tri.novica.gfssystem.service.uzivo.TokenHash;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -292,6 +293,7 @@ class AuthRestIT {
     class Nepodeseno {
 
         @Autowired MockMvc mvcNepodeseno;
+        @Autowired JdbcTemplate jdbcNepodeseno;
 
         @Test
         void prijavaJe503IAdminOstaje401() throws Exception {
@@ -302,6 +304,30 @@ class AuthRestIT {
                     .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
             mvc.perform(get("/studenti")).andExpect(status().isUnauthorized());
             mvc.perform(get("/auth/ja")).andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void sesijaIzVremenaPrePraznjenjaSvojstavaNeVazi() throws Exception {
+            // važeća sesija (nije opozvana, ističe za 90 dana) napravljena dok je prijava bila podešena
+            String token = "B".repeat(32);
+            String ip = noviIp();
+            jdbcNepodeseno.update("delete from nastavnicke_sesije where token_hes = ?", TokenHash.od(token));
+            jdbcNepodeseno.update("insert into nastavnicke_sesije (token_hes, opis, ip, kreirano, poslednji_ulaz, istice)"
+                    + " values (?, 'JUnit', ?, now(3), now(3), now(3) + interval 90 day)", TokenHash.od(token), ip);
+            String kolacic = Kolacici.NASTAVNIK + "=" + token;
+            MockMvc mvc = mvcNepodeseno;
+            MockHttpServletResponse r = mvc.perform(get("/studenti").with(PrijavaTestUtil.kaoNastavnik(kolacic)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.reason").value("Potrebna je prijava."))
+                    .andReturn().getResponse();
+            assertNotNull(kolacicBrisanja(r), "kolačić se briše: " + r.getHeaders(HttpHeaders.SET_COOKIE));
+            r = mvc.perform(get("/auth/ja").with(PrijavaTestUtil.kaoNastavnik(kolacic)))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.korisnik").doesNotExist())
+                    .andReturn().getResponse();
+            assertNotNull(kolacicBrisanja(r));
+            mvc.perform(get("/auth/sesije").with(PrijavaTestUtil.kaoNastavnik(kolacic)))
+                    .andExpect(status().isUnauthorized());
         }
     }
 }
