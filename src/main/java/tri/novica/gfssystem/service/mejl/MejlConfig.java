@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.mejl;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,17 +17,27 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  */
 @Configuration
 @EnableAsync
+@Slf4j
 public class MejlConfig {
 
-    /** Dve niti, red od 200 poruka; pun red baca izuzetak koji listener zabeleži (mejl se tada ne šalje). */
+    /**
+     * Dve niti, red od 200 poruka (broj niti i veličina reda se čitaju iz {@code gfs.mail.izvrsilac.*} samo radi testa).
+     * Pun red ne sme da baci izuzetak: {@code @Async} šalje u izvršilac iz {@code afterCommit} povratnog poziva i izuzetak
+     * odatle stiže do pozivaoca {@code commit()}, tj. do zahteva, iako je transakcija već potvrđena. Zato se odbačena
+     * poruka samo zabeleži (bez adrese, naslova i tela) i odbacuje; namerno nije {@code CallerRunsPolicy}, koja bi
+     * SMTP pozvala u niti zahteva.
+     */
     @Bean("mejlIzvrsilac")
-    public ThreadPoolTaskExecutor mejlIzvrsilac() {
+    public ThreadPoolTaskExecutor mejlIzvrsilac(@Value("${gfs.mail.izvrsilac.niti:2}") int niti,
+                                                @Value("${gfs.mail.izvrsilac.red:200}") int red) {
         ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();
-        e.setCorePoolSize(2);
-        e.setMaxPoolSize(2);
-        e.setQueueCapacity(200);
+        e.setCorePoolSize(niti);
+        e.setMaxPoolSize(niti);
+        e.setQueueCapacity(red);
         e.setThreadNamePrefix("mejl-");
         e.setWaitForTasksToCompleteOnShutdown(false);
+        e.setRejectedExecutionHandler((zadatak, izvrsilac) ->
+                log.warn("Mejl nije poslat: red za slanje je pun, poruka je odbačena"));
         return e;
     }
 

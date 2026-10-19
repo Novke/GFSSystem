@@ -75,13 +75,13 @@ class MejlPosleCommitaIT {
 
     @Test
     void slanjeJeAsinhrono_pozivalacNeCekaMejl() {
-        lazni.kasnjenje(Duration.ofMillis(600));
+        lazni.kasnjenje(Duration.ofSeconds(3));
 
         long pocetak = System.nanoTime();
         new TransactionTemplate(tm).executeWithoutResult(status -> publisher.publishEvent(PORUKA));
         long trajanjeMs = (System.nanoTime() - pocetak) / 1_000_000;
 
-        assertTrue(trajanjeMs < 500, "commit je čekao mejl: " + trajanjeMs + " ms");
+        assertTrue(trajanjeMs < 1500, "commit je čekao mejl: " + trajanjeMs + " ms");
         assertTrue(lazni.poslate().isEmpty(), "mejl još ne sme da bude poslat");
         assertEquals(1, lazni.cekaj(1).size());
     }
