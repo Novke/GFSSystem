@@ -20,8 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tabela alata iz plana (Ugovori, "MCP alati A1"): broj alata, anotacije, potvrda korisnika ({@code _meta}), dužina punog
- * imena, {@link McpAlati#NE_PONAVLJAJ} na kraju opisa neidempotentnih upisa i provera serije pre posla. Provere idu nad
- * {@code tools/list}, pa rastu same sa alatima; svaki nov alat dobija red u {@link #OCEKIVANO}.
+ * imena, {@link McpAlati#NE_PONAVLJAJ} na kraju opisa neidempotentnih upisa i provera serije pre posla (obavezna u
+ * upisnim alatima, opcioni filter u alatima za čitanje). Provere idu nad {@code tools/list}, pa rastu same sa alatima;
+ * svaki nov alat dobija red u {@link #OCEKIVANO}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -30,11 +31,18 @@ class McpAlatiTest {
     /** {@code ro} = readOnlyHint, {@code d} = destructiveHint, {@code i} = idempotentHint, {@code p} = traži potvrdu. */
     record Red(boolean ro, boolean d, boolean i, boolean p) {}
 
-    static final Map<String, Red> OCEKIVANO = Map.of(
-            "kontekst", new Red(true, false, true, false),
-            "vodic", new Red(true, false, true, false),
-            "preambula", new Red(true, false, true, false),
-            "domaci_tekstovi", new Red(true, false, true, false));
+    static final Map<String, Red> OCEKIVANO = Map.ofEntries(
+            Map.entry("kontekst", new Red(true, false, true, false)),
+            Map.entry("vodic", new Red(true, false, true, false)),
+            Map.entry("preambula", new Red(true, false, true, false)),
+            Map.entry("domaci_tekstovi", new Red(true, false, true, false)),
+            Map.entry("stablo_banke", new Red(true, false, true, false)),
+            Map.entry("grupa", new Red(true, false, true, false)),
+            Map.entry("varijanta", new Red(true, false, true, false)),
+            Map.entry("pretraga_banke", new Red(true, false, true, false)),
+            Map.entry("iskljucene_teme", new Red(true, false, true, false)),
+            Map.entry("iskljuci_temu", new Red(false, false, true, false)),
+            Map.entry("ukljuci_temu", new Red(false, true, true, true)));
 
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 
@@ -95,15 +103,25 @@ class McpAlatiTest {
         assertAll(provere);
     }
 
+    /**
+     * Upisni alat ima obaveznu seriju i proverava je pre posla (i bez ostalih argumenata); alat za čitanje je ima samo kao
+     * opcioni filter ({@code pretraga_banke}), pa se proverava samo serija van obrasca (bez nje alat traži druge argumente).
+     */
     @Test
     void serijaSeProveravaPrePosla() {
         List<Executable> provere = new ArrayList<>();
         for (JsonNode alat : klijent.alati()) {
             String ime = alat.path("name").asString();
-            if (!alat.path("inputSchema").path("properties").has("serija")) {
+            JsonNode sema = alat.path("inputSchema");
+            if (!sema.path("properties").has("serija")) {
                 continue;
             }
-            for (Map<String, Object> argumenti : List.<Map<String, Object>>of(Map.of("serija", "Uvoz-1"), Map.of())) {
+            boolean upis = !alat.path("annotations").path("readOnlyHint").asBoolean();
+            boolean obavezna = sema.path("required").valueStream().anyMatch(n -> "serija".equals(n.asString()));
+            provere.add(() -> assertEquals(upis, obavezna, ime + ": serija je obavezna tačno u upisnom alatu"));
+            List<Map<String, Object>> pozivi = upis ? List.of(Map.of("serija", "Uvoz-1"), Map.of())
+                    : List.of(Map.of("serija", "Uvoz-1"));
+            for (Map<String, Object> argumenti : pozivi) {
                 JsonNode r = klijent.pozovi(ime, argumenti);
                 provere.add(() -> assertTrue(McpTestKlijent.greska(r), ime + " " + argumenti));
                 provere.add(() -> assertEquals(SERIJA_PORUKA, McpTestKlijent.tekst(r), ime + " " + argumenti));

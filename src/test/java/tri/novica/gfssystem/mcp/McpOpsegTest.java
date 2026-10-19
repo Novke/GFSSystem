@@ -71,7 +71,15 @@ class McpOpsegTest {
             "IskljuceneTemeService.lista(Long)",
             "LatexPreambulaService.preambula(Long)",
             "SerijaService.poslednje(int)",
-            "DomaciService.tekstoviPredmeta(Long, Pageable)");
+            "DomaciService.tekstoviPredmeta(Long, Pageable)",
+            // McpBanka: čitanje banke i isključene teme
+            "GrupaZadatakaService.detalji(Long)",
+            "VarijantaService.lista(Long, StatusVarijante)",
+            "VarijantaService.detalji(Long)",
+            "VarijantaService.slika(Long)",
+            "BankaPretragaService.pretraga(BankaFilter, Pageable)",
+            "IskljuceneTemeService.dodaj(Long, IskljucenaTemaCmd, IzvorVarijante, String)",
+            "IskljuceneTemeService.obrisi(Long)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(

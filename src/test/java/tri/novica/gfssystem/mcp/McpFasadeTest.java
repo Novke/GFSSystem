@@ -23,7 +23,9 @@ class McpFasadeTest {
 
     static final Map<Class<?>, Set<String>> METODE = Map.of(
             McpKontekst.class, Set.of("kontekst()", "vodic(String)", "preambula(Long)", "domaciTekstovi(Long, int)"),
-            McpBanka.class, Set.of(),
+            McpBanka.class, Set.of("stablo(Long, Namena)", "grupa(Long)", "varijanta(Long, ZahtevSlike, McpPoziv)",
+                    "pretraga(BankaFilter, int)", "iskljuceneTeme(Long)", "iskljuciTemu(Long, String, Long, String)",
+                    "ukljuciTemu(Long)"),
             McpPrezentacije.class, Set.of());
 
     static String kljuc(Method m) {
