@@ -66,14 +66,20 @@ class McpDnevnikDbTest extends McpDbTestOsnova {
     }
 
     @Test
-    void odbijenZahtevNeOstavljaKljuc(CapturedOutput izlaz) {
-        Map<String, Object> poziv = Map.of("name", "kontekst", "arguments", Map.of());
+    void odbijenZahtevNeOstavljaKljucNiTelo(CapturedOutput izlaz) {
+        // telo nosi marker u argumentima upisa: ako bi filter (ili nešto iza njega) zapisao odbijen zahtev, marker bi bio u izlazu
+        String serija = "dnevnik-odbijen-" + UUID.randomUUID().toString().substring(0, 8);
+        Map<String, Object> poziv = Map.of("name", "napravi_varijantu", "arguments", Map.of("serija", serija,
+                "grupaId", list.id(), "naziv", TAJNA, "tekst", TAJNA, "resenje", TAJNA,
+                "odgovori", Map.of("a", Map.of("broj", 11))));
         MockHttpServletResponse bez = mcp.posalji("tools/call", poziv, null);
         MockHttpServletResponse pogresan = mcp.posalji("tools/call", poziv, POGRESAN_KLJUC);
         assertEquals(401, bez.getStatus());
         assertEquals(401, pogresan.getStatus());
         assertEquals(2, izlaz.getOut().lines().filter(l -> l.contains("MCP zahtev odbijen")).count(), izlaz.getOut());
         assertFalse(izlaz.getOut().contains("MCP alat="), "odbijen zahtev ne stiže do alata");
+        assertEquals(0, jdbc.queryForObject("select count(*) from varijante where serija = ?", Integer.class, serija),
+                "odbijen zahtev ništa ne upisuje");
         bezTajni(izlaz.getAll());
     }
 
