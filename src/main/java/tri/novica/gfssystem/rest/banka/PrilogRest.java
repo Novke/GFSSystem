@@ -13,8 +13,9 @@ import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 
 /**
- * Upload priloga zadatka banke (PNG, JPEG, PDF) za LaTeX render, iza basic-auth-a. Ovo je jedina putanja kojom prilozi ulaze
- * u {@code mediji} ({@code PRILOG_SLIKA} za PNG/JPEG, {@code PRILOG_PDF}): {@code POST /mediji} ostaje samo za slike slajdova.
+ * Upload priloga zadatka banke (PNG, JPEG, PDF) za LaTeX render, iza basic-auth-a. Prilozi ulaze u {@code mediji}
+ * ({@code PRILOG_SLIKA} za PNG/JPEG, {@code PRILOG_PDF}) samo ovuda i kroz Klodov {@code POST /mcp/prilozi}
+ * ({@code McpUploadRest}, ista provera u {@code MedijService.sacuvajPrilog}); {@code POST /mediji} ostaje samo za slike slajdova.
  * Nijedan prilog se javno ne servira ({@code PublicMedijRest}): prilog rešenja može otkriti odgovor.
  */
 @RestController

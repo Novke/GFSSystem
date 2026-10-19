@@ -74,10 +74,11 @@ import java.util.stream.Stream;
  * render cele banke rezultat odbacuje. Odluka "isti heš i OK, bez rendera" se donosi u (1) i ponovo proverava u (3).
  * <p>
  * <b>Klodovi upisi</b> (MCP, spec MCP 4.1): {@link #kreiraj(Long, VarijantaCmd, String, boolean)}, {@link #izmeniDelimicno}
- * i {@link #dupliraj(Long, IzvorVarijante, String)} upisuju seriju, a prva dva vraćaju i PNG iz istog prevođenja. Na mestu se
- * menja i briše ({@link #obrisiSopstveniNacrt}) samo sopstveni neodobren nacrt (NACRT, CLAUDE, nikad odobren); izmena svake
- * druge varijante je kopija-nacrt koja zamenjuje original. Njihov korak (3) <b>nikad ne renderuje pod ključem</b>: ulaz
- * promenjen posle čitanja je 409 {@value #IZMENJENA_U_MEDJUVREMENU} i ništa se ne upisuje (ponavljanje je bezbedno).
+ * i {@link #dupliraj(Long, String)} upisuju seriju, a svaki red koji naprave (nova varijanta, duplikat, kopija iz izmene) dobija
+ * izvor CLAUDE od samog servisa, šta god nosi komanda; prva dva vraćaju i PNG iz istog prevođenja. Na mestu se menja i briše
+ * ({@link #obrisiSopstveniNacrt}) samo sopstveni neodobren nacrt (NACRT, CLAUDE, nikad odobren); izmena svake druge varijante
+ * je kopija-nacrt koja zamenjuje original. Njihov korak (3) <b>nikad ne renderuje pod ključem</b>: ulaz promenjen posle
+ * čitanja je 409 {@value #IZMENJENA_U_MEDJUVREMENU} i ništa se ne upisuje (ponavljanje je bezbedno).
  * {@link #slika} i {@link #probaSaSlikom} renderuju samo PNG, bez upisa, kroz mesta za probe.
  * <p>
  * <b>Zaključavanje</b> (ugovor iz {@link GrupaZadatakaService}): pre dodavanja ili izmene varijante red grupe
@@ -182,24 +183,25 @@ public class VarijantaService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public VarijantaDetails kreiraj(Long grupaId, VarijantaCmd cmd) {
-        return novaVarijanta(grupaId, cmd, null, false, false).varijanta();
+        IzvorVarijante izvor = cmd == null || cmd.izvor() == null ? IzvorVarijante.RUCNO : cmd.izvor();
+        return novaVarijanta(grupaId, cmd, izvor, null, false, false).varijanta();
     }
 
     /**
-     * Klodova nova varijanta (MCP {@code napravi_varijantu}): kao {@link #kreiraj(Long, VarijantaCmd)} ({@code izvor} iz
-     * komande), uz seriju ({@code null} = bez, van {@link Serija#OBRAZAC} 400) i PNG zadatka i rešenja iz istog prevođenja
-     * kad je {@code png}. Korak 3 ne renderuje pod ključem: preambula promenjena tokom rendera je 409
-     * {@value #IZMENJENA_U_MEDJUVREMENU} i nema novog reda.
+     * Klodova nova varijanta (MCP {@code napravi_varijantu}): kao {@link #kreiraj(Long, VarijantaCmd)}, ali je izvor uvek
+     * CLAUDE ({@code cmd.izvor()} se ne čita: MCP nikad ne pravi RUCNO nacrt sa serijom), uz seriju ({@code null} = bez,
+     * van {@link Serija#OBRAZAC} 400) i PNG zadatka i rešenja iz istog prevođenja kad je {@code png}. Korak 3 ne renderuje
+     * pod ključem: preambula promenjena tokom rendera je 409 {@value #IZMENJENA_U_MEDJUVREMENU} i nema novog reda.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public UpisVarijante kreiraj(Long grupaId, VarijantaCmd cmd, String serija, boolean png) {
         if (serija != null) {
             Serija.proveri(serija);
         }
-        return novaVarijanta(grupaId, cmd, serija, png, true);
+        return novaVarijanta(grupaId, cmd, IzvorVarijante.CLAUDE, serija, png, true);
     }
 
-    private UpisVarijante novaVarijanta(Long grupaId, VarijantaCmd cmd, String serija, boolean png,
+    private UpisVarijante novaVarijanta(Long grupaId, VarijantaCmd cmd, IzvorVarijante izvor, String serija, boolean png,
                                         boolean bezRenderaPodKljucem) {
         Sadrzaj s = proveren(cmd);
         String preambula = citaj(() -> {
@@ -211,7 +213,7 @@ public class VarijantaService {
         return pisi(() -> {
             GrupaZadataka g = zakljucajGrupu(grupaId);
             proveriZaNovu(g, s);
-            Varijanta v = novaUGrupi(g, cmd.izvor() == null ? IzvorVarijante.RUCNO : cmd.izvor(), serija);
+            Varijanta v = novaUGrupi(g, izvor, serija);
             primeni(v, s);
             Varijanta nova = varijantaRepository.save(v);   // id je deo naziva SVG medija
             RenderVarijante.Ishod ishod = primeniPosleKljuca(nova, pre, false, bezRenderaPodKljucem);
@@ -400,18 +402,19 @@ public class VarijantaService {
     }
 
     /**
-     * Klodov duplikat (MCP {@code dupliraj_varijantu}): kao {@link #dupliraj(Long)}, sa izvorom kopije ({@code null} = izvor
-     * originala) i serijom ({@code null} = bez, van {@link Serija#OBRAZAC} 400). Korak 3 ne renderuje pod ključem: original
-     * ili preambula promenjeni tokom rendera su 409 {@value #IZMENJENA_U_MEDJUVREMENU} i nema novog reda.
+     * Klodov duplikat (MCP {@code dupliraj_varijantu}): kao {@link #dupliraj(Long)}, ali je kopija uvek CLAUDE (i kad je
+     * original Novicin), sa serijom ({@code null} = bez, van {@link Serija#OBRAZAC} 400). Korak 3 ne renderuje pod
+     * ključem: original ili preambula promenjeni tokom rendera su 409 {@value #IZMENJENA_U_MEDJUVREMENU} i nema novog reda.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public VarijantaDetails dupliraj(Long id, IzvorVarijante izvor, String serija) {
+    public VarijantaDetails dupliraj(Long id, String serija) {
         if (serija != null) {
             Serija.proveri(serija);
         }
-        return duplikat(id, izvor, serija, true);
+        return duplikat(id, IzvorVarijante.CLAUDE, serija, true);
     }
 
+    /** {@code izvor} kopije; {@code null} = izvor originala (samo REST {@link #dupliraj(Long)}). */
     private VarijantaDetails duplikat(Long id, IzvorVarijante izvor, String serija, boolean bezRenderaPodKljucem) {
         Prerender pre = renderuj(citaj(() -> ulaz(varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena))));
         return pisi(() -> {

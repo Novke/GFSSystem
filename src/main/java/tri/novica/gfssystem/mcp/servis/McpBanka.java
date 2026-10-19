@@ -65,8 +65,9 @@ import java.util.Set;
  * <p>
  * Grupe (spec MCP 4.1): Klod pravi grupe (izvor CLAUDE, serija), i pod Novicinom grupom; preimenuje, menja šemu polja,
  * premešta i briše samo svoje ({@link #klodova}: izvor se nikad ne menja, pa provera pre ključa servisa nema trku).
- * Pravljenje troši dnevni budžet ključa pre upisa (grupa 1, kopija broj stavki podstabla). Svaki upis nosi ispravnu
- * seriju ({@link Serija#proveri}); izmena, premeštanje i brisanje je ne upisuju (serija grupe je ona iz pravljenja).
+ * Pravljenje troši dnevni budžet ključa pre upisa (grupa 1, kopija broj stavki podstabla), posle jeftinih provera bez ključa
+ * (postojanje izvora, cilj kopije); pokušaj koji servis zatim odbije (409, 400 sadržaja) ostaje potrošen. Svaki upis nosi
+ * ispravnu seriju ({@link Serija#proveri}); izmena, premeštanje i brisanje je ne upisuju (serija grupe je ona iz pravljenja).
  * <p>
  * Varijante (spec MCP 4.1): Klod pravi nacrte (NACRT, izvor CLAUDE bez obzira na komandu, serija), na mestu menja i briše
  * samo sopstveni neodobren nacrt, a izmena svake druge varijante je kopija-nacrt koja je zamenjuje ({@code VarijantaService}
@@ -235,11 +236,23 @@ public class McpBanka {
 
     /**
      * Kopija grupe bilo kog izvora sa podstablom u namenu {@code ciljNamena} istog predmeta (kopije su Klodove: grupe CLAUDE,
-     * varijante nacrti iz serije). Troši budžet za sve stavke kopije (grupe i nearhivirane varijante) pre upisa.
+     * varijante nacrti iz serije). Troši budžet za sve stavke kopije (grupe i nearhivirane varijante) pre upisa, a tek
+     * posle provere bez ključa da izvor i cilj postoje i da je cilj u istom predmetu i nameni (pogrešan cilj ne troši;
+     * servis sve to ponovo proverava pod ključem).
      */
     public GrupaDetails kopirajGrupu(Long id, Namena ciljNamena, Long ciljRoditeljId, String serija) {
         Serija.proveri(serija);
         Long grupaId = obavezan(id, "grupaId");
+        if (ciljNamena == null) {
+            throw new SystemException(GrupaZadatakaService.NAMENA_OBAVEZNA, HttpStatus.BAD_REQUEST);
+        }
+        if (ciljRoditeljId != null) {
+            GrupaDetails cilj = grupaService.detalji(ciljRoditeljId);
+            Long predmetIzvora = grupaService.detalji(grupaId).predmetId();
+            if (cilj.namena() != ciljNamena || !cilj.predmetId().equals(predmetIzvora)) {
+                throw new SystemException(KopijaGrupeService.CILJ_VAN_STABLA, HttpStatus.BAD_REQUEST);
+            }
+        }
         budzet.trosiPravljenje(McpZahtev.oznaka(), kopijaService.brojStavki(grupaId));
         return kopijaService.kopiraj(grupaId, ciljNamena, ciljRoditeljId, serija);
     }
@@ -262,8 +275,8 @@ public class McpBanka {
         Namena namena = grupaService.detalji(id).namena();
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         ZahtevSlike zahtev = slika == null ? ZahtevSlike.NE : slika;
-        UpisVarijante upis = varijantaService.kreiraj(id, new VarijantaCmd(cmd.naziv(), cmd.tekst(), cmd.resenje(),
-                cmd.odgovori(), cmd.prilozi(), IzvorVarijante.CLAUDE), serija, zahtev.slika());
+        // izvor CLAUDE upisuje servis (MCP kreiraj ne čita cmd.izvor())
+        UpisVarijante upis = varijantaService.kreiraj(id, cmd, serija, zahtev.slika());
         return saSlikom(upis, namena, zahtev, poziv, linkovi.pregled(serija));
     }
 
@@ -295,13 +308,17 @@ public class McpBanka {
         return saSlikom(upis, namena, zahtev, poziv, null);
     }
 
-    /** Duplikat bilo koje varijante (i Novicine) kao Klodov nacrt iz serije, na kraju iste grupe; jedno pravljenje pre upisa. */
+    /**
+     * Duplikat bilo koje varijante (i Novicine) kao Klodov nacrt iz serije, na kraju iste grupe. Varijanta i namena njene grupe
+     * se čitaju pre budžeta (nepostojeća je 404 bez troška), pa se troši jedno pravljenje pre upisa; servis čita ponovo, pod
+     * ključem. Posle upisa se ništa ne čita: grupa obrisana u međuvremenu ne sme sačuvan duplikat da prikaže kao grešku.
+     */
     public McpVarijanta duplirajVarijantu(Long id, String serija) {
         Serija.proveri(serija);
         Long varijantaId = obavezan(id, "varijantaId");
+        Namena namena = grupaService.detalji(varijantaService.detalji(varijantaId).grupaId()).namena();
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
-        VarijantaDetails d = varijantaService.dupliraj(varijantaId, IzvorVarijante.CLAUDE, serija);
-        return mcp(d, grupaService.detalji(d.grupaId()).namena());
+        return mcp(varijantaService.dupliraj(varijantaId, serija), namena);
     }
 
     /**
@@ -388,8 +405,8 @@ public class McpBanka {
      * TEST samo zadatak osim uz {@code slika.resenje()}, za PREDAVANJE zadatak i rešenje. PNG je iz prevođenja samog upisa;
      * kad upis nije renderovao (keš: isti ulaz rendera, render OK) PNG sačuvanog sadržaja ({@code VarijantaService.slika}),
      * samo dok poziv ima vremena ({@link McpPoziv#imaVremenaZaSliku()}). Upis čiji se tekst nije preveo nema ni sliku ni
-     * napomenu (greška sa linijom je u varijanti); slika koja ne stigne (rok, 503, 429, PNG koji se ne čita) daje napomenu
-     * {@value #SLIKA_NIJE_STIGLA}.
+     * napomenu (greška sa linijom je u varijanti); slika koja ne stigne (rok, 503, 429, PNG koji se ne čita, bilo koja
+     * greška slike posle upisa: {@link #pngPosleUpisa}) daje napomenu {@value #SLIKA_NIJE_STIGLA}, nikad grešku alata.
      */
     private McpSaSlikom<McpUpisVarijante> saSlikom(UpisVarijante upis, Namena namena, ZahtevSlike slika, McpPoziv poziv,
                                                    String linkPregleda) {
@@ -406,9 +423,27 @@ public class McpBanka {
         } else if (d.renderStatus() != RenderStatus.OK) {
             return new McpSaSlikom<>(podaci, null, null);
         } else {
-            png = poziv.imaVremenaZaSliku() ? png(d.id(), saResenjem) : null;
+            png = poziv.imaVremenaZaSliku() ? pngPosleUpisa(d.id(), saResenjem) : null;
         }
         return new McpSaSlikom<>(podaci, png, png == null ? SLIKA_NIJE_STIGLA : null);
+    }
+
+    /**
+     * {@link #png} posle sačuvanog upisa: upis je već commit-ovan, pa nijedna greška slike (i 404 za prilog bez fajla ili
+     * varijantu obrisanu u međuvremenu, i neočekivan izuzetak) ne sme da ga prikaže kao neuspeh (Klod bi ga ponovio). Daje
+     * {@code null}, pa napomenu {@value #SLIKA_NIJE_STIGLA}, uz WARN bez sadržaja ({@code SystemException} samo kod, ostalo
+     * sa stack trace-om, da se prava greška vidi u logu).
+     */
+    private byte[] pngPosleUpisa(Long varijantaId, boolean saResenjem) {
+        try {
+            return png(varijantaId, saResenjem);
+        } catch (SystemException e) {
+            log.warn("MCP slika posle upisa nije stigla: varijanta={} greska=SystemException {}", varijantaId, e.getCode());
+            return null;
+        } catch (RuntimeException e) {
+            log.warn("MCP slika posle upisa nije stigla: varijanta={}", varijantaId, e);
+            return null;
+        }
     }
 
     /** {@code UpisVarijante} za Kloda: radnja malim slovima, varijanta bez id-jeva SVG-a, linkovi. */

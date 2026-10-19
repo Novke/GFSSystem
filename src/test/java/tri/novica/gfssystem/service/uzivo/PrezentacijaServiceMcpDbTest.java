@@ -28,9 +28,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * MCP metode {@link PrezentacijaService} nad pravom MySQL bazom (Flyway V1..V12, kao CI): serija na prezentaciji i slajdu,
  * Klodovo dodavanje slajda samo van izvođenja (ključ i provera izvođenja pre provere sadržaja), dupliranje bez serije i
- * poništavanje serije (neizvedena prezentacija serije cela, slajdovi serije u tuđim prezentacijama uz prenumerisanje,
- * izvedena i ona koja se izvodi preskočene). Bez {@code @Transactional}: svaki poziv servisa se zaista commit-uje, pa test
- * čisti za sobom.
+ * poništavanje serije (neizvedena prezentacija samo sa slajdovima serije cela; ona sa Novicinim slajdom ostaje, bez slajdova
+ * serije; slajdovi serije u tuđim prezentacijama uz prenumerisanje; izvedena i ona koja se izvodi preskočene). Bez
+ * {@code @Transactional}: svaki poziv servisa se zaista commit-uje, pa test čisti za sobom.
  */
 @SpringBootTest
 class PrezentacijaServiceMcpDbTest {
@@ -38,6 +38,7 @@ class PrezentacijaServiceMcpDbTest {
     static final String IZVODI_SE = "Prezentacija se upravo izvodi; izmene posle časa.";
     static final String IZVODJENA = "Prezentacija je izvođena.";
     static final String UPRAVO_SE_IZVODI = "Prezentacija se upravo izvodi.";
+    static final String NOVICINI_SLAJDOVI = "Prezentacija ima Novicine slajdove.";
     static final AtomicInteger KOD = new AtomicInteger((int) (Math.random() * 400_000) + 500_000);
 
     @Autowired PrezentacijaService service;
@@ -242,16 +243,21 @@ class PrezentacijaServiceMcpDbTest {
 
     // ---------------------------------------------------------------- poništavanje serije
 
-    /** Pet prezentacija sa slajdovima serije, kako ih vidi poništavanje. */
-    record Scenario(Long neizvedena, Long tudja, Long n1, Long k1, Long n2, Long k2, Long izvedena, Long izvodiSe, Long k3,
-                    Long serijaKojaSeIzvodi) {
+    /** Šest prezentacija sa slajdovima serije, kako ih vidi poništavanje. */
+    record Scenario(Long neizvedena, Long mesovita, Long k4, Long nm, Long dk4, Long tudja, Long n1, Long k1, Long n2,
+                    Long k2, Long izvedena, Long izvodiSe, Long k3, Long serijaKojaSeIzvodi) {
     }
 
     Scenario scenario() {
-        // prezentacija serije bez izvođenja (i sa Novicinim slajdom): briše se cela
+        // prezentacija serije bez izvođenja, samo sa slajdovima serije (i pitanjem): briše se cela
         Long neizvedena = nova("Neizvedena", serija);
         service.dodajSlajdIzSerije(neizvedena, info("K0"), null, serija);
-        service.dodajSlajd(neizvedena, info("Novicin"), null);
+        service.dodajSlajdIzSerije(neizvedena, pitanje("K0?"), null, serija);
+        // prezentacija serije bez izvođenja u koju je Novica dodao slajd i duplirao Klodov: ostaje, briše se samo slajd serije
+        Long mesovita = nova("Mešovita", serija);
+        Long k4 = service.dodajSlajdIzSerije(mesovita, info("K4"), null, serija).id();
+        Long nm = service.dodajSlajd(mesovita, info("Novicin"), null).id();
+        Long dk4 = service.duplirajSlajd(k4).id();
         // Novicina prezentacija sa slajdom serije (pitanje), Novicinim slajdovima i slajdom druge serije
         Long tudja = nova("Tuđa");
         Long n1 = service.dodajSlajd(tudja, info("N1"), null).id();
@@ -267,20 +273,23 @@ class PrezentacijaServiceMcpDbTest {
         service.dodajSlajd(izvodiSe, info("N"), null);
         Long k3 = service.dodajSlajdIzSerije(izvodiSe, info("K3"), null, serija).id();
         izvodjenje(izvodiSe, true);
-        // prezentacija serije koja se upravo izvodi: i ona je izvođena
+        // prezentacija serije koja se upravo izvodi: preskače se cela, sa razlogom da se upravo izvodi
         Long serijaKojaSeIzvodi = nova("Serija uživo", serija);
         service.dodajSlajdIzSerije(serijaKojaSeIzvodi, info("K"), null, serija);
         izvodjenje(serijaKojaSeIzvodi, true);
-        return new Scenario(neizvedena, tudja, n1, k1, n2, k2, izvedena, izvodiSe, k3, serijaKojaSeIzvodi);
+        return new Scenario(neizvedena, mesovita, k4, nm, dk4, tudja, n1, k1, n2, k2, izvedena, izvodiSe, k3,
+                serijaKojaSeIzvodi);
     }
 
     List<String> ocekivanoObrisano(Scenario s) {
-        return List.of("PREZENTACIJA:" + s.neizvedena(), "SLAJD:" + s.k1());
+        return List.of("PREZENTACIJA:" + s.neizvedena(), "SLAJD:" + s.k4(), "SLAJD:" + s.k1());
     }
 
     List<String> ocekivanoPreskoceno(Scenario s) {
-        return List.of("PREZENTACIJA:" + s.izvedena() + ":" + IZVODJENA, "SLAJD:" + s.k3() + ":" + UPRAVO_SE_IZVODI,
-                "PREZENTACIJA:" + s.serijaKojaSeIzvodi() + ":" + IZVODJENA);
+        return List.of("PREZENTACIJA:" + s.mesovita() + ":" + NOVICINI_SLAJDOVI,
+                "PREZENTACIJA:" + s.izvedena() + ":" + IZVODJENA,
+                "SLAJD:" + s.k3() + ":" + UPRAVO_SE_IZVODI,
+                "PREZENTACIJA:" + s.serijaKojaSeIzvodi() + ":" + UPRAVO_SE_IZVODI);
     }
 
     @Test
@@ -296,17 +305,22 @@ class PrezentacijaServiceMcpDbTest {
         assertEquals(ocekivanoObrisano(s), info.obrisano().stream().map(PrezentacijaServiceMcpDbTest::kratko).toList());
         assertEquals(ocekivanoPreskoceno(s), info.preskoceno().stream().map(PrezentacijaServiceMcpDbTest::kratko).toList());
         assertEquals("Neizvedena", info.obrisano().get(0).naziv());
-        assertEquals("Tuđa, slajd 2: K1?", info.obrisano().get(1).naziv());
+        assertEquals("Mešovita, slajd 1: K4", info.obrisano().get(1).naziv());
+        assertEquals("Tuđa, slajd 2: K1?", info.obrisano().get(2).naziv());
+        assertEquals("Mešovita", info.preskoceno().get(0).naziv());
         assertEquals(prezentacijaPre, broj("select count(*) from prezentacije where predmet_id = ?", predmet.getId()));
         assertEquals(slajdovaPre, broj("select count(*) from slajdovi sl join prezentacije p on p.id = sl.prezentacija_id"
                 + " where p.predmet_id = ?", predmet.getId()));
         assertEquals(List.of(s.n1(), s.k1(), s.n2(), s.k2()), redosled(s.tudja()));
+        assertEquals(List.of(s.k4(), s.dk4(), s.nm()), redosled(s.mesovita()));
     }
 
     @Test
     void ponistiSerijuBriseNeizvedenoISlajdoveUTudjimPrezentacijama() {
         Scenario s = scenario();
         Long pitanjeK1 = jdbc.queryForObject("select pitanje_id from slajdovi where id = ?", Long.class, s.k1());
+        Long pitanjeK0 = jdbc.queryForObject("select pitanje_id from slajdovi where prezentacija_id = ? and pitanje_id is not null",
+                Long.class, s.neizvedena());
 
         PonistavanjeInfo info = service.ponistiSeriju(serija, true);
 
@@ -315,9 +329,14 @@ class PrezentacijaServiceMcpDbTest {
         assertEquals(ocekivanoPreskoceno(s), info.preskoceno().stream().map(PrezentacijaServiceMcpDbTest::kratko).toList());
         assertTrue(info.obrisano().stream().allMatch(st -> st.razlog() == null));
 
-        // neizvedena prezentacija serije nestaje sa svim slajdovima (i Novicinim)
+        // neizvedena prezentacija samo sa slajdovima serije nestaje cela (i pitanje)
         assertEquals(0, broj("select count(*) from prezentacije where id = ?", s.neizvedena()));
         assertEquals(0, broj("select count(*) from slajdovi where prezentacija_id = ?", s.neizvedena()));
+        assertEquals(0, broj("select count(*) from pitanja where id = ?", pitanjeK0));
+        // prezentacija serije sa Novicinim slajdom i Novicinom kopijom ostaje: briše se samo slajd serije, ostali prenumerisani
+        assertEquals(1, broj("select count(*) from prezentacije where id = ?", s.mesovita()));
+        assertEquals(List.of(s.dk4(), s.nm()), redosled(s.mesovita()));
+        assertNull(serijaSlajda(s.dk4()));
         // slajd serije u tuđoj prezentaciji obrisan sa pitanjem, ostali prenumerisani, druga serija netaknuta
         assertEquals(List.of(s.n1(), s.n2(), s.k2()), redosled(s.tudja()));
         assertEquals(0, broj("select count(*) from pitanja where id = ?", pitanjeK1));

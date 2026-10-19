@@ -34,9 +34,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * {@link KopijaGrupeService} nad pravom MySQL bazom (Flyway V1..V12, kao CI): kopija podstabla u drugu namenu istog
  * predmeta (grupe CLAUDE sa serijom, šema sa istim id-jevima opcija, varijante osim arhiviranih kao Klodovi nacrti sa
- * istim prilozima, uspeo render kao nov SVG medij istih bajtova i istog heša), sve ili ništa (kolizija imena na pola
- * kopije ne ostavlja ni red ni fajl) i provera cilja. Bez {@code @Transactional}: svaki poziv se zaista commit-uje, pa test
- * čisti za sobom kroz JDBC.
+ * istim prilozima, uspeo render kao nov SVG medij istih bajtova i istog heša, a bez SVG fajla izvora čeka render), sve
+ * ili ništa (kolizija imena na pola kopije ne ostavlja ni red ni fajl) i provera cilja. Bez {@code @Transactional}: svaki
+ * poziv se zaista commit-uje, pa test čisti za sobom kroz JDBC.
  */
 @SpringBootTest
 class KopijaGrupeDbTest {
@@ -325,6 +325,24 @@ class KopijaGrupeDbTest {
         Map<String, Object> v = varijanteGrupe(nove.get(1).get("id")).get(0);
         assertDoesNotThrow(() -> BankaPP.proveriOdgovore(BankaPP.normalizujPolja(sema),
                 PoljaJson.odgovoriIzKolone((String) v.get("odgovori"))));
+    }
+
+    @Test
+    void kopijaVarijanteBezSvgFajlaIzvoraCekaRender() throws IOException {
+        // baza vraćena bez snimka gfs-mediji: red SVG medija rešenja postoji, fajla nema; kopija ne pada nego čeka render
+        Files.delete(Path.of(medijiDir).resolve(svgResenja));
+
+        GrupaDetails kopija = service.kopiraj(koren.id(), Namena.PREDAVANJE, null, "kopija-kol1");
+
+        assertEquals(2, kopija.brojNacrta());
+        Map<String, Object> v = varijanteGrupe(grupe(Namena.PREDAVANJE).get(1).get("id")).get(0);
+        assertEquals("CEKA", v.get("render_status"));
+        assertNull(v.get("render_svg_id"));
+        assertNull(v.get("render_resenje_svg_id"));
+        assertNull(v.get("render_hash"));
+        assertEquals(0L, jdbc.queryForObject("select count(*) from mediji where naziv in (?, ?)", Long.class,
+                "zadatak-" + v.get("id") + ".svg", "resenje-" + v.get("id") + ".svg"));
+        assertEquals("OK", jdbc.queryForObject("select render_status from varijante where id = ?", String.class, aktivna));
     }
 
     @Test

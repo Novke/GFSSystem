@@ -30,7 +30,8 @@ import java.util.*;
  * opis, težina, uputstvo i šema polja sa istim id-jevima opcija, pa odgovori važe i u kopiji. Varijante osim arhiviranih
  * postaju Klodovi nacrti (NACRT, CLAUDE, serija, nikad odobrene) sa istim sadržajem i prilozima (isti mediji); uspeo render
  * ({@code OK}) se ne ponavlja nego kopira: bajtovi SVG-a u nove {@code RENDER_SVG} medije (SVG pripada jednoj varijanti)
- * sa istim {@code render_hash} (isti predmet, pa ista preambula i isti ulaz), a svaki drugi čeka render ({@code CEKA}).
+ * sa istim {@code render_hash} (isti predmet, pa ista preambula i isti ulaz), a svaki drugi čeka render ({@code CEKA}),
+ * kao i uspeo render čiji SVG fajl izvora nedostaje (baza vraćena bez snimka {@code gfs-mediji}; WARN, kopija ide dalje).
  * Sve je jedna transakcija: greška na pola (isto ime u cilju, dubina) ne ostavlja ni red ni fajl.
  * <p>
  * <b>Zaključavanje</b> (red iz {@link GrupaZadatakaService}): red predmeta, pa red cilja, pa redovi grupa izvora (pre-order),
@@ -47,7 +48,7 @@ import java.util.*;
 @Transactional(isolation = Isolation.READ_COMMITTED)
 public class KopijaGrupeService {
 
-    static final String CILJ_VAN_STABLA = "Cilj kopije mora biti u istom predmetu i nameni.";
+    public static final String CILJ_VAN_STABLA = "Cilj kopije mora biti u istom predmetu i nameni.";
 
     private final GrupaZadatakaService grupaZadatakaService;
     private final GrupaZadatakaRepository grupaRepository;
@@ -142,18 +143,37 @@ public class KopijaGrupeService {
             k.getPrilozi().add(kp);
         }
         Varijanta nova = varijantaRepository.save(k);   // id je deo naziva SVG medija
-        if (v.getRenderStatus() == RenderStatus.OK && v.getRenderSvg() != null) {
-            nova.setRenderSvg(kopijaSvg(v.getRenderSvg(), "zadatak-" + nova.getId() + ".svg"));
-            nova.setRenderResenjeSvg(v.getRenderResenjeSvg() == null ? null
-                    : kopijaSvg(v.getRenderResenjeSvg(), "resenje-" + nova.getId() + ".svg"));
-            nova.setRenderHash(v.getRenderHash());
-            nova.setRenderStatus(RenderStatus.OK);
+        if (v.getRenderStatus() != RenderStatus.OK || v.getRenderSvg() == null) {
+            return;
+        }
+        byte[] zadatak = bajtoviSvg(v.getRenderSvg());
+        byte[] resenje = v.getRenderResenjeSvg() == null ? null : bajtoviSvg(v.getRenderResenjeSvg());
+        if (zadatak == null || (v.getRenderResenjeSvg() != null && resenje == null)) {
+            // npr. baza vraćena bez snimka gfs-mediji: kopija čeka render (CEKA, bez SVG-a i heša), kopiranje ide dalje
+            log.warn("Kopija varijante bez rendera: SVG izvora nije na disku, izvor={}, kopija={}", v.getId(), nova.getId());
+            return;
+        }
+        nova.setRenderSvg(kopijaSvg(zadatak, "zadatak-" + nova.getId() + ".svg"));
+        nova.setRenderResenjeSvg(resenje == null ? null : kopijaSvg(resenje, "resenje-" + nova.getId() + ".svg"));
+        nova.setRenderHash(v.getRenderHash());
+        nova.setRenderStatus(RenderStatus.OK);
+    }
+
+    /** Bajtovi SVG medija izvora, ili {@code null} kad ga nema (red ili fajl: 404 {@code MedijService}). */
+    private byte[] bajtoviSvg(Medij svg) {
+        try {
+            return medijService.bajtovi(svg.getId());
+        } catch (SystemException e) {
+            if (e.getCode() != null && e.getCode() == HttpStatus.NOT_FOUND.value()) {
+                return null;
+            }
+            throw e;
         }
     }
 
-    /** Nov {@code RENDER_SVG} medij sa bajtovima postojećeg (fajl nove kopije se briše ako se transakcija poništi). */
-    private Medij kopijaSvg(Medij svg, String naziv) {
-        return medijRepository.getReferenceById(medijService.sacuvajRender(medijService.bajtovi(svg.getId()), naziv).id());
+    /** Nov {@code RENDER_SVG} medij sa tim bajtovima (fajl nove kopije se briše ako se transakcija poništi). */
+    private Medij kopijaSvg(byte[] bajtovi, String naziv) {
+        return medijRepository.getReferenceById(medijService.sacuvajRender(bajtovi, naziv).id());
     }
 
     /** Grupa i svi njeni potomci, pre-order (roditelj pre dece, braća po {@code rb}), iz jednog upita stabla. */

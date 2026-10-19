@@ -12,7 +12,7 @@
 - `kontekst` pokazuje poslednjih 5 serija sa brojevima; `pretraga_banke` sa `serija` (i bez `q`) daje sve varijante jedne serije.
 
 ## Nacrti
-- Sve što napraviš je nacrt: varijanta je `NACRT` sa izvorom `CLAUDE` i tvojom serijom; grupe i prezentacije dobijaju izvor `CLAUDE` i seriju. To postavlja server, ne ti.
+- Sve što napraviš je nacrt: varijanta je `NACRT` sa izvorom `CLAUDE` i tvojom serijom; grupe dobijaju izvor `CLAUDE` i seriju, a prezentacije i slajdovi seriju. To postavlja server, ne ti.
 - Ne odobravaš, ne arhiviraš i ne vraćaš u nacrt: alata za to nema i ne treba ga tražiti. Odobrava Novica u UI-ju, nacrt po nacrt; varijanta sa neuspelim renderom se ne može odobriti.
 - Na kraju posla daj Novici link pregleda (`linkPregleda` iz `napravi_varijantu`, oblika `<UI>/banka/pregled?serija=<serija>`), kratku tabelu (grupa, broj varijanti) i šta posebno treba da pogleda (nesigurno rešenje, slika koja se teško čita, nečitak izvor).
 
@@ -42,7 +42,7 @@
 
 ## Poništavanje
 - `ponisti_seriju` prvo pozovi sa `potvrdi: false`: dobiješ spisak onoga što bi se obrisalo i šta se preskače. Pokaži ga Novici, i tek posle njegovog "da" pozovi sa `potvrdi: true`.
-- Briše se samo ono što je serija napravila i što se još sme obrisati: tvoji neodobreni nacrti, tvoje grupe koje time ostanu prazne, slajdovi serije i prezentacije serije koje nikad nisu izvođene. Odobreno, Novicino i izvođeno ostaje i navedeno je kao preskočeno.
+- Briše se samo ono što je serija napravila i što se još sme obrisati: tvoji neodobreni nacrti, tvoje grupe koje time ostanu prazne, slajdovi serije i prezentacije serije koje nikad nisu izvođene. Odobreno, Novicino i izvođeno ostaje i navedeno je kao preskočeno. Nijedan slajd van serije se ne briše: prezentacija serije u koju je Novica dodao ili duplirao slajd (ili u kojoj je slajd druge serije) ostaje i navedena je kao preskočena (`Prezentacija ima Novicine slajdove.`), a iz nje se brišu samo slajdovi serije.
 
 ## Šta ne radiš
 - Ništa što aplikacija radi sama nasumičnim izborom iz banke: novi rok, zbirka za vežbanje u PDF-u, pokrivenost banke. Ni izveštaj posle časa: Novica ga gleda u aplikaciji, ne traži ga od tebe.
@@ -57,6 +57,6 @@
 ## Greške, vreme i ponavljanje
 - Greška alata (`isError`) je poruka na srpskom; pročitaj je i popravi ulaz. `Sistemska greška.` nije do tebe: ne ponavljaj više puta, javi Novici.
 - Nepoznat ključ u argumentima je `Nepoznato polje 'x'.` i ništa nije upisano; ime polja proveri u šemi alata.
-- Alat ima rok od 90 s. Kad poziv istekne ili se prekine, ne znaš da li je upisan: pre ponavljanja `napravi_*`, `kopiraj_grupu`, `dupliraj_varijantu`, `izmeni_varijantu` ili `dodaj_slajd` proveri `pretraga_banke`, `grupa` ili `prezentacija`.
-- `Dnevni limit za Kloda je potrošen.` (429): stani i javi Novici; limit se obnavlja sledećeg dana.
+- Alat je predviđen da završi za najviše 90 s (render i slika imaju svoje rokove), ali poziv ipak može da istekne ili da se prekine. Tada ne znaš da li je upisan: pre ponavljanja `napravi_*`, `kopiraj_grupu`, `dupliraj_varijantu`, `izmeni_varijantu` ili `dodaj_slajd` proveri `pretraga_banke`, `grupa` ili `prezentacija`.
+- `Dnevni limit za Kloda je potrošen.` (429): stani i javi Novici; limit se obnavlja sledećeg dana. Pravljenje se računa pre upisa, pa se računa i pokušaj koji upis zatim odbije (npr. 409 ili 400 sadržaja).
 - Spiskovi su po stranama (`strana` od 1, `brojStrana`, `ukupno`).
