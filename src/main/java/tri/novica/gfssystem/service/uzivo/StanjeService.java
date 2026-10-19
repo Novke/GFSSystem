@@ -13,6 +13,7 @@ import tri.novica.gfssystem.repository.uzivo.*;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Snimci stanja izvođenja (samo čitanje). Svi podaci izvođenja se učitavaju sa po jednim upitom po tabeli
@@ -36,11 +37,16 @@ public class StanjeService {
     private final PovezanostRegistar povezanost;
     private final JsonMapper jsonMapper;
     private final PlatnoJson platnoJson;
+    private final ZadaciSlajdova zadaci;
     private final Clock clock;
 
-    /** Sve što stanje izvođenja traži, učitano jednom. */
+    /**
+     * Sve što stanje izvođenja traži, učitano jednom. {@code zadaci}: opisi Zadatak slajdova (po id-ju slajda) među
+     * trenutnim i sledećim slajdom; prazna mapa kad nijedan od njih nije ZADATAK. Računa ih {@link #ucitaj} jednom, pa
+     * jedan {@link #snimci} košta najviše jedno čitanje stabla banke, a ne po jedno za svaki snimak.
+     */
     record Podaci(Izvodjenje iz, List<Slajd> slajdovi, List<PitanjeRunda> runde, List<Ucesnik> ucesnici,
-                  List<Odgovor> odgovori) {
+                  List<Odgovor> odgovori, Map<Long, ZadatakSlajdaInfo> zadaci) {
         /** Odgovori trenutne runde (po vremenu prijema). */
         List<Odgovor> odgovoriRunde(Long rundaId) {
             if (rundaId == null) return List.of();
@@ -76,7 +82,7 @@ public class StanjeService {
         List<Slajd> sl = p.slajdovi();
         int indeks = TokIzvodjenja.indeks(iz, sl);
         Slajd trenutni = TokIzvodjenja.trenutni(iz, sl);
-        Slajd sledeci = indeks + 1 >= 0 && indeks + 1 < sl.size() ? sl.get(indeks + 1) : null;
+        Slajd sledeci = sledeci(indeks, sl);
 
         PitanjeRunda runda = p.runda(iz.getTrenutnaRundaId()).orElse(null);
         List<Odgovor> odgovoriRunde = runda == null ? List.of() : p.odgovoriRunde(runda.getId());
@@ -94,8 +100,10 @@ public class StanjeService {
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
                 TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
-                trenutni == null ? null : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson),
-                sledeci == null ? null : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson),
+                trenutni == null ? null
+                        : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson, p.zadaci().get(trenutni.getId())),
+                sledeci == null ? null
+                        : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson, p.zadaci().get(sledeci.getId())),
                 iz.getFaza(), runda == null ? null : rundaInfo(iz, runda),
                 iz.isRezultatiPrikazani(), iz.isTacanPrikazan(), iz.isRangListaPrikazana(), iz.getEkran(),
                 iz.isQrPrikazan(), iz.getTelefonPrikaz(), iz.isDetaljiDozvoljeni(), iz.isTakmicenje(),
@@ -104,6 +112,11 @@ public class StanjeService {
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
                 iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli());
+    }
+
+    /** Slajd posle onog na položaju {@code indeks} (-1 = prijava daje prvi), {@code null} na kraju. */
+    private static Slajd sledeci(int indeks, List<Slajd> slajdovi) {
+        return indeks + 1 >= 0 && indeks + 1 < slajdovi.size() ? slajdovi.get(indeks + 1) : null;
     }
 
     // ---------------------------------------------------------------- javno i lično stanje (telefoni)
@@ -357,7 +370,7 @@ public class StanjeService {
 
     // ---------------------------------------------------------------- zajedničko (i za javno/lično stanje)
 
-    /** Izvođenje (404), slajdovi, runde, neizbačeni učesnici i njihovi odgovori. */
+    /** Izvođenje (404), slajdovi, runde, neizbačeni učesnici, njihovi odgovori i opisi Zadatak slajdova (trenutni, sledeći). */
     Podaci ucitaj(Long izvodjenjeId) {
         Izvodjenje iz = izvodjenjeRepository.findSaVezama(izvodjenjeId)
                 .orElseThrow(() -> new SystemException(IzvodjenjeService.NIJE_PRONADJENO, HttpStatus.NOT_FOUND));
@@ -367,7 +380,16 @@ public class StanjeService {
                 .filter(u -> !u.isIzbacen()).toList();
         List<Odgovor> odgovori = odgovorRepository.findAllByRundaIzvodjenjeId(izvodjenjeId).stream()
                 .filter(o -> !o.getUcesnik().isIzbacen()).toList();
-        return new Podaci(iz, slajdovi, runde, ucesnici, odgovori);
+        return new Podaci(iz, slajdovi, runde, ucesnici, odgovori, opisiZadataka(iz, slajdovi));
+    }
+
+    /** Opisi ZADATAK slajdova među trenutnim i sledećim, jednim batch pozivom; bez ZADATAK slajda bez ijednog upita. */
+    private Map<Long, ZadatakSlajdaInfo> opisiZadataka(Izvodjenje iz, List<Slajd> slajdovi) {
+        List<Slajd> zadaciSlajdovi = Stream
+                .of(TokIzvodjenja.trenutni(iz, slajdovi), sledeci(TokIzvodjenja.indeks(iz, slajdovi), slajdovi))
+                .filter(s -> s != null && s.getTip() == TipSlajda.ZADATAK).toList();
+        return zadaciSlajdovi.isEmpty() ? Map.of()
+                : zadaci.za(iz.getPrezentacija().getPredmet().getId(), zadaciSlajdovi);
     }
 
     /** Odgovori koji nose poene: samo iz poslednje runde svakog slajda (po rundama izvođenja, ne po odgovorima). */

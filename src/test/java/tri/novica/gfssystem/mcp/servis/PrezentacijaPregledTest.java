@@ -10,6 +10,7 @@ import tri.novica.gfssystem.dto.uzivo.PredmetKratko;
 import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaDetails;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
+import tri.novica.gfssystem.dto.uzivo.ZadatakSlajdaInfo;
 import tri.novica.gfssystem.dto.uzivo.platno.*;
 import tri.novica.gfssystem.entity.uzivo.SmerPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
@@ -379,10 +380,14 @@ class PrezentacijaPregledTest {
         SlajdDetails bez = PrezentacijaPregled.bezPoteza(s);
         assertEquals(new SlajdDetails(3L, 2, TipSlajda.PLATNO, "N", "S", new MedijInfo(SLIKA, "a", "image/png", 1), "B",
                 true, null, PlatnoPregled.bezPoteza(platno(1)), new Prelaz(TipPrelaza.FADE, null, 500)), bez);
+        ZadatakSlajdaInfo zadatak = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10", List.of(), true, 3, List.of(), false,
+                List.of(), List.of());
+        assertEquals(zadatak, PrezentacijaPregled.bezPoteza(new SlajdDetails(3L, 2, TipSlajda.PLATNO, null, null, null,
+                null, false, null, platno(1), null, zadatak)).zadatak(), "zadatak ostaje i kad se potezi brišu");
         SlajdDetails info = new SlajdDetails(4L, 1, TipSlajda.INFO, "N", null, null, null, false, null, null, null);
         assertSame(info, PrezentacijaPregled.bezPoteza(info));
-        // nova komponenta (B: zadatak, A2: verzija) mora ući i u kopiju bez poteza
-        assertEquals(11, SlajdDetails.class.getRecordComponents().length,
+        // nova komponenta (A2: verzija) mora ući i u kopiju bez poteza
+        assertEquals(12, SlajdDetails.class.getRecordComponents().length,
                 "SlajdDetails ima novu komponentu: dopuni PrezentacijaPregled.bezPoteza i ovaj test");
     }
 

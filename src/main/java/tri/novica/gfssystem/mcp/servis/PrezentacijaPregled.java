@@ -71,7 +71,7 @@ final class PrezentacijaPregled {
 
     /**
      * Slajd kao u editoru, ali PLATNO bez poteza crteža (alat {@code slajd}); slajd bez platna se vraća isti. Prepisuje
-     * sve komponente {@link SlajdDetails}: nova komponenta (npr. {@code zadatak}, {@code verzija}) mora ući i ovde
+     * sve komponente {@link SlajdDetails}: nova komponenta (npr. {@code verzija}) mora ući i ovde
      * ({@code PrezentacijaPregledTest} broji komponente).
      */
     static SlajdDetails bezPoteza(SlajdDetails s) {
@@ -79,7 +79,7 @@ final class PrezentacijaPregled {
             return s;
         }
         return new SlajdDetails(s.id(), s.rb(), s.tip(), s.naslov(), s.sadrzaj(), s.slika(), s.beleske(), s.postepeno(),
-                s.pitanje(), PlatnoPregled.bezPoteza(s.platno()), s.prelaz());
+                s.pitanje(), PlatnoPregled.bezPoteza(s.platno()), s.prelaz(), s.zadatak());
     }
 
     /**

@@ -26,6 +26,7 @@ import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
@@ -56,6 +57,8 @@ class PrezentacijaServiceTest {
     @Mock PredavanjeRepository predavanjeRepository;
     @Mock MedijService medijService;
     @Mock MedijRepository medijRepository;
+    @Mock GrupaZadatakaRepository grupaZadatakaRepository;
+    @Mock ZadaciSlajdova zadaci;
     @Mock ObjectProvider<PrezentacijaPromene> promeneProvider;
     @Mock PrezentacijaPromene promene;
 
@@ -72,7 +75,8 @@ class PrezentacijaServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         service = new PrezentacijaService(prezentacijaRepository, slajdRepository, izvodjenjeRepository,
-                predmetRepository, predavanjeRepository, medijService, medijRepository, platnoJson, promeneProvider, CLOCK);
+                predmetRepository, predavanjeRepository, medijService, medijRepository, grupaZadatakaRepository, zadaci,
+                platnoJson, promeneProvider, CLOCK);
 
         predmet = new Predmet();
         predmet.setId(7L);
@@ -113,8 +117,9 @@ class PrezentacijaServiceTest {
         when(slajdRepository.findPrezentacijaId(anyLong()))
                 .thenAnswer(inv -> nadjiUBazi(inv.getArgument(0)).map(s -> s.getPrezentacija().getId()));
         when(slajdRepository.countByPrezentacijaId(anyLong())).thenAnswer(inv -> (long) slajdovi(inv.getArgument(0)).size());
-        when(slajdRepository.countByPrezentacijaIdAndTip(anyLong(), any())).thenAnswer(inv ->
-                slajdovi(inv.getArgument(0)).stream().filter(s -> s.getTip() == inv.getArgument(1)).count());
+        when(slajdRepository.countByPrezentacijaIdAndTipIn(anyLong(), any())).thenAnswer(inv ->
+                slajdovi(inv.getArgument(0)).stream()
+                        .filter(s -> ((Collection<?>) inv.getArgument(1)).contains(s.getTip())).count());
         when(slajdRepository.save(any(Slajd.class))).thenAnswer(inv -> {
             Slajd s = inv.getArgument(0);
             dodeliId(s);

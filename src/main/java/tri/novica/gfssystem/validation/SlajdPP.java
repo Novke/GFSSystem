@@ -6,6 +6,7 @@ import tri.novica.gfssystem.dto.uzivo.OpcijaCmd;
 import tri.novica.gfssystem.dto.uzivo.PitanjeCmd;
 import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.SlajdCmd;
+import tri.novica.gfssystem.dto.uzivo.ZadatakSlajda;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
 import tri.novica.gfssystem.entity.uzivo.SmerPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TekstPrikaz;
@@ -40,6 +41,10 @@ public final class SlajdPP {
     public static final int MAX_PRELAZ_MS = 5000;
     public static final int PODRAZUMEVANO_PRELAZ_MS = 500;
     public static final String PRELAZ_TRAJANJE = "Trajanje prelaza mora biti od 0,1 do 5 sekundi.";
+    public static final String ZADATAK_BEZ_GRUPE = "Zadatak slajd mora imati grupu zadataka.";
+    public static final String BROJ_VARIJANTI = "Broj različitih zadataka mora biti od 1 do 50.";
+    public static final int MIN_BROJ_VARIJANTI = 1;
+    public static final int MAX_BROJ_VARIJANTI = 50;
     /** Jedini dozvoljen cilj Markdown slike (spec 6.5): medij otpremljen u GFS, relativno prema {@code <base href>}. */
     public static final Pattern DOZVOLJENA_SLIKA =
             Pattern.compile("^api/public/mediji/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
@@ -53,6 +58,7 @@ public final class SlajdPP {
     private static final int MAX_TEKST_OPCIJE = 300;
     private static final int MIN_VREME = 5;
     private static final int MAX_VREME = 600;
+    private static final String VREME_ODGOVORA = "Vreme za odgovor mora biti od 5 do 600 sekundi.";
     private static final int MAX_JEDINICA = 30;
     private static final int MAX_PRIHVATLJIVIH = 20;
     private static final int MAX_PRIHVATLJIV = 100;
@@ -78,7 +84,8 @@ public final class SlajdPP {
      * Kopija sa podrazumevanim vrednostima: tekstovi bez razmaka na krajevima, prazan string {@code null}; INFO bez
      * pitanja; polja koja ne važe za tip pitanja su {@code null} (opcije prazna lista); ANKETA bez tačnih,
      * TACNO_NETACNO sa tekstovima "Tačno"/"Netačno", KRATAK_TEKST podrazumevano OBLAK, BROJ odstupanje 0 APSOLUTNO.
-     * Prelaz (svaki tip) po {@link #normalizuj(Prelaz)}.
+     * ZADATAK zadržava samo beleške, prelaz i zadatak (ostali tipovi gube {@code zadatak}). Prelaz (svaki tip) po
+     * {@link #normalizuj(Prelaz)}.
      */
     public static SlajdCmd normalizuj(SlajdCmd cmd) {
         if (cmd == null) return null;
@@ -86,6 +93,10 @@ public final class SlajdPP {
         if (cmd.tip() == TipSlajda.PLATNO) {
             return new SlajdCmd(cmd.tip(), null, null, null, prazanUNull(cmd.beleske()), false, null, platno,
                     normalizuj(cmd.prelaz()));
+        }
+        if (cmd.tip() == TipSlajda.ZADATAK) {
+            return new SlajdCmd(cmd.tip(), null, null, null, prazanUNull(cmd.beleske()), false, null, null,
+                    normalizuj(cmd.prelaz()), cmd.zadatak());
         }
         PitanjeCmd pitanje = cmd.tip() == TipSlajda.INFO ? null : normalizuj(cmd.pitanje());
         return new SlajdCmd(cmd.tip(), prazanUNull(cmd.naslov()), prazanUNull(cmd.sadrzaj()), prazanUNull(cmd.slikaId()),
@@ -159,10 +170,27 @@ public final class SlajdPP {
             }
             return;
         }
+        if (cmd.tip() == TipSlajda.ZADATAK) {
+            proveri(cmd.zadatak());
+            return;
+        }
         if (cmd.pitanje() == null) {
             throw greska("Slajd sa pitanjem mora imati pitanje.");
         }
         proveri(cmd.pitanje());
+    }
+
+    /** Grupa je obavezna, tajmer 5..600 s ili {@code null}, broj različitih varijanti 1..50 ili {@code null}. */
+    private static void proveri(ZadatakSlajda z) {
+        if (z == null || z.grupaId() == null) {
+            throw greska(ZADATAK_BEZ_GRUPE);
+        }
+        if (z.vremeSekunde() != null && (z.vremeSekunde() < MIN_VREME || z.vremeSekunde() > MAX_VREME)) {
+            throw greska(VREME_ODGOVORA);
+        }
+        if (z.brojVarijanti() != null && (z.brojVarijanti() < MIN_BROJ_VARIJANTI || z.brojVarijanti() > MAX_BROJ_VARIJANTI)) {
+            throw greska(BROJ_VARIJANTI);
+        }
     }
 
     private static void proveri(PitanjeCmd p) {
@@ -173,7 +201,7 @@ public final class SlajdPP {
             throw greska("Tekst pitanja je obavezan (najviše 2000 znakova).");
         }
         if (p.vremeSekunde() != null && (p.vremeSekunde() < MIN_VREME || p.vremeSekunde() > MAX_VREME)) {
-            throw greska("Vreme za odgovor mora biti od 5 do 600 sekundi.");
+            throw greska(VREME_ODGOVORA);
         }
         switch (p.tip()) {
             case JEDAN_TACAN, VISE_TACNIH, ANKETA -> proveriOpcije(p);
