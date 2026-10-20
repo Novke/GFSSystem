@@ -5,12 +5,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.SeedRandom;
 import tri.novica.gfssystem.dto.banka.OdgovorPolja;
@@ -19,6 +17,7 @@ import tri.novica.gfssystem.dto.banka.RenderOdgovor;
 import tri.novica.gfssystem.dto.banka.VarijantaCmd;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -35,8 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Odgovor na Zadatak slajd nad pravom MySQL bazom: ocena po dodeljenoj varijanti iz snimka runde (ne po trenutnoj banci),
@@ -48,7 +45,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Bez {@code @Transactional}; test čisti za sobom.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
 @Import(SeedRandom.class)
 class ZadatakOdgovorDbTest {
 
@@ -66,7 +62,6 @@ class ZadatakOdgovorDbTest {
     @Autowired PredmetRepository predmetRepository;
     @Autowired JsonMapper jsonMapper;
     @Autowired JdbcTemplate jdbc;
-    @Autowired MockMvc mvc;
     @Autowired StanjeService stanjeService;
     @MockitoBean LatexRender latexRender;
 
@@ -259,7 +254,7 @@ class ZadatakOdgovorDbTest {
     }
 
     @Test
-    void svgSnimkaPrezivljavaIzmenu() throws Exception {
+    void svgSnimkaPrezivljavaIzmenu() {
         VarijantaSnimak uSnimku = ((ZadatakSnimak) jsonMapper.readValue(jdbc.queryForObject(
                 "select snimak from pitanje_runde where id = ?", String.class, rundaK), SnimakRunde.class))
                 .varijanta(varA).orElseThrow();
@@ -275,7 +270,8 @@ class ZadatakOdgovorDbTest {
         for (String id : List.of(uSnimku.svgId(), uSnimku.resenjeSvgId())) {
             assertEquals(1, jdbc.queryForObject("select count(*) from mediji where id = ?", Integer.class, id));
             assertNotNull(medijService.bajtovi(id), "fajl postoji");
-            mvc.perform(get("/public/mediji/" + id)).andExpect(status().isOk());
+            // isto čitanje kao javni GET /public/mediji/{uuid} (bez MockMvc-a: test deli Spring kontekst sa ZadatakRundaDbTest)
+            assertEquals(VrstaMedija.RENDER_SVG, medijService.ucitaj(id).vrsta());
         }
     }
 
