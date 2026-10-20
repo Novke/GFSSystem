@@ -229,11 +229,13 @@ group's schema, the console and projector show results per variant and, on `Shif
   API (`/izvodjenja/{id}/stanje`, `/rezultati`, teacher STOMP) carries everything, so on prod the task is only safe while the teacher
   API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot).
 - **Student identity seam:** `security/IdentitetStudenta` (`studentId(request)`, `dostupno()`); `NemaIdentiteta` is the bean only when no
-  other exists (`IdentitetAutoKonfig`, `@ConditionalOnMissingBean`). Until the login project lands, a scored run (`PokreniCmd.boduje`)
-  is 409 `Prijava studenata još nije dostupna.`.
-- **Not done yet (BE-8):** activities in a scored run (attendance and solved tasks written to the lecture) are not implemented; the
-  scored run cannot start anyway without student login. When it is added, manual activity edits in `PredavanjeService` must lock the
-  lecture row first (plan task BE-8).
+  other exists (`IdentitetAutoKonfig`, `@ConditionalOnMissingBean`). Without the login project a scored run (`PokreniCmd.boduje`) is 409
+  `Prijava studenata još nije dostupna.`; on branch `feature/prijava` the seam is live: `NalogIdentitet` (see "Prijava") replaces
+  `NemaIdentiteta`, so a scored run starts and its join takes the student from `gfs_student` (403 `Potrebna je prijava studenta.`
+  without one).
+- **Not done yet (BE-8):** activities in a scored run (attendance and solved tasks written to the lecture) are not implemented, also
+  not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
+  edits in `PredavanjeService` must lock the lecture row first (plan task BE-8).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
   grading, SVG survival, overview), `OcenaZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
@@ -613,9 +615,14 @@ creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|en
   `POST /auth/sesije/odjavi-sve`), user and bcrypt hash from `GFS_NASTAVNIK_KORISNIK` / `GFS_NASTAVNIK_LOZINKA_BCRYPT` (empty =
   login not configured, 503-style message; a non-bcrypt value fails the start), `GFS_NASTAVNIK_MEJL` = address for notification mail.
   10 failed attempts per 15 minutes per IP lock that IP for 15 minutes (`pokusaji`). IP comes from Tomcat's `RemoteIpValve`, not from headers.
-- **`IdentitetStudenta` seam** (`security/`, signature agreed with the banka phase 2 work): `NalogIdentitet` (`@Primary`) gives the
-  student of a valid `gfs_student` device, `dostupno()` is true; `NemaIdentiteta` (`IdentitetConfig`) is the fallback bean when no
-  other implementation exists, which keeps "Boduje se" off (409). The teacher never counts as a student.
+- **`IdentitetStudenta` seam is live** (`security/`; interface, `NemaIdentiteta` and `IdentitetAutoKonfig` come from the Zadatak slide,
+  see "Zadatak slide"): `NalogIdentitet` (`@Component`, `@Primary`) replaces `NemaIdentiteta`, which the auto-configuration
+  (`@ConditionalOnMissingBean`) then never creates, so the context has exactly one `IdentitetStudenta` (`NalogIdentitetIT`). It gives
+  the student of a valid `gfs_student` device and `dostupno()` is true, so "Boduje se" works: the teacher starts a scored run, the join
+  `POST /public/uzivo/{kod}/prijava` takes the student from the cookie (typed name ignored), the same student on a second phone is the
+  same participant, and without a valid cookie a scored run is 403 `Potrebna je prijava studenta.` (unscored runs need no login;
+  `BodovanoUzivoIT`). The teacher never counts as a student (403 there even with a student cookie). **BE-8 is still not in the
+  code:** a scored run records no attendance or task activities on the lecture.
 - **Student account** (`/public/nalog/*`, anonymous or STUDENT): `KodServis` (code = 6 digits from `SecureRandom`, 10 min, single
   use, 5 wrong entries kill it, a new code voids the old ones; DB keeps `SHA-256(salt + code)`), `StudentskaPrijava` (devices),
   `MaskaMejla` (real mask, or a deterministic fake mask from an HMAC for unknown index / student without mail),

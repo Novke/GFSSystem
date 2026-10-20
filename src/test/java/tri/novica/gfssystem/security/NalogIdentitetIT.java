@@ -26,7 +26,11 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Šav za fazu 2 banke (spec 13.1): {@link IdentitetStudenta} čita {@code gfs_student}; jedini {@code @Primary} je nalog. */
+/**
+ * Šav sa slajdom Zadatak (spec 13.1): {@link IdentitetStudenta} čita {@code gfs_student}; u kontekstu je tačno jedan bean
+ * tog tipa, {@link NalogIdentitet} ({@code @Primary}), a podrazumevani {@link NemaIdentiteta} iz {@link IdentitetAutoKonfig}
+ * ne nastaje.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 class NalogIdentitetIT {
@@ -130,7 +134,12 @@ class NalogIdentitetIT {
         String[] imena = beanFactory.getBeanNamesForType(IdentitetStudenta.class);
         long primarnih = Arrays.stream(imena).filter(i -> beanFactory.getBeanDefinition(i).isPrimary()).count();
         assertEquals(1, primarnih, "IdentitetStudenta beanovi: " + Arrays.toString(imena));
-        // NemaIdentiteta se ne pravi kad nalog postoji (ConditionalOnMissingBean)
+        // NemaIdentiteta (IdentitetAutoKonfig, @ConditionalOnMissingBean) se ne pravi kad nalog postoji
         assertEquals(1, imena.length, Arrays.toString(imena));
+        assertEquals(NalogIdentitet.class, beanFactory.getType(imena[0]));
+        assertFalse(beanFactory.containsBean("nemaIdentiteta"));
+        assertTrue(beanFactory.getBeansOfType(NemaIdentiteta.class).isEmpty());
+        // auto-konfiguracija šava je ipak učitana (uslov je odlučio, nije preskočena cela klasa)
+        assertTrue(beanFactory.containsBean(IdentitetAutoKonfig.class.getName()));
     }
 }

@@ -12,8 +12,9 @@ import java.util.Optional;
 
 /**
  * {@link IdentitetStudenta} iz studentskog naloga (spec 13.1): student je vlasnik važećeg uređaja iz kolačića
- * {@code gfs_student} (nije opozvan ni istekao). {@code @Primary}, da izbor bude deterministički i kad faza 2 donese svoj
- * {@link NemaIdentiteta} kao bean.
+ * {@code gfs_student} (nije opozvan ni istekao), {@code dostupno()} je {@code true} (bodovan run uživo je dozvoljen).
+ * Kao korisnički bean potiskuje podrazumevani {@link NemaIdentiteta} iz {@link IdentitetAutoKonfig}
+ * ({@code @ConditionalOnMissingBean}); {@code @Primary} ostaje da izbor bude deterministički i ako se drugi bean ipak pojavi.
  * <p>
  * U zahtevu koji je prošao glavni bezbednosni lanac {@code GfsAutentikacijaFilter} je kolačić već proverio (i produžio),
  * pa važi ono što je on zaključio: {@link StudentAutentikacija} daje studenta, nastavnik ima prednost (spec 2.2) pa je
