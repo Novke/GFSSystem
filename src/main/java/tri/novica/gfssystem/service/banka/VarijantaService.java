@@ -166,9 +166,10 @@ public class VarijantaService {
      * Da li je varijanta ikad izvučena na času: ima dodelu (red u {@code zadatak_dodele}) ili je u snimku neke runde
      * (izvučena, a nijednom učesniku nije dodeljena: manje učesnika od varijanti, ili učesnik koji tek dolazi). Takva se ne
      * briše, nego arhivira (banka spec 4.1). FK RESTRICT štiti samo dodeljenu, izvučenu štiti snimak. Provera vidi samo
-     * commit-ovane runde: otvaranje runde (komanda Zadatak slajda) mora da zaključa varijante koje izvlači
-     * ({@code findByIdForUpdate}, posle zaključanog izvođenja, pre upisa snimka), pa brisanje (koje zaključava varijantu pre
-     * ove provere) ili čeka otvaranje i vidi njegov snimak, ili ga otvaranje čeka i ne nalazi obrisanu varijantu.
+     * commit-ovane runde: otvaranje runde (komanda Zadatak slajda) zaključava kandidate pre izvlačenja
+     * ({@code VarijantaRepository.zakljucajKandidate}, posle zaključanog izvođenja, pre upisa snimka), pa brisanje (koje
+     * zaključava varijantu pre ove provere) ili čeka otvaranje i vidi njegov snimak, ili ga otvaranje čeka i ne izvlači
+     * obrisanu varijantu.
      */
     public boolean koriscenoNaCasu(Long varijantaId) {
         return dodelaRepository.existsByVarijantaId(varijantaId) || rundaRepository.varijantaUSnimku(varijantaId);

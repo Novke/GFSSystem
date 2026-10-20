@@ -19,9 +19,16 @@ import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.service.banka.LatexRender;
+import tri.novica.gfssystem.service.banka.VarijantaService;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -59,6 +66,8 @@ class ZadatakRundaDbTest {
     @Autowired PredmetRepository predmetRepository;
     @Autowired JsonMapper jsonMapper;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
+    @Autowired VarijantaService varijantaService;
     @MockitoBean LatexRender latexRender;
 
     final String oznaka = UUID.randomUUID().toString().substring(0, 8);
@@ -159,7 +168,7 @@ class ZadatakRundaDbTest {
     }
 
     /** Varijanta sa SVG-om zadatka (AKTIVNA je kandidat), sa ili bez SVG-a rešenja. */
-    void varijanta(long grupa, String naziv, String status, boolean saResenjem) {
+    long varijanta(long grupa, String naziv, String status, boolean saResenjem) {
         Map<String, Object> red = new HashMap<>();
         red.put("grupa_id", grupa);
         red.put("rb", 1);
@@ -174,7 +183,8 @@ class ZadatakRundaDbTest {
         red.put("render_resenje_svg_id", saResenjem ? medij() : null);
         red.put("kreirano", LocalDateTime.now());
         red.put("izmenjeno", LocalDateTime.now());
-        new SimpleJdbcInsert(jdbc).withTableName("varijante").usingGeneratedKeyColumns("id").executeAndReturnKey(red);
+        return new SimpleJdbcInsert(jdbc).withTableName("varijante").usingGeneratedKeyColumns("id")
+                .executeAndReturnKey(red).longValue();
     }
 
     static SlajdCmd zadatak(long grupaId, Integer vreme, Integer broj) {
@@ -580,6 +590,123 @@ class ZadatakRundaDbTest {
         assertEquals(30, dodele(nova).size());
         assertEquals(3, jdbc.queryForObject("select redni_broj from pitanje_runde where id = ?", Integer.class, nova));
         assertDoesNotThrow(() -> stanjeService.snimci(izvodjenjeId));
+    }
+
+    // ---------------------------------------------------------------- brisanje varijante i otvaranje runde
+
+    List<Long> varijanteGrupe(long grupaId) {
+        return jdbc.queryForList("select id from varijante where grupa_id = ? order by id", Long.class, grupaId);
+    }
+
+    /** Završava run iz setUp-a i pokreće nov sa {@code brojUcesnika} učesnika (isti slajdovi). */
+    void novRun(int brojUcesnika) {
+        jdbc.update("update izvodjenja set status = 'ZAVRSENO', aktivan_kod = null where id = ?", izvodjenjeId);
+        IzvodjenjeInfo info = izvodjenjeService.pokreni(prezentacijaId, new PokreniCmd(false, null, null));
+        izvodjenjeId = info.id();
+        kod = info.kod();
+        ucesnici.clear();
+        for (int n = 1; n <= brojUcesnika; n++) {
+            ucesnici.add(prijavi("Novi " + n));
+        }
+    }
+
+    /**
+     * Nalaz recenzije BE-5b: varijanta obrisana dok se runda otvara (brisanje drži ključ reda, otvaranje je već pročitalo
+     * kandidate) ne sme ući u snimak; inače bi je svaki kasni ulazak birao (0 dodela) i pao na FK. Druga konekcija briše P1
+     * i drži ključ dok otvaranje ne stigne do {@code zakljucajKandidate}, pa commit-uje.
+     */
+    @Test
+    void varijantaObrisanaDokSeRundaOtvaraNijeUSnimku() throws Exception {
+        List<Long> pVarijante = varijanteGrupe(p);
+        Long p1 = pVarijante.get(0);
+        Long p2 = pVarijante.get(1);
+        k(TipKomande.IDI_NA, 1);
+
+        CountDownLatch obrisano = new CountDownLatch(1);
+        AtomicReference<Exception> greskaBrisanja = new AtomicReference<>();
+        Thread brisanje = new Thread(() -> {
+            try (Connection c = dataSource.getConnection()) {
+                c.setAutoCommit(false);
+                try (PreparedStatement ps = c.prepareStatement("delete from varijante where id = ?")) {
+                    ps.setLong(1, p1);
+                    ps.executeUpdate();
+                }
+                obrisano.countDown();
+                Thread.sleep(1500);   // otvaranje za to vreme pročita kandidate i čeka ključ P1
+                c.commit();
+            } catch (Exception ex) {
+                greskaBrisanja.set(ex);
+                obrisano.countDown();
+            }
+        });
+        brisanje.start();
+        assertTrue(obrisano.await(10, TimeUnit.SECONDS));
+        k(TipKomande.OTVORI_ZATVORI);
+        brisanje.join(10_000);
+        assertNull(greskaBrisanja.get());
+
+        Long r = trenutnaRunda();
+        assertEquals("OTVORENO", faza());
+        assertEquals(Set.of(p2), idjevi(zadatakSnimak(r)), "obrisana varijanta nije izvučena");
+        assertEquals(Set.of(p2), new HashSet<>(dodele(r).values()));
+        Long kasni = prijavi("Kasni");
+        assertEquals(p2, dodele(r).get(kasni), "kasni ulazak radi i dobija varijantu koja postoji");
+    }
+
+    /** Sve varijante obrisane dok se runda otvara: 409 bez kandidata, faza ostaje CEKA, nema runde. */
+    @Test
+    void sveObrisaneDokSeRundaOtvara409() throws Exception {
+        k(TipKomande.IDI_NA, 1);
+
+        CountDownLatch obrisano = new CountDownLatch(1);
+        AtomicReference<Exception> greskaBrisanja = new AtomicReference<>();
+        Thread brisanje = new Thread(() -> {
+            try (Connection c = dataSource.getConnection()) {
+                c.setAutoCommit(false);
+                try (PreparedStatement ps = c.prepareStatement("delete from varijante where grupa_id = ?")) {
+                    ps.setLong(1, p);
+                    ps.executeUpdate();
+                }
+                obrisano.countDown();
+                Thread.sleep(1500);
+                c.commit();
+            } catch (Exception ex) {
+                greskaBrisanja.set(ex);
+                obrisano.countDown();
+            }
+        });
+        brisanje.start();
+        assertTrue(obrisano.await(10, TimeUnit.SECONDS));
+        greska(409, NEMA_AKTIVNIH, () -> k(TipKomande.OTVORI_ZATVORI));
+        brisanje.join(10_000);
+        assertNull(greskaBrisanja.get());
+
+        assertEquals("CEKA", faza());
+        assertNull(trenutnaRunda());
+        assertEquals(0, brojRundiSlajda(sP));
+    }
+
+    /**
+     * Manje učesnika od izvučenih varijanti: izvučena, a nedodeljena varijanta je "korišćena na času" (snimak), pa se ne
+     * briše (409), i kasni učesnik je posle toga dobija bez greške.
+     */
+    @Test
+    void izvucenaNedodeljenaSeNeBriseKasniUlazi() {
+        novRun(1);
+        Long r = otvoriK();
+        ZadatakSnimak s = zadatakSnimak(r);
+        assertEquals(4, s.varijante().size());
+        Set<Long> dodeljene = new HashSet<>(dodele(r).values());
+        assertEquals(1, dodeljene.size());
+        Long nedodeljena = idjevi(s).stream().filter(v -> !dodeljene.contains(v)).findFirst().orElseThrow();
+
+        greska(409, "Korišćeno na času; arhiviraj.", () -> varijantaService.obrisi(nedodeljena));
+
+        Long kasni = prijavi("Kasni");
+        Long dobio = dodele(r).get(kasni);
+        assertNotNull(dobio);
+        assertFalse(dodeljene.contains(dobio), "kasni dobija varijantu bez dodela");
+        assertEquals(1, jdbc.queryForObject("select count(*) from varijante where id = ?", Integer.class, nedodeljena));
     }
 
     @Test

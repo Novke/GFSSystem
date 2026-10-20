@@ -28,6 +28,12 @@ import java.util.*;
  * rundi. Poziva se <b>samo dok pozivalac drži zaključan red izvođenja</b> (komanda otvaranja ili ponovnog otvaranja u
  * {@link IzvodjenjeService}, prijava u {@link UcesnikService}), pa dve dodele istom učesniku ne mogu nastati
  * istovremeno; {@code UNIQUE(runda_id, ucesnik_id)} je poslednja brana. Slučajnost samo iz bean-a {@link Random}.
+ * <p>
+ * <b>Ključevi varijanti:</b> {@link #snimak} posle ključa izvođenja zaključava kandidate čvora (redosled izvođenje ->
+ * varijante, rastuće po id-ju) i izvlači samo one koji su posle ključa još AKTIVNI, pa brisanje varijante ili grupe
+ * ({@code VarijantaService.koriscenoNaCasu}, koje zaključava grupu pa varijante i nikad ne čeka izvođenje) ili čeka
+ * commit snimka i dobija 409, ili ga otvaranje čeka i obrisanu ne izvlači. Ponovno otvaranje iste runde i kasna prijava
+ * ne zaključavaju varijante: snimak je tada već commit-ovan, a provera brisanja ga vidi.
  */
 @Service
 @RequiredArgsConstructor
@@ -51,7 +57,10 @@ public class ZadatakDodelaService {
      * Snimak nove runde ZADATAK slajda: {@code min(brojVarijanti, kandidata)} izvučenih ({@code null} = sve), naizmenično
      * po listovima, sa šemom i tačnim odgovorima kakvi su sada. U snimku su redom stabla (list, pa id), ne redom
      * izvlačenja. Slajd bez grupe (obrisana) ili sa grupom koje više nema u stablu PREDAVANJE predmeta -> 409
-     * {@value #GRUPA_OBRISANA}; bez kandidata -> 409 {@value #NEMA_AKTIVNIH}. Ništa ne upisuje.
+     * {@value #GRUPA_OBRISANA}; bez kandidata -> 409 {@value #NEMA_AKTIVNIH}. Ništa ne upisuje, ali pre izvlačenja
+     * zaključava kandidate do kraja transakcije ({@link #zakljucaj}): nijedna izvučena varijanta ne može biti obrisana pre
+     * nego što se snimak commit-uje, a izvlači se samo iz onih koje su posle ključa još AKTIVNE (nijedna više nije -> 409
+     * {@value #NEMA_AKTIVNIH}).
      */
     public ZadatakSnimak snimak(Slajd s, Integer brojVarijanti) {
         GrupaZadataka grupa = s.getGrupaZadataka();
@@ -62,18 +71,46 @@ public class ZadatakDodelaService {
         if (k.opis() == null) {
             throw new SystemException(GRUPA_OBRISANA, HttpStatus.CONFLICT);
         }
-        if (k.poListovima().isEmpty()) {
+        List<List<KandidatVarijante>> poListovima = zakljucaj(k.poListovima());
+        if (poListovima.isEmpty()) {
             throw new SystemException(NEMA_AKTIVNIH, HttpStatus.CONFLICT);
         }
         Set<Long> izvucene = new HashSet<>();
-        IzborVarijanti.izvuci(k.poListovima(), brojVarijanti, random).forEach(v -> izvucene.add(v.varijantaId()));
-        List<VarijantaSnimak> varijante = k.poListovima().stream()
+        IzborVarijanti.izvuci(poListovima, brojVarijanti, random).forEach(v -> izvucene.add(v.varijantaId()));
+        List<VarijantaSnimak> varijante = poListovima.stream()
                 .flatMap(List::stream)
                 .filter(v -> izvucene.contains(v.varijantaId()))
                 .map(ZadatakDodelaService::snimakVarijante)
                 .toList();
         return new ZadatakSnimak(s.getId(), k.opis().grupaId(), k.opis().naziv(), k.opis().putanja(),
                 s.getZadatakVremeSekunde(), varijante);
+    }
+
+    /**
+     * Zaključava sve kandidate jednim upitom ({@link VarijantaRepository#zakljucajKandidate}: samo redovi varijanti,
+     * rastuće po id-ju) i vraća listove samo sa onima koji su posle ključa još AKTIVNI sa SVG-om, bez listova koji su
+     * ostali prazni. Varijanta obrisana ili arhivirana dok se runda otvarala tako ne ulazi u izvlačenje. Brisanje varijante
+     * ({@code VarijantaService}) i grupe ({@code GrupaZadatakaService}) zaključava grupu pa varijante, a izvođenje nikad,
+     * pa redosled izvođenje -> varijante ne pravi krug. Sadržaj (SVG-ovi, šema, odgovori) ostaje iz čitanja pre ključa:
+     * izmena commit-ovana između čitanja i ključa nije u snimku, kao da je runda otvorena malo pre nje. Snimak je i tada
+     * ceo iz jedne verzije varijante, a njen stari SVG ostaje, jer je AKTIVNA varijanta odobrena ({@code ikadOdobrena},
+     * {@code VarijantaService}, "SVG odobrene varijante se nikad ne briše").
+     */
+    private List<List<KandidatVarijante>> zakljucaj(List<List<KandidatVarijante>> poListovima) {
+        List<Long> ids = poListovima.stream().flatMap(List::stream).map(KandidatVarijante::varijantaId).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> zakljucane = new HashSet<>(varijantaRepository.zakljucajKandidate(ids));
+        if (zakljucane.size() == ids.size()) {
+            return poListovima;
+        }
+        log.info("Otvaranje zadatka: {} od {} kandidata više nije AKTIVNO (obrisani ili izmenjeni u međuvremenu)",
+                ids.size() - zakljucane.size(), ids.size());
+        return poListovima.stream()
+                .map(l -> l.stream().filter(v -> zakljucane.contains(v.varijantaId())).toList())
+                .filter(l -> !l.isEmpty())
+                .toList();
     }
 
     /**
