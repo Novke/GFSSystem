@@ -1,10 +1,13 @@
 package tri.novica.gfssystem.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import tri.novica.gfssystem.dto.domaci.DomaciTekst;
 import tri.novica.gfssystem.entity.*;
 
 import java.util.Collection;
@@ -62,4 +65,10 @@ public interface DomaciRepository extends JpaRepository<Domaci, Long>, JpaSpecif
             order by d.datum asc, d.id asc""")
     List<UradjenDomaci> uradjeniNaDomacimaGrupe(@Param("studentId") Long studentId, @Param("grupaId") Long grupaId,
                                                 @Param("predmetId") Long predmetId);
+
+    /** Tekstovi domaćih predmeta (izvor za banku), najnoviji prvi; bez grupe, studenata i predaja. */
+    @Query(value = "select new tri.novica.gfssystem.dto.domaci.DomaciTekst(d.id, d.naslov, d.text, d.datum) from Domaci d"
+            + " where d.predmet.id = :predmetId order by d.datum desc, d.id desc",
+            countQuery = "select count(d) from Domaci d where d.predmet.id = :predmetId")
+    Page<DomaciTekst> tekstovi(@Param("predmetId") Long predmetId, Pageable p);
 }

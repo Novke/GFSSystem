@@ -2,8 +2,8 @@
 # Smoke test render servisa gfs-latex (spec banke 3.1): izgradi image, pokrene kontejner sa izolacijom iz compose-a
 # (read-only, tmpfs /tmp, bez capability-ja, no-new-privileges, ograničenja memorije/CPU/procesa) i proveri API:
 # SVG i PDF primera sa podrazumevanom preambulom (TikZ automat + priloženi PNG), telo poslato kao chunked (tako šalje
-# Java klijent), grešku sa linijom, zabranjene komande (\write18, \input van radnog dir-a), dokument bez strana koji
-# sam napiše dokument.pdf, 400/404/405/413 i zdravlje.
+# Java klijent), SVG i PNG iz jednog prevođenja (formati, spec MCP 6.4), grešku sa linijom, zabranjene komande
+# (\write18, \input van radnog dir-a), dokument bez strana koji sam napiše dokument.pdf, 400/404/405/413 i zdravlje.
 # Pokretanje iz bilo kog direktorijuma: bash latex-render/test/smoke.sh (treba docker, curl, python3). Izlaz != 0 na grešku.
 set -euo pipefail
 
@@ -29,9 +29,11 @@ pad() {
 uspeh() { echo "ok   $*"; }
 
 # Telo POST /render: python3 -I -c "$PY_ZAHTEV" <tex> <format> <izlaz.json> [ime:ekstenzija:putanja ...]
+# <format> sa zarezom (npr. svg,png) je lista formati, a format je prvi (tako šalje Java klijent)
 PY_ZAHTEV='
 import base64, json, sys
 tex_put, format_, izlaz = sys.argv[1:4]
+formati = format_.split(",") if "," in format_ else None
 prilozi = []
 for arg in sys.argv[4:]:
     ime, ekstenzija, put = arg.split(":", 2)
@@ -39,8 +41,11 @@ for arg in sys.argv[4:]:
         prilozi.append({"ime": ime, "ekstenzija": ekstenzija, "sadrzaj": base64.b64encode(f.read()).decode("ascii")})
 with open(tex_put, encoding="utf-8") as f:
     tex = f.read()
+telo = {"format": formati[0] if formati else format_, "tex": tex, "prilozi": prilozi, "timeoutSekunde": 20}
+if formati:
+    telo["formati"] = formati
 with open(izlaz, "w", encoding="utf-8") as f:
-    json.dump({"format": format_, "tex": tex, "prilozi": prilozi, "timeoutSekunde": 20}, f)
+    json.dump(telo, f)
 '
 
 # Provere odgovora: python3 -I -c "$PY_PROVERA" <mod> <odgovor.json> [argumenti]; ispiše razlog i izađe sa 1 kad ne prođe
@@ -90,6 +95,34 @@ if mod == "uspeh":
     elif not sadrzaj.startswith(b"%PDF-"):
         ne("PDF ne počinje sa %%PDF-: %r" % sadrzaj[:20])
     print("%s, %d bajtova, %d ms" % (format_, len(sadrzaj), o["trajanjeMs"]))
+elif mod == "formati":
+    formati = sys.argv[3].split(",")
+    if o.get("ok") is not True:
+        ne("ok nije true, greska=%s" % json.dumps(o.get("greska"), ensure_ascii=False))
+    if not isinstance(o.get("trajanjeMs"), int):
+        ne("nema trajanjeMs")
+    visak = sorted(k for k in ("svg", "pdf", "png") if k in o and k not in formati)
+    if visak:
+        ne("odgovor nosi i netražene formate: %s" % ", ".join(visak))
+    opis = []
+    for format_ in formati:
+        sadrzaj = base64.b64decode(o.get(format_) or "", validate=True)
+        if format_ == "png":
+            if not sadrzaj.startswith(b"\x89PNG\r\n\x1a\n"):
+                ne("PNG ne počinje sa \\x89PNG: %r" % sadrzaj[:20])
+            sirina, visina = int.from_bytes(sadrzaj[16:20], "big"), int.from_bytes(sadrzaj[20:24], "big")
+            if max(sirina, visina) != 1400:
+                ne("PNG je %dx%d, duža ivica treba da bude 1400 (-scale-to 1400)" % (sirina, visina))
+            opis.append("png %dx%d, %d bajtova" % (sirina, visina, len(sadrzaj)))
+        elif format_ == "svg":
+            if b"<path" not in sadrzaj or b"<image" not in sadrzaj:
+                ne("SVG bez <path ili <image")
+            opis.append("svg %d bajtova" % len(sadrzaj))
+        elif not sadrzaj.startswith(b"%PDF-"):
+            ne("PDF ne počinje sa %%PDF-: %r" % sadrzaj[:20])
+        else:
+            opis.append("pdf %d bajtova" % len(sadrzaj))
+    print("%s, %d ms" % ("; ".join(opis), o["trajanjeMs"]))
 elif mod == "greska":
     ocekivana = int(sys.argv[3])
     g, log = neuspeh_sa_greskom()
@@ -152,6 +185,8 @@ if linije != ocekivano:
 
 zahtev() { python3 -I -c "$PY_ZAHTEV" "$@"; }
 proveri() { python3 -I -c "$PY_PROVERA" "$@"; }
+# Broj redova "prevođenje:" u logu kontejnera (jedan po pdflatex prevođenju, ma koliko formata)
+prevodjenja() { docker logs "$IME" 2>&1 | grep -c -F 'prevođenje:' || true; }
 
 # posalji <telo> <odgovor> [dodatni curl argumenti]: POST /render, ispiše HTTP status (000 kad veza pukne)
 posalji() {
@@ -205,6 +240,26 @@ ocekuj_status "$status" 200 "primer.tex (pdf)"
 rez=$(proveri uspeh "$TMP/o.json" pdf) || pad "primer.tex (pdf): $rez"
 uspeh "primer.tex -> $rez"
 
+pre=$(prevodjenja)
+zahtev "$TEST_DIR/primer.tex" svg,png "$TMP/primer-svg-png.json" "slika:png:$TMP/slika.png"
+status=$(posalji "$TMP/primer-svg-png.json" "$TMP/o.json")
+ocekuj_status "$status" 200 "primer.tex (formati svg,png)"
+rez=$(proveri formati "$TMP/o.json" svg,png) || pad "primer.tex (formati svg,png): $rez"
+# zabelezi piše red pre odgovora, ali docker logs ga čita iz pipe-a sa malim kašnjenjem
+for _ in $(seq 1 20); do
+  posle=$(prevodjenja)
+  (( posle > pre )) && break
+  sleep 0.1
+done
+(( posle == pre + 1 )) || pad "formati svg,png: $((posle - pre)) novih redova 'prevođenje:' u logu, očekivan tačno 1"
+uspeh "primer.tex, formati svg,png -> jedno prevođenje: $rez"
+
+zahtev "$TEST_DIR/primer.tex" png,pdf "$TMP/primer-png-pdf.json" "slika:png:$TMP/slika.png"
+status=$(posalji "$TMP/primer-png-pdf.json" "$TMP/o.json")
+ocekuj_status "$status" 200 "primer.tex (formati png,pdf)"
+rez=$(proveri formati "$TMP/o.json" png,pdf) || pad "primer.tex (formati png,pdf): $rez"
+uspeh "primer.tex, formati png,pdf (bez svg) -> $rez"
+
 linija=$(grep -n '\\foo' "$TEST_DIR/primer-greska.tex" | cut -d: -f1)
 zahtev "$TEST_DIR/primer-greska.tex" svg "$TMP/greska.json"
 status=$(posalji "$TMP/greska.json" "$TMP/o.json")
@@ -249,7 +304,12 @@ ocekuj_status "$status" 400 "21 prilog"
 python3 -I -c 'print("[" * 100000 + "]" * 100000)' >"$TMP/los.json"
 status=$(posalji "$TMP/los.json" "$TMP/o.json")
 ocekuj_status "$status" 400 "preduboko ugnežđen JSON"
-uspeh "neispravan JSON, format png, ime priloga ../slika, WebP prilog, 21 prilog, dubok JSON -> 400 ($rez)"
+for formati in '[]' '["svg","svg"]' '["svg","gif"]' '"svg"' '[["svg"]]'; do
+  printf '{"format":"svg","formati":%s,"tex":"x"}' "$formati" >"$TMP/los.json"
+  status=$(posalji "$TMP/los.json" "$TMP/o.json")
+  ocekuj_status "$status" 400 "formati $formati"
+done
+uspeh "neispravan JSON, format png, ime priloga ../slika, WebP prilog, 21 prilog, dubok JSON, formati prazni, ponovljeni, nepoznati ili bez liste -> 400 ($rez)"
 
 head -c $((70 * 1024 * 1024)) /dev/zero >"$TMP/veliko.json"
 status=$(posalji "$TMP/veliko.json" "$TMP/o.json")

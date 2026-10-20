@@ -42,6 +42,12 @@ public class GrupaZadataka {
     /** Šema odgovora: JSON lista polja (prazna = rad na papiru); običan tekst u bazi, čita/piše ga servis. */
     @Column(columnDefinition = "text", nullable = false)
     private String polja = "[]";
+    /** Ko je napravio grupu: nastavnik u UI-ju (podrazumevano, i za redove stare slike) ili Klod kroz MCP. */
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
+    private IzvorVarijante izvor = IzvorVarijante.RUCNO;
+    /** Klodova serija upisa (obrazac {@code ^[a-z0-9-]{3,60}$}); null za ručno napravljene grupe. */
+    @Column(length = 60)
+    private String serija;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     @Column(nullable = false)

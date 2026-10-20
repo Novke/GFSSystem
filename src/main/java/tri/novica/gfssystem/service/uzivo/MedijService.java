@@ -33,7 +33,9 @@ import java.util.regex.Pattern;
  * ({@link VrstaMedija}): slike slajdova i pitanja ({@link #sacuvaj}: PNG, JPEG, GIF, WebP; {@code SLIKA}), prilozi zadataka
  * banke ({@link #sacuvajPrilog}: PNG i JPEG kao {@code PRILOG_SLIKA}, PDF kao {@code PRILOG_PDF}) i SVG koji je renderovao
  * LaTeX ({@link #sacuvajRender}). Tip se prepoznaje po prvim bajtovima (zaglavlje i ekstenziju šalje klijent, pa se ne
- * koriste). Javno se servira samo id u kanonskom UUID obliku, pa putanja na disku ne može izaći iz direktorijuma.
+ * koriste), i za multipart i za bajtove koje je server već primio (MCP upload, {@link #sacuvaj(byte[], String)},
+ * {@link #sacuvajPrilog(byte[], String)}). Javno se servira samo id u kanonskom UUID obliku, pa putanja na disku ne može
+ * izaći iz direktorijuma.
  * <p>
  * <b>Fajl i transakcija:</b> u aktivnoj transakciji {@link #obrisi} briše fajl tek posle commit-a (pad commit-a ostavlja i
  * red i fajl), a fajl novog medija se briše ako se transakcija poništi (red ne postoji, fajl se nikad ne bi obrisao). Van
@@ -105,15 +107,25 @@ public class MedijService {
         return sacuvaj(fajl, MedijService::tipPriloga, NEDOZVOLJEN_PRILOG);
     }
 
+    /**
+     * Slika slajda ili pitanja iz bajtova (MCP upload {@code /mcp/slike}): isto prepoznavanje po prvim bajtovima i ista
+     * pravila kao {@link #sacuvaj(MultipartFile)}; {@code naziv} je ime fajla kod klijenta.
+     */
+    public MedijInfo sacuvaj(byte[] sadrzaj, String naziv) {
+        return sacuvaj(sadrzaj, naziv, MedijService::tipSlike, NEDOZVOLJEN_TIP);
+    }
+
+    /** Prilog zadatka banke iz bajtova (MCP upload {@code /mcp/prilozi}): isto kao {@link #sacuvajPrilog(MultipartFile)}. */
+    public MedijInfo sacuvajPrilog(byte[] sadrzaj, String naziv) {
+        return sacuvaj(sadrzaj, naziv, MedijService::tipPriloga, NEDOZVOLJEN_PRILOG);
+    }
+
     /** SVG koji je renderovao LaTeX kontejner (vrsta {@code RENDER_SVG}); bajtove daje server, ne klijent. */
     public MedijInfo sacuvajRender(byte[] svg, String naziv) {
         if (svg == null || svg.length == 0) {
             throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
         }
-        return upisi(naziv(naziv), new Tip("image/svg+xml", VrstaMedija.RENDER_SVG), cilj -> {
-            Files.write(cilj, svg, StandardOpenOption.CREATE_NEW);
-            return svg.length;
-        });
+        return upisi(naziv(naziv), new Tip("image/svg+xml", VrstaMedija.RENDER_SVG), upis(svg));
     }
 
     private MedijInfo sacuvaj(MultipartFile fajl, Function<byte[], Tip> prepoznaj, String nedozvoljeno) {
@@ -129,6 +141,25 @@ public class MedijService {
                 return Files.copy(in, cilj);
             }
         });
+    }
+
+    private MedijInfo sacuvaj(byte[] sadrzaj, String naziv, Function<byte[], Tip> prepoznaj, String nedozvoljeno) {
+        if (sadrzaj == null || sadrzaj.length == 0) {
+            throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
+        }
+        Tip tip = prepoznaj.apply(sadrzaj);
+        if (tip == null) {
+            throw new SystemException(nedozvoljeno, HttpStatus.BAD_REQUEST);
+        }
+        return upisi(naziv(naziv), tip, upis(sadrzaj));
+    }
+
+    /** Upis bajtova u novi fajl (postojeći fajl istog imena je greška, ne prepisuje se). */
+    private static Upis upis(byte[] sadrzaj) {
+        return cilj -> {
+            Files.write(cilj, sadrzaj, StandardOpenOption.CREATE_NEW);
+            return sadrzaj.length;
+        };
     }
 
     private MedijInfo upisi(String naziv, Tip tip, Upis upis) {

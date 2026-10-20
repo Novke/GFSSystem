@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tri.novica.gfssystem.dto.banka.*;
+import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.banka.GrupaZadatakaService;
@@ -27,16 +28,18 @@ class GrupaZadatakaRestTest {
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 17, 12, 0);
     static final Polje POLJE = new Polje("a", "a) binarni u dekadni", TipPolja.BROJ, 0.0, null, null, null, null, null);
     static final GrupaDetails DETAILS = new GrupaDetails(5L, 7L, 3L, Namena.PREDAVANJE, "2 → 10", null, 1, 2, null,
-            List.of(POLJE), List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), true, 3, 1, 2, 1, IZMENJENO);
+            List.of(POLJE), List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), true, 3, 1, 2, 1, IZMENJENO,
+            IzvorVarijante.CLAUDE, "uvoz-1", false, null);
 
     @Autowired MockMvc mvc;
     @MockitoBean GrupaZadatakaService service;
 
     @Test
     void stabloVraca200ICvoroveSaDecom() throws Exception {
-        GrupaCvor list = new GrupaCvor(5L, "2 → 10", 1, 2, true, 3, 1, 2, 1, List.of());
+        GrupaCvor list = new GrupaCvor(5L, "2 → 10", 1, 2, true, 3, 1, 2, 1, List.of(), IzvorVarijante.CLAUDE, 2, true, 4L);
         when(service.stablo(7L, Namena.PREDAVANJE))
-                .thenReturn(List.of(new GrupaCvor(3L, "Konverzije", 1, null, false, 3, 1, 2, 1, List.of(list))));
+                .thenReturn(List.of(new GrupaCvor(3L, "Konverzije", 1, null, false, 3, 1, 2, 1, List.of(list),
+                        IzvorVarijante.RUCNO, 2, false, null)));
         mvc.perform(get("/banka/stablo").param("predmetId", "7").param("namena", "PREDAVANJE"))
            .andExpect(status().isOk())
            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -44,8 +47,15 @@ class GrupaZadatakaRestTest {
            .andExpect(jsonPath("$[0].list").value(false))
            .andExpect(jsonPath("$[0].tezina").value(org.hamcrest.Matchers.nullValue()))
            .andExpect(jsonPath("$[0].brojVarijanti").value(3))
+           .andExpect(jsonPath("$[0].izvor").value("RUCNO"))
+           .andExpect(jsonPath("$[0].brojClaudeNacrta").value(2))
+           .andExpect(jsonPath("$[0].iskljucena").value(false))
+           .andExpect(jsonPath("$[0].iskljucenjeId").value(org.hamcrest.Matchers.nullValue()))
            .andExpect(jsonPath("$[0].deca[0].naziv").value("2 → 10"))
            .andExpect(jsonPath("$[0].deca[0].brojGresaka").value(1))
+           .andExpect(jsonPath("$[0].deca[0].izvor").value("CLAUDE"))
+           .andExpect(jsonPath("$[0].deca[0].iskljucena").value(true))
+           .andExpect(jsonPath("$[0].deca[0].iskljucenjeId").value(4))
            .andExpect(jsonPath("$[0].deca[0].deca").isEmpty());
     }
 
@@ -71,7 +81,11 @@ class GrupaZadatakaRestTest {
            .andExpect(jsonPath("$.putanja[0].naziv").value("Konverzije"))
            .andExpect(jsonPath("$.polja[0].kljuc").value("a"))
            .andExpect(jsonPath("$.list").value(true))
-           .andExpect(jsonPath("$.izmenjeno").value("2026-10-17T12:00:00"));
+           .andExpect(jsonPath("$.izmenjeno").value("2026-10-17T12:00:00"))
+           .andExpect(jsonPath("$.izvor").value("CLAUDE"))
+           .andExpect(jsonPath("$.serija").value("uvoz-1"))
+           .andExpect(jsonPath("$.iskljucena").value(false))
+           .andExpect(jsonPath("$.iskljucenjeId").value(org.hamcrest.Matchers.nullValue()));
         verify(service).kreiraj(new GrupaCmd(7L, 3L, null, "2 → 10", null, 2, null, List.of(POLJE)));
     }
 

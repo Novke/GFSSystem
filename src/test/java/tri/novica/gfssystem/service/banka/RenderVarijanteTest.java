@@ -38,6 +38,10 @@ class RenderVarijanteTest {
     static final String GIF = "8e6b7a4f-1c23-4b6f-8a7e-5f6071829304";
     static final byte[] SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0h1\"/></svg>".getBytes(StandardCharsets.UTF_8);
     static final byte[] SVG_RESENJA = "<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M1 1h2\"/></svg>".getBytes(StandardCharsets.UTF_8);
+    /** PNG iz render servisa (sadržaj nije bitan: {@code RenderVarijante} ga samo dekodira iz base64). */
+    static final byte[] PNG_ZADATKA = {(byte) 0x89, 'P', 'N', 'G', 1};
+    static final byte[] PNG_RESENJA = {(byte) 0x89, 'P', 'N', 'G', 2};
+    static final List<String> SVG_I_PNG = List.of("svg", "png");
     /** Broj linija pre tela u dokumentu sa podrazumevanom preambulom. */
     static final int POMAK = LatexDokument.zaTelefon(null, "").pomakLinija();
 
@@ -53,6 +57,13 @@ class RenderVarijanteTest {
 
     static RenderOdgovor uspeh(byte[] svg) {
         return new RenderOdgovor(true, Base64.getEncoder().encodeToString(svg), null, null, null, 12L, false);
+    }
+
+    /** Uspeh sa više formata ({@code null} = format nije stigao). */
+    static RenderOdgovor uspeh(byte[] svg, byte[] png) {
+        Base64.Encoder b64 = Base64.getEncoder();
+        return new RenderOdgovor(true, svg == null ? null : b64.encodeToString(svg), null, null, null, 12L, false,
+                png == null ? null : b64.encodeToString(png));
     }
 
     /** Neuspeh kompilacije kako ga šalje servis: greška (linija u dokumentu) i kraj loga. */
@@ -205,6 +216,107 @@ class RenderVarijanteTest {
         SystemException e = assertThrows(SystemException.class, () -> render.renderuj(null, "Tekst.", null, List.of()));
         assertEquals(503, e.getCode());
         assertEquals(RenderNedostupan.PORUKA, e.getMessage());
+    }
+
+    // ---------------------------------------------------------------- PNG iz istog prevođenja
+
+    @Test
+    void svgIPngSuJedanPozivPoDeluZaTekstIResenje() {
+        when(latexRender.renderuj(eq(SVG_I_PNG), contains("Pretvori $1011_2$"), anyList())).thenReturn(uspeh(SVG, PNG_ZADATKA));
+        when(latexRender.renderuj(eq(SVG_I_PNG), contains("$11$"), anyList())).thenReturn(uspeh(SVG_RESENJA, PNG_RESENJA));
+
+        RenderVarijante.Ishod ishod = render.renderuj(null, "Pretvori $1011_2$ u dekadni.", "$11$", List.of(), true, true);
+
+        assertTrue(ishod.ok());
+        assertArrayEquals(SVG, ishod.svg());
+        assertArrayEquals(SVG_RESENJA, ishod.resenjeSvg());
+        assertArrayEquals(PNG_ZADATKA, ishod.png());
+        assertArrayEquals(PNG_RESENJA, ishod.resenjePng());
+        verify(latexRender).renderuj(SVG_I_PNG, LatexDokument.zaTelefon(null, "Pretvori $1011_2$ u dekadni.").tex(), List.of());
+        verify(latexRender).renderuj(SVG_I_PNG, LatexDokument.zaTelefon(null, "$11$").tex(), List.of());
+        verify(latexRender, never()).renderuj(anyString(), anyString(), anyList());
+    }
+
+    @Test
+    void samoPngTraziSamoPngIBezSvga() {
+        when(latexRender.renderuj(eq(List.of("png")), contains("Tekst."), anyList())).thenReturn(uspeh(null, PNG_ZADATKA));
+        when(latexRender.renderuj(eq(List.of("png")), contains("$11$"), anyList())).thenReturn(uspeh(null, PNG_RESENJA));
+
+        RenderVarijante.Ishod ishod = render.renderuj(null, "Tekst.", "$11$", List.of(), false, true);
+
+        assertTrue(ishod.ok());
+        assertNull(ishod.svg());
+        assertNull(ishod.resenjeSvg());
+        assertArrayEquals(PNG_ZADATKA, ishod.png());
+        assertArrayEquals(PNG_RESENJA, ishod.resenjePng());
+        verify(latexRender, times(2)).renderuj(eq(List.of("png")), anyString(), anyList());
+        verify(latexRender, never()).renderuj(anyString(), anyString(), anyList());
+    }
+
+    @Test
+    void bezPngaIdeStariPozivSaJednimFormatom() {
+        // postojeći mokovi (renderuj(eq("svg"), ...)) važe i za 4-arg i za (svg=true, png=false)
+        when(latexRender.renderuj(eq("svg"), anyString(), anyList())).thenReturn(uspeh(SVG));
+
+        RenderVarijante.Ishod cetiri = render.renderuj(null, "Tekst.", "$11$", List.of());
+        RenderVarijante.Ishod sest = render.renderuj(null, "Tekst.", "$11$", List.of(), true, false);
+
+        for (RenderVarijante.Ishod ishod : List.of(cetiri, sest)) {
+            assertTrue(ishod.ok());
+            assertArrayEquals(SVG, ishod.svg());
+            assertNull(ishod.png());
+            assertNull(ishod.resenjePng());
+        }
+        verify(latexRender, times(4)).renderuj(eq("svg"), anyString(), anyList());
+        verify(latexRender, never()).renderuj(anyList(), anyString(), anyList());
+    }
+
+    @Test
+    void greskaResenjaUzPngNosiSvgIPngZadatka() {
+        when(latexRender.renderuj(eq(SVG_I_PNG), contains("Tekst zadatka"), anyList())).thenReturn(uspeh(SVG, PNG_ZADATKA));
+        when(latexRender.renderuj(eq(SVG_I_PNG), contains("\\foo"), anyList()))
+                .thenReturn(neuspeh(POMAK + 1, "Undefined control sequence.", "./dokument.tex:" + (POMAK + 1) + ": Undefined control sequence.\n"));
+
+        RenderVarijante.Ishod ishod = render.renderuj(null, "Tekst zadatka.", "\\foo", List.of(), true, true);
+
+        assertFalse(ishod.ok());
+        assertEquals("resenje", ishod.deo());
+        assertEquals(new RenderGreskaInfo(1, "Undefined control sequence."), ishod.greska());
+        assertArrayEquals(SVG, ishod.svg());
+        assertArrayEquals(PNG_ZADATKA, ishod.png());
+        assertNull(ishod.resenjeSvg());
+        assertNull(ishod.resenjePng());
+    }
+
+    @Test
+    void greskaTekstaUzPngNemaSlikuIResenjeSeNePrevodi() {
+        when(latexRender.renderuj(eq(SVG_I_PNG), anyString(), anyList())).thenReturn(neuspeh(POMAK + 2, "Missing $ inserted.",
+                "./dokument.tex:" + (POMAK + 2) + ": Missing $ inserted.\n"));
+
+        RenderVarijante.Ishod ishod = render.renderuj(null, "Prva\nx_1", "$11$", List.of(), true, true);
+
+        assertFalse(ishod.ok());
+        assertEquals("tekst", ishod.deo());
+        assertNull(ishod.png());
+        assertNull(ishod.svg());
+        verify(latexRender, times(1)).renderuj(anyList(), anyString(), anyList());
+    }
+
+    @Test
+    void neispravanBase64PngaJeNedostupanServis() {
+        when(latexRender.renderuj(eq(SVG_I_PNG), anyString(), anyList()))
+                .thenReturn(new RenderOdgovor(true, Base64.getEncoder().encodeToString(SVG), null, null, null, 1L, false, "nije base64 !!"));
+
+        SystemException e = assertThrows(SystemException.class,
+                () -> render.renderuj(null, "Tekst.", null, List.of(), true, true));
+        assertEquals(503, e.getCode());
+        assertEquals(RenderNedostupan.PORUKA, e.getMessage());
+    }
+
+    @Test
+    void renderBezIjednogFormataJeGreskaPrograma() {
+        assertThrows(IllegalArgumentException.class, () -> render.renderuj(null, "Tekst.", null, List.of(), false, false));
+        verifyNoInteractions(latexRender, medijService);
     }
 
     // ---------------------------------------------------------------- prilozi

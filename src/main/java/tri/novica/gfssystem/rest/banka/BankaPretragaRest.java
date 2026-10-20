@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.banka.BankaFilter;
 import tri.novica.gfssystem.dto.banka.BankaPretragaStavka;
+import tri.novica.gfssystem.entity.banka.IzvorVarijante;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.banka.StatusVarijante;
 import tri.novica.gfssystem.service.banka.BankaPretragaService;
@@ -23,15 +24,16 @@ public class BankaPretragaRest {
 
     /**
      * Lista varijanti: filteri su opcioni, {@code q} (bar 2 znaka, 400 inače) se traži u nazivu i tekstu varijante i u
-     * nazivu grupe; {@code page}/{@code size} (podrazumevano 25, najviše 100) i {@code sort} po {@code izmenjeno} ili
-     * {@code naziv} (podrazumevano {@code izmenjeno,desc}).
+     * nazivu grupe, {@code izvor} je izvor varijante, {@code serija} Klodova serija (van obrasca 400); {@code page}/{@code size}
+     * (podrazumevano 25, najviše 100) i {@code sort} po {@code izmenjeno} ili {@code naziv} (podrazumevano {@code izmenjeno,desc}).
      */
     @GetMapping("/pretraga")
     @ResponseStatus(HttpStatus.OK)
     public PagedModel<BankaPretragaStavka> pretraga(@RequestParam(required = false) Long predmetId,
             @RequestParam(required = false) Namena namena, @RequestParam(required = false) String q,
-            @RequestParam(required = false) StatusVarijante status, Pageable pageable) {
-        return pretragaService.pretraga(new BankaFilter(predmetId, namena, q, status),
+            @RequestParam(required = false) StatusVarijante status, @RequestParam(required = false) IzvorVarijante izvor,
+            @RequestParam(required = false) String serija, Pageable pageable) {
+        return pretragaService.pretraga(new BankaFilter(predmetId, namena, q, status, izvor, serija),
                 PageableUtil.proveri(pageable, BankaPretragaService.SORT_POLJA, BankaPretragaService.PODRAZUMEVANI_SORT));
     }
 }

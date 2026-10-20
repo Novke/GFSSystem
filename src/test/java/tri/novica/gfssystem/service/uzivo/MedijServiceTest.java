@@ -356,6 +356,94 @@ class MedijServiceTest {
         verify(medijRepository, never()).save(any());
     }
 
+    // --- bajtovi koje je server već primio (MCP upload: /mcp/prilozi, /mcp/slike) ---
+
+    @Test
+    void pdfPrilogIzBajtovaJePrilogPdf() throws IOException {
+        MedijInfo info = service.sacuvajPrilog(PDF, "grafikon.pdf");
+
+        assertEquals("application/pdf", info.mime());
+        assertEquals("grafikon.pdf", info.naziv());
+        assertEquals(PDF.length, info.velicina());
+        assertEquals(info.id(), UUID.fromString(info.id()).toString());
+        assertArrayEquals(PDF, Files.readAllBytes(dir.resolve(info.id())));
+
+        ArgumentCaptor<Medij> red = ArgumentCaptor.forClass(Medij.class);
+        verify(medijRepository).save(red.capture());
+        assertEquals(info.id(), red.getValue().getId());
+        assertEquals(VrstaMedija.PRILOG_PDF, red.getValue().getVrsta());
+        assertEquals("application/pdf", red.getValue().getMime());
+        assertEquals(PDF.length, red.getValue().getVelicina());
+        assertEquals(SADA, red.getValue().getKreirano());
+    }
+
+    @Test
+    void pngIzBajtovaJeSlikaIliPrilogSlika() throws IOException {
+        MedijInfo slika = service.sacuvaj(PNG, "tabla.png");
+        MedijInfo prilog = service.sacuvajPrilog(JPEG, "skica.jpg");
+
+        assertEquals("image/png", slika.mime());
+        assertEquals("image/jpeg", prilog.mime());
+        assertArrayEquals(PNG, Files.readAllBytes(dir.resolve(slika.id())));
+        ArgumentCaptor<Medij> redovi = ArgumentCaptor.forClass(Medij.class);
+        verify(medijRepository, times(2)).save(redovi.capture());
+        assertEquals(VrstaMedija.SLIKA, redovi.getAllValues().get(0).getVrsta());
+        assertEquals(VrstaMedija.PRILOG_SLIKA, redovi.getAllValues().get(1).getVrsta());
+    }
+
+    @ParameterizedTest
+    @MethodSource("dozvoljeneSlike")
+    void mimeSlikeIzBajtova(byte[] sadrzaj, String mime) {
+        assertEquals(mime, service.sacuvaj(sadrzaj, "x").mime());
+    }
+
+    @Test
+    void svgIzBajtovaSeOdbija() throws IOException {
+        SystemException ex = assertThrows(SystemException.class, () -> service.sacuvaj(SVG, "a.png"));
+        assertEquals(400, ex.getCode());
+        assertEquals("Dozvoljene su samo slike PNG, JPEG, GIF i WebP.", ex.getMessage());
+        // PDF nije slika slajda ni kao bajtovi
+        SystemException pdf = assertThrows(SystemException.class, () -> service.sacuvaj(PDF, "a.pdf"));
+        assertEquals("Dozvoljene su samo slike PNG, JPEG, GIF i WebP.", pdf.getMessage());
+        assertNiceganNaDisku();
+        verify(medijRepository, never()).save(any());
+    }
+
+    @ParameterizedTest(name = "prilog {0} iz bajtova se odbija")
+    @MethodSource("nedozvoljeniPrilozi")
+    void nedozvoljenPrilogIzBajtovaSeOdbija(String ime, byte[] sadrzaj) throws IOException {
+        SystemException ex = assertThrows(SystemException.class, () -> service.sacuvajPrilog(sadrzaj, "x.pdf"));
+        assertEquals(400, ex.getCode());
+        assertEquals("Dozvoljeni prilozi: PNG, JPEG i PDF.", ex.getMessage());
+        assertNiceganNaDisku();
+        verify(medijRepository, never()).save(any());
+    }
+
+    @Test
+    void prazniBajtoviSeOdbijaju() throws IOException {
+        for (byte[] prazan : new byte[][]{new byte[0], null}) {
+            assertEquals("Fajl je prazan.", assertThrows(SystemException.class, () -> service.sacuvaj(prazan, "a.png")).getMessage());
+            assertEquals("Fajl je prazan.", assertThrows(SystemException.class, () -> service.sacuvajPrilog(prazan, "a.pdf")).getMessage());
+        }
+        assertNiceganNaDisku();
+        verify(medijRepository, never()).save(any());
+    }
+
+    @Test
+    void nazivBajtovaKaoKodMultiparta() {
+        assertEquals("slika", service.sacuvaj(PNG, null).naziv());
+        assertEquals("slika", service.sacuvajPrilog(PDF, "  ").naziv());
+        assertEquals("a".repeat(255), service.sacuvajPrilog(PDF, "a".repeat(300) + ".pdf").naziv());
+    }
+
+    @Test
+    void greskaBazePriBajtovimaBriseFajl() throws IOException {
+        when(medijRepository.save(any(Medij.class))).thenThrow(new IllegalStateException("baza"));
+        assertThrows(IllegalStateException.class, () -> service.sacuvajPrilog(PDF, "a.pdf"));
+        assertThrows(IllegalStateException.class, () -> service.sacuvaj(PNG, "a.png"));
+        assertNiceganNaDisku();
+    }
+
     // --- render (SVG iz LaTeX-a) ---
 
     @Test

@@ -1,4 +1,4 @@
-# Render servis gfs-latex (spec banke 3.1): LaTeX -> PDF (pdflatex) -> SVG (pdftocairo), HTTP server iz Python stdlib-a.
+# Render servis gfs-latex (spec banke 3.1): LaTeX -> PDF (pdflatex) -> SVG i PNG (pdftocairo), HTTP server iz Python stdlib-a.
 # Bazna slika sa AWS ogledala zvaničnih Docker slika (ista kao na Docker Hub-u): anonimni pull sa Docker Hub-a deli
 # limit po IP adresi GitHub runnera i ume da obori CI pre build-a.
 FROM public.ecr.aws/docker/library/debian:bookworm-slim

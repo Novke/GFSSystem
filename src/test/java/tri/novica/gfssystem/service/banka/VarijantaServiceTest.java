@@ -251,7 +251,7 @@ class VarijantaServiceTest {
         assertEquals(List.of(), service.lista(grupa.getId(), StatusVarijante.AKTIVNA));
         VarijantaInfo info = service.lista(grupa.getId(), StatusVarijante.NACRT).get(0);
         assertEquals(new VarijantaInfo(d.id(), grupa.getId(), 1, "V1", StatusVarijante.NACRT, IzvorVarijante.RUCNO,
-                RenderStatus.OK, "svg-1", "svg-2", SADA), info);
+                RenderStatus.OK, "svg-1", "svg-2", SADA, false, null, null), info);
     }
 
     @Test
