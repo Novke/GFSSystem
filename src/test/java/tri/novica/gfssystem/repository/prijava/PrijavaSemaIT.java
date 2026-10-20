@@ -43,7 +43,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Šema prijave (Flyway V15) i repozitorijumi nad pravom MySQL bazom: svaka nova tabela čuva i učitava red, upiti koje
+ * Šema prijave (Flyway V14) i repozitorijumi nad pravom MySQL bazom: svaka nova tabela čuva i učitava red, upiti koje
  * kasniji servisi koriste, {@code UNIQUE} na heševima tokena i brisanje u bazi (CASCADE na studentu i registraciji,
  * SET NULL za registraciju spoljnog identiteta). Sve u transakciji testa (rollback na kraju).
  */

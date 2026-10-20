@@ -595,9 +595,8 @@ through the plan's "Tačke proširenja za B i A2".
 
 ## Prijava (teacher login, student account without a password, Moodle LTI)
 
-Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo `Novke/GFS-deploy`. The branch `feature/prijava`
-carries the provisional migration `V15__prijava.sql` (renumbered to the next free version at the merge into `staging`; it only
-creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|entity|repository/prijava/`, `.../lti/`,
+Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo `Novke/GFS-deploy`. The migration is
+`V14__prijava.sql` (it only creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|entity|repository/prijava/`, `.../lti/`,
 `service/mejl/` and `config/{NastavnikSvojstva,OtvorenEntityManagerConfig}`.
 
 - **Access classes:** `security/PristupMatrica` is the single source of truth: `ANONIMNO`, `STUDENT` and `MCP` are listed,
@@ -760,9 +759,8 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. `V11` = `banka_zadataka` (tables `grupe_zadataka`, `varijante`, `varijanta_prilozi`, column `mediji.vrsta` `varchar(20) NOT NULL DEFAULT 'SLIKA'`, nullable `predmeti.latex_preambula`), idempotent. `V12` = `mcp_banka` (`izvor`/`serija` on groups, `ikad_odobrena`,
   `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
   idempotent. `V13` = slide Zadatak (`slajdovi` group/timer/count, `izvodjenja.boduje`/`resenje_prikazano`/`zadatak_broj_varijanti`,
-  `ucesnici.student_id`, `odgovori.polja`/`varijanta_id`, table `zadatak_dodele`; see "Zadatak slide"), idempotent. **Next free
-  version: `V14`** (on `staging`). Branch `feature/prijava` carries the provisional `V15__prijava.sql` (renumbered to the next free
-  version, today `V14`, at its merge into `staging`).
+  `ucesnici.student_id`, `odgovori.polja`/`varijanta_id`, table `zadatak_dodele`; see "Zadatak slide"), idempotent. `V14` = prijava
+  (`V14__prijava.sql`). **Next free version: `V15`** (on `staging`).
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

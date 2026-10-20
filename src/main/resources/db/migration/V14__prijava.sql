@@ -1,4 +1,4 @@
--- V15: prijava (spec 2026-10-19-prijava-design, sekcija 9): sesije nastavnika, uređaji studenata (nalog bez lozinke),
+-- V14: prijava (spec 2026-10-19-prijava-design, sekcija 9): sesije nastavnika, uređaji studenata (nalog bez lozinke),
 -- jednokratni kodovi za prijavu, spoljni identiteti (Moodle LTI), obaveštenja za nastavnika, pokušaji (limiti koji
 -- preživljavaju restart), ključevi aplikacije (HMAC za lažnu masku mejla) i LTI 1.3 tabele (registracije platformi,
 -- ključ alata, OIDC stanja, povezivanje Moodle naloga sa studentom).
