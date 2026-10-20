@@ -17,7 +17,7 @@ class KolacicTest {
     void imena() {
         assertEquals("gfs_nastavnik", Kolacici.NASTAVNIK);
         assertEquals("gfs_student", Kolacici.STUDENT);
-        assertEquals("gfs_lti", Kolacici.LTI);
+        assertEquals("__Host-gfs_lti", Kolacici.LTI);
         assertEquals("gfs_lti_par", Kolacici.LTI_PAR);
     }
 
@@ -83,6 +83,33 @@ class KolacicTest {
         assertTrue(h.contains("Max-Age=0"), h);
         assertTrue(h.contains("SameSite=None"), h);
         assertTrue(h.contains("Secure"), h);
+    }
+
+    /** {@code __Host-} traži {@code Secure}, {@code Path=/} i nijedan {@code Domain}, i na postavljanju i na brisanju. */
+    @Test
+    void ltiKolacicIspunjavaZahteveZaPrefiksHost() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        Kolacici.postavi(req, res, Kolacici.LTI, "t", Duration.ofSeconds(600), "None");
+        Kolacici.obrisi(req, res, Kolacici.LTI);
+        for (String h : res.getHeaders("Set-Cookie")) {
+            assertTrue(h.startsWith("__Host-gfs_lti="), h);
+            assertTrue(h.contains("; Secure"), h);
+            assertTrue(h.contains("; HttpOnly"), h);
+            assertTrue(h.contains("; Path=/"), h);
+            assertTrue(h.contains("; SameSite=None"), h);
+            assertFalse(h.toLowerCase().contains("domain"), h);
+        }
+    }
+
+    @Test
+    void ltiKolacicSeCitaSamoPodNovimImenom() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        req.setCookies(new Cookie("gfs_lti", "staro"));
+        assertEquals(Optional.empty(), Kolacici.procitaj(req, Kolacici.LTI));
+        req.setCookies(new Cookie("gfs_lti", "staro"), new Cookie("__Host-gfs_lti", "novo"));
+        assertEquals(Optional.of("novo"), Kolacici.procitaj(req, Kolacici.LTI));
+        assertEquals(List.of("novo"), Kolacici.procitajSve(req, Kolacici.LTI));
     }
 
     @Test

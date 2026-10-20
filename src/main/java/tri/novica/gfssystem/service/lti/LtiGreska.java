@@ -9,7 +9,7 @@ public enum LtiGreska {
     NEPOZNATA_REGISTRACIJA("nepoznata-registracija"),
     /** {@code state} ne postoji, istekao je, već je iskorišćen ili ga ovaj pregledač nije započeo. */
     ISTEKLA_SESIJA("istekla-sesija"),
-    /** Launch bez kolačića {@code gfs_lti} (pregledač ne vraća {@code SameSite=None}); provera se ne slabi. */
+    /** Launch bez kolačića {@code __Host-gfs_lti} (pregledač ne vraća {@code SameSite=None}); provera se ne slabi. */
     BEZ_KOLACICA("bez-kolacica"),
     /** Potpis, izdavač, {@code aud}/{@code azp}, vreme, {@code nonce}, {@code deployment_id} ili {@code sub} ne valja. */
     NEISPRAVAN_TOKEN("neispravan-token"),

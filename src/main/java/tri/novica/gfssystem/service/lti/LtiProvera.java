@@ -99,15 +99,25 @@ public class LtiProvera {
             throw neispravan("kljucevi-platforme");
         }
         JWTClaimsSet c;
+        Object sirovSub;
         try {
             // potpis je proveren za isti tekst; ovde samo sirove vrednosti claim-ova
-            c = SignedJWT.parse(idToken).getJWTClaimsSet();
+            SignedJWT jwt = SignedJWT.parse(idToken);
+            c = jwt.getJWTClaimsSet();
+            // Nimbus (i Spring) pretvore broj u tekst, pa se tip čita iz izvornog JSON-a
+            Map<String, Object> telo = jwt.getPayload().toJSONObject();
+            sirovSub = telo == null ? null : telo.get("sub");
         } catch (ParseException e) {
             throw neispravan("oblik");
         }
         if (c.getIssueTime() == null) {
             // Spring dopuni iat iz exp kad ga nema (MappedJwtClaimSetConverter), pa se obaveznost proverava na sirovom
             throw neispravan("iat");
+        }
+        String sub = c.getSubject();
+        if (!(sirovSub instanceof String) || sub == null || sub.isBlank() || sub.length() > NAJDUZI_SUB) {
+            // sub mora biti JSON string (broj bi biblioteka tiho pretvorila u tekst)
+            throw neispravan("sub");
         }
         if (!RESOURCE_LINK_REQUEST.equals(c.getClaim(MESSAGE_TYPE))) {
             throw new LtiOdbijeno(LtiGreska.NEPODRZANA_PORUKA, "message_type");

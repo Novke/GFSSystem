@@ -21,7 +21,7 @@ public final class Kolacici {
 
     public static final String NASTAVNIK = "gfs_nastavnik";
     public static final String STUDENT = "gfs_student";
-    public static final String LTI = "gfs_lti";
+    public static final String LTI = "__Host-gfs_lti";
     public static final String LTI_PAR = "gfs_lti_par";
 
     /** Najviše toliko istoimenih vrednosti čita {@link #procitajSve} (svaka košta jedan upit u bazu). */
@@ -38,7 +38,7 @@ public final class Kolacici {
 
     /**
      * Briše kolačić ({@code Max-Age=0}) sa istim atributima kao pri postavljanju. {@code SameSite} se zna po imenu:
-     * {@code gfs_lti} je {@code None}, svi ostali {@code Lax}.
+     * {@code __Host-gfs_lti} je {@code None}, svi ostali {@code Lax}.
      */
     public static void obrisi(HttpServletRequest req, HttpServletResponse res, String ime) {
         dodaj(req, res, ime, "", Duration.ZERO, LTI.equals(ime) ? "None" : "Lax");

@@ -162,7 +162,8 @@ class CiscenjePrijaveIT {
     void radiJednomNaSatUSedmomMinutu() throws Exception {
         Scheduled s = CiscenjePrijave.class.getMethod("ocisti").getAnnotation(Scheduled.class);
         assertNotNull(s, "ocisti() mora biti @Scheduled");
-        assertEquals("0 7 * * * *", s.cron());
+        // podrazumevani izraz je jednom na sat u 7. minutu; svojstvo ga prepisuje (u testovima je "-" = isključeno)
+        assertEquals("${gfs.prijava.ciscenje.cron:0 7 * * * *}", s.cron());
     }
 
     // ---------------------------------------------------------------- rokovi po tabelama

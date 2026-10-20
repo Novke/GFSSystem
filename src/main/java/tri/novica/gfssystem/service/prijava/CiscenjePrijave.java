@@ -52,7 +52,8 @@ public class CiscenjePrijave {
         this.clock = clock;
     }
 
-    @Scheduled(cron = "0 7 * * * *")
+    /** Cron se čita iz {@code gfs.prijava.ciscenje.cron} ({@code -} gasi raspored, testovi ga gase). */
+    @Scheduled(cron = "${gfs.prijava.ciscenje.cron:0 7 * * * *}")
     public Obrisano ocisti() {
         LocalDateTime sada = LocalDateTime.now(clock);
         LocalDateTime lti = sada.minus(LTI_NAKON_ISTEKA);

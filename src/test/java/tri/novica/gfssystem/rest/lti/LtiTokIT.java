@@ -559,25 +559,42 @@ class LtiTokIT {
         assertFalse(postavlja(r, Kolacici.LTI_PAR), "greška ne započinje povezivanje");
     }
 
-    @Test
-    void pogresanAud() throws Exception {
-        Pocetak p = prijava();
-        greska(start(p, token(p, "u1", b -> b.audience("drugi-klijent"))), "neispravan-token");
+    /** Deo loga posle {@code od} mora imati {@code razlog=<reč>} (test dokazuje zašto je token odbijen, ne samo da jeste). */
+    static void razlog(CapturedOutput izlaz, int od, String rec) {
+        String novo = izlaz.getAll().substring(od);
+        Matcher m = Pattern.compile("razlog=([^,\\s]+(?:,[^,\\s]+)*)").matcher(novo);
+        assertTrue(m.find(), "nema razloga u logu: " + novo);
+        assertTrue(List.of(m.group(1).split(",")).contains(rec), "očekivan razlog " + rec + ", log: " + novo);
     }
 
     @Test
-    void audNizTraziAzpJednakClientId() throws Exception {
+    void pogresanAud(CapturedOutput izlaz) throws Exception {
+        Pocetak p = prijava();
+        int od = izlaz.getAll().length();
+        greska(start(p, token(p, "u1", b -> b.audience("drugi-klijent"))), "neispravan-token");
+        razlog(izlaz, od, "aud");
+        assertFalse(izlaz.getAll().contains("drugi-klijent"), "vrednost claim-a ne sme u log");
+    }
+
+    @Test
+    void audNizTraziAzpJednakClientId(CapturedOutput izlaz) throws Exception {
         Pocetak a = prijava();
+        int od = izlaz.getAll().length();
         greska(start(a, token(a, "u1", b -> b.audience(List.of(reg.clientId(), "drugi")))), "neispravan-token");
+        razlog(izlaz, od, "azp");
         Pocetak b2 = prijava();
+        od = izlaz.getAll().length();
         greska(start(b2, token(b2, "u1", b -> b.audience(List.of(reg.clientId(), "drugi")).claim("azp", "drugi"))),
                 "neispravan-token");
+        razlog(izlaz, od, "azp");
         Pocetak c = prijava();
         preusmerava(start(c, token(c, "u-" + UUID.randomUUID(),
                 b -> b.audience(List.of(reg.clientId(), "drugi")).claim("azp", reg.clientId()))), "/nalog/moodle");
         // azp i uz jedan aud mora biti Client ID
         Pocetak d = prijava();
+        od = izlaz.getAll().length();
         greska(start(d, token(d, "u1", b -> b.claim("azp", "drugi"))), "neispravan-token");
+        razlog(izlaz, od, "azp");
     }
 
     @Test
@@ -615,34 +632,49 @@ class LtiTokIT {
     }
 
     @Test
-    void nonceNeOdgovara() throws Exception {
+    void nonceNeOdgovara(CapturedOutput izlaz) throws Exception {
         Pocetak p = prijava();
+        int od = izlaz.getAll().length();
         greska(start(p, token(p, "u1", b -> b.claim("nonce", "drugi-nonce"))), "neispravan-token");
+        razlog(izlaz, od, "nonce");
         Pocetak q = prijava();
+        od = izlaz.getAll().length();
         greska(start(q, token(q, "u1", b -> b.claim("nonce", null))), "neispravan-token");
+        razlog(izlaz, od, "nonce");
+        assertFalse(izlaz.getAll().contains("drugi-nonce"), "vrednost claim-a ne sme u log");
     }
 
     @Test
-    void nonceIzDrugogStanjaNeProlazi() throws Exception {
+    void nonceIzDrugogStanjaNeProlazi(CapturedOutput izlaz) throws Exception {
         Pocetak a = prijava();
         Pocetak b = prijava();
+        int od = izlaz.getAll().length();
         // token napravljen za stanje a, poslat uz stanje b
         greska(start(b, token(a, "u1", x -> {})), "neispravan-token");
+        razlog(izlaz, od, "nonce");
     }
 
     @Test
-    void istekaoTokenIVremeUBuducnosti() throws Exception {
+    void istekaoTokenIVremeUBuducnosti(CapturedOutput izlaz) throws Exception {
         Instant sada = Instant.now();
         Pocetak a = prijava();
+        int od = izlaz.getAll().length();
         greska(start(a, token(a, "u1", b -> b.expirationTime(Date.from(sada.minusSeconds(120)))
                 .issueTime(Date.from(sada.minusSeconds(300))))), "neispravan-token");
+        razlog(izlaz, od, "exp");
         Pocetak b = prijava();
+        od = izlaz.getAll().length();
         greska(start(b, token(b, "u1", x -> x.expirationTime(null))), "neispravan-token");
+        razlog(izlaz, od, "exp");
         Pocetak c = prijava();
+        od = izlaz.getAll().length();
         greska(start(c, token(c, "u1", x -> x.issueTime(Date.from(sada.plusSeconds(300)))
                 .expirationTime(Date.from(sada.plusSeconds(600))))), "neispravan-token");
+        razlog(izlaz, od, "iat");
         Pocetak d = prijava();
+        od = izlaz.getAll().length();
         greska(start(d, token(d, "u1", x -> x.issueTime(null))), "neispravan-token");
+        razlog(izlaz, od, "iat");
         // u okviru leeway-a od 60 s: prolazi
         Pocetak e = prijava();
         preusmerava(start(e, token(e, "u-" + UUID.randomUUID(), x -> x.expirationTime(Date.from(sada.minusSeconds(20)))
@@ -650,22 +682,33 @@ class LtiTokIT {
     }
 
     @Test
-    void pogresanDeploymentIIzdavac() throws Exception {
+    void pogresanDeploymentIIzdavac(CapturedOutput izlaz) throws Exception {
         Pocetak a = prijava();
+        int od = izlaz.getAll().length();
         greska(start(a, token(a, "u1", b -> b.claim(LTI + "deployment_id", "6"))), "neispravan-token");
+        razlog(izlaz, od, "deployment_id");
         Pocetak b = prijava();
+        od = izlaz.getAll().length();
         greska(start(b, token(b, "u1", x -> x.claim(LTI + "deployment_id", null))), "neispravan-token");
+        razlog(izlaz, od, "deployment_id");
         Pocetak c = prijava();
+        od = izlaz.getAll().length();
         greska(start(c, token(c, "u1", x -> x.issuer("https://drugi-moodle.example.test"))), "neispravan-token");
+        razlog(izlaz, od, "iss");
+        assertFalse(izlaz.getAll().contains("drugi-moodle"), "vrednost claim-a ne sme u log");
     }
 
     @Test
-    void nepoznatKidIPotpisDrugimKljucem() throws Exception {
+    void nepoznatKidIPotpisDrugimKljucem(CapturedOutput izlaz) throws Exception {
         Pocetak a = prijava();
         RSAKey nepoznat = new RSAKeyGenerator(2048).keyID("nepoznat-kid").generate();
+        int od = izlaz.getAll().length();
         greska(start(a, potpisi(claims(a, "u1").build(), nepoznat)), "neispravan-token");
+        razlog(izlaz, od, "potpis");
         Pocetak b = prijava();
+        od = izlaz.getAll().length();
         greska(start(b, potpisi(claims(b, "u1").build(), drugiKljuc)), "neispravan-token");
+        razlog(izlaz, od, "potpis");
     }
 
     @Test
@@ -702,9 +745,31 @@ class LtiTokIT {
     }
 
     @Test
-    void bezSubJeNeispravanToken() throws Exception {
+    void bezSubJeNeispravanToken(CapturedOutput izlaz) throws Exception {
         Pocetak a = prijava();
+        int od = izlaz.getAll().length();
         greska(start(a, token(a, null, b -> {})), "neispravan-token");
+        razlog(izlaz, od, "sub");
+    }
+
+    @Test
+    void subKaoBrojNijeTekstPaJeNeispravanToken(CapturedOutput izlaz) throws Exception {
+        // biblioteke tiho pretvore broj u tekst ("123"): sub mora biti JSON string u izvornom tokenu
+        Pocetak a = prijava();
+        int od = izlaz.getAll().length();
+        greska(start(a, token(a, "u1", b -> b.claim("sub", 123))), "neispravan-token");
+        razlog(izlaz, od, "sub");
+        assertEquals(0, jdbc.queryForObject("select count(*) from lti_povezivanja where registracija_id = ?",
+                Integer.class, reg.id()));
+    }
+
+    @Test
+    void nbfUBuducnostiJeNeispravanToken(CapturedOutput izlaz) throws Exception {
+        Pocetak a = prijava();
+        int od = izlaz.getAll().length();
+        greska(start(a, token(a, "u1", b -> b.notBeforeTime(Date.from(Instant.now().plusSeconds(300))))),
+                "neispravan-token");
+        razlog(izlaz, od, "nbf");
     }
 
     @Test
@@ -749,6 +814,92 @@ class LtiTokIT {
         Pocetak p = prijava();
         jdbc.update("update lti_registracije set aktivna = 0 where id = ?", reg.id());
         greska(start(p, token(p, "u1", b -> {})), "nepoznata-registracija");
+    }
+
+    @Test
+    void kolacicLtiImaPrefiksHostISamoTeAtribute() throws Exception {
+        Pocetak p = prijava();
+        assertEquals("__Host-gfs_lti", Kolacici.LTI);
+        String setCookie = postavljen(p.odgovor(), "__Host-gfs_lti");
+        assertTrue(setCookie.startsWith("__Host-gfs_lti=" + p.kolacic() + ";"), setCookie);
+        // __Host- traži Secure, Path=/ i nijedan Domain; ovde su to tačno ovi atributi (Expires prati Max-Age)
+        List<String> atributi = new ArrayList<>(List.of(setCookie.split("; ")));
+        atributi.removeFirst();
+        assertTrue(atributi.removeIf(a -> a.startsWith("Expires=")), setCookie);
+        assertEquals(java.util.Set.of("Path=/", "Max-Age=600", "Secure", "HttpOnly", "SameSite=None"),
+                new java.util.HashSet<>(atributi), setCookie);
+        assertEquals(5, atributi.size(), setCookie);
+        assertFalse(setCookie.toLowerCase().contains("domain"), setCookie);
+        assertFalse(postavlja(p.odgovor(), "gfs_lti"), "staro ime se više ne postavlja");
+    }
+
+    @Test
+    void launchCitaSamoKolacicSaPrefiksomHost() throws Exception {
+        Pocetak p = prijava();
+        // stari naziv ne vezuje launch za pregledač
+        greska(start(p.state(), token(p, "u1", b -> {}), new Cookie("gfs_lti", p.kolacic())), "bez-kolacica");
+        Pocetak q = prijava();
+        preusmerava(start(q.state(), token(q, "u-" + UUID.randomUUID(), b -> {}),
+                new Cookie("__Host-gfs_lti", q.kolacic())), "/nalog/moodle");
+    }
+
+    @Test
+    void predugackSubJeNeispravanToken() throws Exception {
+        // sub dug 256 znakova prelazi najveću dužinu i ne sme stići do kolone varchar(255)
+        Pocetak a = prijava();
+        greska(start(a, token(a, "s".repeat(256), b -> {})), "neispravan-token");
+    }
+
+    @Test
+    void imeBezNevidljivihZnakovaISmeraPisanja() throws Exception {
+        Pocetak a = prijava();
+        String par = vrednost(postavljen(start(a, token(a, "u-" + UUID.randomUUID(),
+                b -> b.claim("name", "Ana\u202E Anić "))), Kolacici.LTI_PAR));
+        mvc.perform(povezivanje(par)).andExpect(jsonPath("$.ime").value("Ana Anić"));
+
+        Pocetak b = prijava();
+        String niz = vrednost(postavljen(start(b, token(b, "u-" + UUID.randomUUID(),
+                x -> x.claim("name", "Ana\u200B\u2066\u2028  \t Anić\u00AD\uE000"))), Kolacici.LTI_PAR));
+        mvc.perform(povezivanje(niz)).andExpect(jsonPath("$.ime").value("Ana Anić"));
+
+        Pocetak c = prijava();
+        String razmaci = vrednost(postavljen(start(c, token(c, "u-" + UUID.randomUUID(),
+                x -> x.claim("name", "Ana    Anić"))), Kolacici.LTI_PAR));
+        mvc.perform(povezivanje(razmaci)).andExpect(jsonPath("$.ime").value("Ana Anić"));
+
+        // ime od samih nevidljivih znakova je kao da ga nema
+        Pocetak d = prijava();
+        String prazno = vrednost(postavljen(start(d, token(d, "u-" + UUID.randomUUID(),
+                x -> x.claim("name", "\u202E\u200B").claim("given_name", null).claim("family_name", null))),
+                Kolacici.LTI_PAR));
+        mvc.perform(povezivanje(prazno)).andExpect(jsonPath("$.ime").isEmpty());
+    }
+
+    @Test
+    void corsOstajeZaPoveziIPovezivanje() throws Exception {
+        for (String[] t : new String[][]{{"/public/lti/povezi", "POST"}, {"/public/lti/povezivanje", "GET"}}) {
+            MockHttpServletResponse r = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .options(t[0]).with(saIp())
+                            .header(HttpHeaders.ORIGIN, "https://napadac.example.com")
+                            .header("Access-Control-Request-Method", t[1]))
+                    .andReturn().getResponse();
+            assertEquals(403, r.getStatus(), t[0]);
+            assertNull(r.getHeader("Access-Control-Allow-Origin"), t[0]);
+        }
+    }
+
+    @Test
+    void startSaKosomCrtomNijeIzuzet() throws Exception {
+        Pocetak p = prijava();
+        MockHttpServletResponse r = mvc.perform(post("/public/lti/start/").with(saIp())
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header(HttpHeaders.ORIGIN, moodle).header("Sec-Fetch-Site", "cross-site")
+                        .param("state", p.state()).param("id_token", token(p, "u-" + UUID.randomUUID(), b -> {}))
+                        .cookie(new Cookie(Kolacici.LTI, p.kolacic())))
+                .andReturn().getResponse();
+        assertNotEquals(303, r.getStatus(), "putanja sa kosom crtom nije launch");
+        assertEquals(0, jdbc.queryForObject("select count(*) from lti_stanja where stanje_hes = ? and iskorisceno is not null",
+                Integer.class, TokenHash.od(p.state())), "state nije potrošen");
     }
 
     // ---------------------------------------------------------------- povezivanje
@@ -850,5 +1001,45 @@ class LtiTokIT {
         jdbc.update("update lti_povezivanja set istice = ? where token_hes = ?", LocalDateTime.now().minusSeconds(1),
                 TokenHash.od(par));
         mvc.perform(povezivanje(par)).andExpect(status().isGone());
+    }
+
+    // ---------------------------------------------------------------- sub se poredi binarno
+
+    @Test
+    void subOdVelikihIMalihSlovaSuRazliciteVeze() throws Exception {
+        Student prvi = studenti.napravi("aa@example.test");
+        Student drugi = studenti.napravi("bb@example.test");
+        vezi(prvi, "aB");
+        vezi(drugi, "Ab");          // ne sme biti duplikat prvog
+        vezi(studenti.napravi("cc@example.test"), "a");
+        vezi(studenti.napravi("dd@example.test"), "\u00E1");   // a sa oštrim akcentom
+        assertEquals(1, brojVeza("aB"));
+        assertEquals(1, brojVeza("Ab"));
+        assertEquals(1, brojVeza("a"));
+        assertEquals(1, brojVeza("\u00E1"));
+
+        Pocetak p = prijava();
+        MockHttpServletResponse r = start(p, token(p, "aB", b -> {}));
+        preusmerava(r, "/nalog");
+        String student = vrednost(postavljen(r, Kolacici.STUDENT));
+        mvc.perform(get("/public/nalog/ja").cookie(new Cookie(Kolacici.STUDENT, student)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.indeks").value(prvi.getIndeks()));
+
+        Pocetak q = prijava();
+        MockHttpServletResponse r2 = start(q, token(q, "Ab", b -> {}));
+        String student2 = vrednost(postavljen(r2, Kolacici.STUDENT));
+        mvc.perform(get("/public/nalog/ja").cookie(new Cookie(Kolacici.STUDENT, student2)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.indeks").value(drugi.getIndeks()));
+    }
+
+    @Test
+    void poveziSubKojiSeRazlikujeSamoUVelicini() throws Exception {
+        Student prvi = studenti.napravi("ee@example.test");
+        Student drugi = studenti.napravi("ff@example.test");
+        vezi(prvi, "xY");
+        String par = parZa("Xy");
+        assertEquals(204, povezi(prijaviKodom(drugi), par).getStatus());
+        assertEquals(1, brojVeza("xY"));
+        assertEquals(1, brojVeza("Xy"));
     }
 }

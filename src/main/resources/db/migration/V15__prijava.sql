@@ -10,6 +10,9 @@
 -- Vremena su datetime(3). Tokeni iz kolačića su u bazi samo kao SHA-256 (hex, char(64), UNIQUE), nikad sami tokeni.
 -- Brisanje studenta briše njegove uređaje, kodove, identitete i obaveštenja (CASCADE); brisanje LTI registracije
 -- briše njena stanja i povezivanja, a identitetu ostavlja registracija_id = NULL (veza studenta ostaje).
+-- izdavac/subjekat spoljnih identiteta i subjekat povezivanja su utf8mb4_bin: LTI sub je neprozirna vrednost koja
+-- se poredi bajt po bajt (velika/mala slova i akcenti su različiti identiteti), UNIQUE ključ i upiti isto.
+-- Ključevi po vremenu (istice/opozvana/opozvan/iskorisceno/kreirano) služe samo CiscenjePrijave: njeni DELETE-ovi ne skeniraju tabelu.
 
 CREATE TABLE IF NOT EXISTS `nastavnicke_sesije` (
   `id` bigint NOT NULL AUTO_INCREMENT,
@@ -21,7 +24,9 @@ CREATE TABLE IF NOT EXISTS `nastavnicke_sesije` (
   `istice` datetime(3) NOT NULL,
   `opozvana` datetime(3) DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_nastavnicke_sesije_token_hes` (`token_hes`)
+  UNIQUE KEY `uk_nastavnicke_sesije_token_hes` (`token_hes`),
+  KEY `idx_nastavnicke_sesije_istice` (`istice`),
+  KEY `idx_nastavnicke_sesije_opozvana` (`opozvana`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `studentski_uredjaji` (
@@ -37,6 +42,8 @@ CREATE TABLE IF NOT EXISTS `studentski_uredjaji` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_studentski_uredjaji_token_hes` (`token_hes`),
   KEY `idx_studentski_uredjaji_student` (`student_id`),
+  KEY `idx_studentski_uredjaji_istice` (`istice`),
+  KEY `idx_studentski_uredjaji_opozvan` (`opozvan`),
   CONSTRAINT `fk_studentski_uredjaji_student` FOREIGN KEY (`student_id`) REFERENCES `studenti` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -52,6 +59,7 @@ CREATE TABLE IF NOT EXISTS `kodovi_za_prijavu` (
   `ponisten` datetime(3) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_kodovi_za_prijavu_student` (`student_id`, `kreirano`),
+  KEY `idx_kodovi_za_prijavu_kreirano` (`kreirano`),
   CONSTRAINT `fk_kodovi_za_prijavu_student` FOREIGN KEY (`student_id`) REFERENCES `studenti` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -73,8 +81,8 @@ CREATE TABLE IF NOT EXISTS `spoljni_identiteti` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `student_id` bigint NOT NULL,
   `vrsta` varchar(30) NOT NULL,
-  `izdavac` varchar(255) NOT NULL,
-  `subjekat` varchar(255) NOT NULL,
+  `izdavac` varchar(255) COLLATE utf8mb4_bin NOT NULL,
+  `subjekat` varchar(255) COLLATE utf8mb4_bin NOT NULL,
   `registracija_id` bigint DEFAULT NULL,
   `kreirano` datetime(3) NOT NULL,
   `poslednji_ulaz` datetime(3) DEFAULT NULL,
@@ -142,6 +150,7 @@ CREATE TABLE IF NOT EXISTS `lti_stanja` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_lti_stanja_stanje_hes` (`stanje_hes`),
   KEY `idx_lti_stanja_registracija` (`registracija_id`),
+  KEY `idx_lti_stanja_istice` (`istice`),
   CONSTRAINT `fk_lti_stanja_registracija` FOREIGN KEY (`registracija_id`) REFERENCES `lti_registracije` (`id`)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -150,13 +159,15 @@ CREATE TABLE IF NOT EXISTS `lti_povezivanja` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `token_hes` char(64) NOT NULL,
   `registracija_id` bigint NOT NULL,
-  `subjekat` varchar(255) NOT NULL,
+  `subjekat` varchar(255) COLLATE utf8mb4_bin NOT NULL,
   `ime` varchar(200) DEFAULT NULL,
   `istice` datetime(3) NOT NULL,
   `iskorisceno` datetime(3) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_lti_povezivanja_token_hes` (`token_hes`),
   KEY `idx_lti_povezivanja_registracija` (`registracija_id`),
+  KEY `idx_lti_povezivanja_istice` (`istice`),
+  KEY `idx_lti_povezivanja_iskorisceno` (`iskorisceno`),
   CONSTRAINT `fk_lti_povezivanja_registracija` FOREIGN KEY (`registracija_id`) REFERENCES `lti_registracije` (`id`)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

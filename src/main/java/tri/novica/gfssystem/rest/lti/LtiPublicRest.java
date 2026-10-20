@@ -19,7 +19,7 @@ import tri.novica.gfssystem.service.lti.LtiTokServis;
 /**
  * Moodle LTI 1.3 (spec 8.3), javno na internetu ({@code /api/public/lti/*}). {@code prijava} (OIDC login initiation) i
  * {@code start} (launch) su ANONIMNO i izuzeti iz provere porekla i CORS-a (stižu sa Moodle-a; štite ih {@code state},
- * {@code nonce} i kolačić {@code gfs_lti}); {@code povezivanje} je ANONIMNO (samo čita ime uz kolačić
+ * {@code nonce} i kolačić {@code __Host-gfs_lti}); {@code povezivanje} je ANONIMNO (samo čita ime uz kolačić
  * {@code gfs_lti_par}), {@code povezi} je STUDENT (uz važeći {@code gfs_lti_par}). Odgovori se ne keširaju.
  */
 @RestController

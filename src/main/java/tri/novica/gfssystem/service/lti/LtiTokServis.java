@@ -25,13 +25,14 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * LTI 1.3 tok (spec 8.3): OIDC login initiation ({@link #prijava}) i launch ({@link #start}).
  * <ul>
  *     <li><b>Prijava:</b> registracija po ({@code iss}, {@code client_id}, {@code lti_deployment_id}), mora biti aktivna.
- *     U {@code lti_stanja} ide heš {@code state}-a, {@code nonce} i heš kolačića {@code gfs_lti} (10 min); kolačić je
+ *     U {@code lti_stanja} ide heš {@code state}-a, {@code nonce} i heš kolačića {@code __Host-gfs_lti} (10 min); kolačić je
  *     {@code SameSite=None; Secure}, jer {@code form_post} sa Moodle-a je cross-site. Isti pregledač zadržava postojeću
  *     vrednost kolačića, pa dve kartice (dva ulaza odjednom) ne kvare jedna drugoj launch.</li>
  *     <li><b>Launch:</b> stanje se troši atomski pre svake druge provere (jednokratno i kad provera padne), pa kolačić
@@ -45,7 +46,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class LtiTokServis {
 
-    /** Trajanje stanja i Max-Age kolačića {@code gfs_lti}. */
+    /** Trajanje stanja i Max-Age kolačića {@code __Host-gfs_lti}. */
     public static final Duration TRAJANJE_STANJA = Duration.ofMinutes(10);
     public static final String NALOG = "/nalog";
     public static final String POVEZIVANJE = "/nalog/moodle";
@@ -55,6 +56,10 @@ public class LtiTokServis {
     static final int NAJDUZI_LOGIN_HINT = 2_048;
     static final int NAJDUZI_MESSAGE_HINT = 4_096;
     static final int NAJDUZE_IME = 100;
+    /** Vrste znakova koje ime sa Moodle-a ne sme imati: kontrolni, format (smer pisanja, nulte širine), razdvajači redova... */
+    private static final Set<Integer> NEVIDLJIVO = Set.of((int) Character.CONTROL, (int) Character.FORMAT,
+            (int) Character.LINE_SEPARATOR, (int) Character.PARAGRAPH_SEPARATOR, (int) Character.PRIVATE_USE,
+            (int) Character.SURROGATE, (int) Character.UNASSIGNED);
     static final String ULOGE = LtiProvera.LTI + "roles";
 
     private final LtiRegistracijaRepository registracije;
@@ -204,23 +209,23 @@ public class LtiTokServis {
     }
 
     /**
-     * Kolačić {@code gfs_lti} veže launch za pregledač koji je započeo prijavu (zaštita od podmetnutog launch-a).
+     * Kolačić {@code __Host-gfs_lti} veže launch za pregledač koji je započeo prijavu (zaštita od podmetnutog launch-a).
      * Proba se svaka vrednost (podmetnut istoimeni kolačić za {@code .trif.rs} ne smeta pravom).
      */
     private static void proveriKolacic(HttpServletRequest req, LtiStanje s) {
         List<String> vrednosti = Kolacici.procitajSve(req, Kolacici.LTI);
         if (vrednosti.isEmpty()) {
-            throw new LtiOdbijeno(LtiGreska.BEZ_KOLACICA, "gfs_lti");
+            throw new LtiOdbijeno(LtiGreska.BEZ_KOLACICA, Kolacici.LTI);
         }
         byte[] ocekivano = s.getKolacicHes().getBytes(StandardCharsets.UTF_8);
         boolean odgovara = vrednosti.stream()
                 .anyMatch(v -> MessageDigest.isEqual(TokenHash.od(v).getBytes(StandardCharsets.UTF_8), ocekivano));
         if (!odgovara) {
-            throw new LtiOdbijeno(LtiGreska.ISTEKLA_SESIJA, "gfs_lti-drugi");
+            throw new LtiOdbijeno(LtiGreska.ISTEKLA_SESIJA, Kolacici.LTI + "-drugi");
         }
     }
 
-    /** Vrednost {@code gfs_lti} koju pregledač već ima (ispravnog oblika), da je druga kartica ne pregazi. */
+    /** Vrednost {@code __Host-gfs_lti} koju pregledač već ima (ispravnog oblika), da je druga kartica ne pregazi. */
     private static Optional<String> postojeciKolacic(HttpServletRequest req) {
         return Kolacici.procitajSve(req, Kolacici.LTI).stream()
                 .filter(v -> TokenGenerator.FORMAT.matcher(v).matches())
@@ -248,8 +253,9 @@ public class LtiTokServis {
     }
 
     /**
-     * Ime za ekran povezivanja: {@code name}, ili {@code given_name} + {@code family_name}; bez kontrolnih znakova,
-     * obrezano, najviše 100 znakova; {@code null} kad Moodle ime ne deli.
+     * Ime za ekran povezivanja: {@code name}, ili {@code given_name} + {@code family_name}; bez kontrolnih i
+     * nevidljivih znakova (i smera pisanja), niz razmaka postaje jedan razmak, obrezano, najviše 100 znakova;
+     * {@code null} kad Moodle ime ne deli.
      */
     static String ime(JWTClaimsSet c) {
         String ime = cisto(tekst(c, "name"));
@@ -272,8 +278,9 @@ public class LtiTokServis {
 
     private static String cisto(String s) {
         if (s == null) return null;
-        String b = s.codePoints().filter(cp -> !Character.isISOControl(cp))
-                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString().strip();
+        String b = s.codePoints().filter(cp -> !NEVIDLJIVO.contains(Character.getType(cp)))
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString()
+                .replaceAll("[\\p{Z}\\s]+", " ").strip();
         return b.isEmpty() ? null : b;
     }
 

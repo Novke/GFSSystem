@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 /**
  * OIDC stanje između LTI login initiation i launch-a (10 min, jednokratno): heš {@code state}, {@code nonce} i heš
- * kolačića {@code gfs_lti} koji launch mora doneti. {@code iskorisceno} != null = potrošeno.
+ * kolačića {@code __Host-gfs_lti} koji launch mora doneti. {@code iskorisceno} != null = potrošeno.
  */
 @Entity
 @Table(name = "lti_stanja")

@@ -23,7 +23,7 @@ import java.util.List;
  * <p>
  * LTI login i launch ({@link ProveraPoreklaFilter#LTI_IZUZECI}) su izuzeti na oba mesta ({@link #bezLti}): stižu kao
  * navigacija pregledača sa Moodle-a ({@code form_post} nosi {@code Origin} Moodle-a), pa bi ih CORS odbio sa 403; CORS
- * ovde ništa ne štiti (odgovor je preusmerenje, štite ga {@code state}, {@code nonce} i {@code gfs_lti}). Bez
+ * ovde ništa ne štiti (odgovor je preusmerenje, štite ga {@code state}, {@code nonce} i {@code __Host-gfs_lti}). Bez
  * konfiguracije ti odgovori nemaju ni CORS zaglavlja.
  */
 @Configuration
