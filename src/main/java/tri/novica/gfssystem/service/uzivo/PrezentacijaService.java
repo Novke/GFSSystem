@@ -13,10 +13,13 @@ import tri.novica.gfssystem.dto.banka.StavkaPonistavanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.banka.GrupaZadataka;
+import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
@@ -43,6 +46,10 @@ import java.util.function.Consumer;
  * zaključa aktivna izvođenja (red prezentacija -> izvođenje -> slajdovi); posle svake izmene slajdova javlja se
  * {@link PrezentacijaPromene} (izvođenje u toku).
  * <p>
+ * Slajd ZADATAK nosi čvor banke ({@code grupaZadataka}), tajmer i broj različitih varijanti; grupa mora biti iz banke
+ * predmeta prezentacije, namena PREDAVANJE ({@link #proveriZadatak}, pod ključem prezentacije). Njegov opis sa upozorenjima
+ * ({@link ZadaciSlajdova}) ide u svaki {@link SlajdDetails}.
+ * <p>
  * Klod (MCP, spec MCP 4.1 i 4.4) piše seriju na prezentacije i slajdove koje napravi ({@link #kreiraj(CreatePrezentacijaCmd,
  * String)}, {@link #dodajSlajdIzSerije}), ne menja prezentaciju koja se upravo izvodi i poništava seriju
  * ({@link #ponistiSeriju}). Dupliranje slajda ili prezentacije seriju ne kopira: kopija je Novicina, pa je poništavanje
@@ -65,6 +72,8 @@ public class PrezentacijaService {
     static final String RAZLOG_IZVODJENA = "Prezentacija je izvođena.";
     static final String RAZLOG_IZVODI_SE = "Prezentacija se upravo izvodi.";
     static final String RAZLOG_NOVICINI_SLAJDOVI = "Prezentacija ima Novicine slajdove.";
+    static final String GRUPA_NIJE_PRONADJENA = "Grupa zadataka nije pronađena.";
+    static final String GRUPA_DRUGOG_PREDMETA = "Grupa mora biti iz banke ovog predmeta, namena Predavanja.";
 
     private static final int MAX_NAZIV = 200;
     private static final int MAX_OPIS = 1000;
@@ -72,6 +81,8 @@ public class PrezentacijaService {
     private static final int MAX_PREDAVANJA = 30;
     /** Opis slajda u nazivu stavke poništavanja (naslov ili tekst pitanja), u znakovima. */
     private static final int MAX_OPIS_SLAJDA = 80;
+    /** Slajdovi koji otvaraju runde (broje se kao "pitanja" prezentacije). */
+    private static final Set<TipSlajda> SA_RUNDAMA = EnumSet.of(TipSlajda.PITANJE, TipSlajda.ZADATAK);
 
     private final PrezentacijaRepository prezentacijaRepository;
     private final SlajdRepository slajdRepository;
@@ -80,6 +91,8 @@ public class PrezentacijaService {
     private final PredavanjeRepository predavanjeRepository;
     private final MedijService medijService;
     private final MedijRepository medijRepository;
+    private final GrupaZadatakaRepository grupaZadatakaRepository;
+    private final ZadaciSlajdova zadaci;
     private final PlatnoJson platnoJson;
     private final ObjectProvider<PrezentacijaPromene> promene;
     private final Clock clock;
@@ -221,11 +234,17 @@ public class PrezentacijaService {
             try {
                 provereni.add(proveren(ulaz.get(i)));
             } catch (SystemException e) {
-                throw new SystemException("Slajd " + (i + 1) + ": " + e.getMessage(),
-                        Objects.requireNonNullElse(e.getCode(), HttpStatus.BAD_REQUEST.value()));
+                throw uSlajdu(i, e);
             }
         }
         Prezentacija p = zakljucaj(prezentacijaId);
+        for (int i = 0; i < provereni.size(); i++) {
+            try {
+                proveriZadatak(p, provereni.get(i).cmd());
+            } catch (SystemException e) {
+                throw uSlajdu(i, e);
+            }
+        }
         List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(prezentacijaId);
         SlajdPP.proveriBrojZaUvoz(slajdovi.size(), provereni.size());
         int mesto = slajdovi.size();
@@ -255,7 +274,9 @@ public class PrezentacijaService {
     /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
     public SlajdDetails dodajSlajd(Long prezentacijaId, SlajdCmd cmd, Long posle) {
         ProverenSlajd n = proveren(cmd);
-        return dodaj(zakljucaj(prezentacijaId), n, posle, null);
+        Prezentacija p = zakljucaj(prezentacijaId);
+        proveriZadatak(p, n.cmd());
+        return dodaj(p, n, posle, null);
     }
 
     /**
@@ -271,6 +292,7 @@ public class PrezentacijaService {
             throw new SystemException(IZVODI_SE, HttpStatus.CONFLICT);
         }
         ProverenSlajd n = proveren(cmd);
+        proveriZadatak(p, n.cmd());
         SlajdDetails d = dodaj(p, n, posle, serija);
         log.info("Slajd iz serije dodat: id={}, prezentacija={}, serija={}", d.id(), prezentacijaId, serija);
         return d;
@@ -298,25 +320,26 @@ public class PrezentacijaService {
         slajdRepository.save(s);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(prezentacijaId));
-        return SlajdMapper.uDetails(s, platnoJson);
+        return SlajdMapper.uDetails(s, platnoJson, zadaci.za(s));
     }
 
     /** Puna zamena sadržaja slajda; pitanje ostaje isti red (id), opcije se zamenjuju novim. */
     public SlajdDetails izmeniSlajd(Long id, SlajdCmd cmd) {
         ProverenSlajd n = proveren(cmd);
         Prezentacija p = zakljucajZaSlajd(id);
+        proveriZadatak(p, n.cmd());
         Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
         primeni(s, n);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
-        return SlajdMapper.uDetails(s, platnoJson);
+        return SlajdMapper.uDetails(s, platnoJson, zadaci.za(s));
     }
 
     /** Jedan slajd, pun (PLATNO sa potezima crteža), za {@code GET /slajdovi/{id}}. Samo čitanje, bez zaključavanja. */
     @Transactional(readOnly = true)
     public SlajdDetails slajd(Long id) {
         Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
-        return SlajdMapper.uDetails(s, platnoJson);
+        return SlajdMapper.uDetails(s, platnoJson, zadaci.za(s));
     }
 
     /** Id prezentacije kojoj slajd pripada (MCP {@code slajd}: link u UI); nepostojeći slajd je 404. Samo čitanje. */
@@ -367,7 +390,7 @@ public class PrezentacijaService {
         slajdRepository.save(k);
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
-        return SlajdMapper.uDetails(k, platnoJson);
+        return SlajdMapper.uDetails(k, platnoJson, zadaci.za(k));
     }
 
     /** {@code slajdIds} mora biti tačno permutacija id-jeva svih slajdova prezentacije. */
@@ -520,6 +543,28 @@ public class PrezentacijaService {
         return zakljucaj(prezentacijaId);
     }
 
+    /**
+     * Slajd ZADATAK: grupa postoji (inače 400 {@value #GRUPA_NIJE_PRONADJENA}) i pripada banci predmeta prezentacije u
+     * stablu PREDAVANJE (inače 400 {@value #GRUPA_DRUGOG_PREDMETA}); drugi tipovi slajda ništa ne proveravaju. Poziva se
+     * pod ključem prezentacije, posle {@link #proveren} (koji već traži {@code zadatak.grupaId}).
+     */
+    private void proveriZadatak(Prezentacija p, SlajdCmd n) {
+        if (n.tip() != TipSlajda.ZADATAK) {
+            return;
+        }
+        GrupaZadataka grupa = grupaZadatakaRepository.findById(n.zadatak().grupaId())
+                .orElseThrow(() -> new SystemException(GRUPA_NIJE_PRONADJENA, HttpStatus.BAD_REQUEST));
+        if (grupa.getNamena() != Namena.PREDAVANJE || !grupa.getPredmet().getId().equals(p.getPredmet().getId())) {
+            throw new SystemException(GRUPA_DRUGOG_PREDMETA, HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /** Ista greška sa prefiksom "Slajd N: " (N od 1) za uvoz više slajdova. */
+    private static SystemException uSlajdu(int indeks, SystemException e) {
+        return new SystemException("Slajd " + (indeks + 1) + ": " + e.getMessage(),
+                Objects.requireNonNullElse(e.getCode(), HttpStatus.BAD_REQUEST.value()));
+    }
+
     /** Normalizovana komanda i (samo za PLATNO) normalizovan dokument platna. */
     private record ProverenSlajd(SlajdCmd cmd, Platno platno) {
     }
@@ -597,6 +642,10 @@ public class PrezentacijaService {
         s.setPostepeno(n.postepeno());
         Prelaz pr = n.prelaz();
         s.setPrelaz(pr == null ? null : new PrelazSlajda(pr.efekat(), pr.smer(), pr.trajanjeMs()));
+        ZadatakSlajda zadatak = n.tip() == TipSlajda.ZADATAK ? n.zadatak() : null;
+        s.setGrupaZadataka(zadatak == null ? null : grupaZadatakaRepository.getReferenceById(zadatak.grupaId()));
+        s.setZadatakVremeSekunde(zadatak == null ? null : zadatak.vremeSekunde());
+        s.setZadatakBrojVarijanti(zadatak == null ? null : zadatak.brojVarijanti());
         if (n.tip() != TipSlajda.PITANJE) {
             s.setPitanje(null);
             return;
@@ -655,6 +704,9 @@ public class PrezentacijaService {
         k.setPostepeno(s.isPostepeno());
         PrelazSlajda p = s.getPrelaz();
         k.setPrelaz(p == null ? null : new PrelazSlajda(p.getEfekat(), p.getSmer(), p.getTrajanjeMs()));
+        k.setGrupaZadataka(s.getGrupaZadataka());
+        k.setZadatakVremeSekunde(s.getZadatakVremeSekunde());
+        k.setZadatakBrojVarijanti(s.getZadatakBrojVarijanti());
         k.setPitanje(s.getPitanje() == null ? null : kopija(s.getPitanje()));
         return k;
     }
@@ -707,17 +759,18 @@ public class PrezentacijaService {
         Long id = p.getId();
         return new PrezentacijaInfo(id, p.getNaziv(), p.getOpis(), predmet(p),
                 slajdRepository.countByPrezentacijaId(id),
-                slajdRepository.countByPrezentacijaIdAndTip(id, TipSlajda.PITANJE),
+                slajdRepository.countByPrezentacijaIdAndTipIn(id, SA_RUNDAMA),
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
                 izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id), p.getTema());
     }
 
     private PrezentacijaDetails details(Prezentacija p, List<Slajd> slajdovi) {
-        long brojPitanja = slajdovi.stream().filter(s -> s.getTip() == TipSlajda.PITANJE).count();
+        long brojPitanja = slajdovi.stream().filter(s -> SA_RUNDAMA.contains(s.getTip())).count();
+        Map<Long, ZadatakSlajdaInfo> zadaciSlajdova = zadaci.za(p.getPredmet().getId(), slajdovi);
         return new PrezentacijaDetails(p.getId(), p.getNaziv(), p.getOpis(), predmet(p), slajdovi.size(), brojPitanja,
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
                 izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()), p.getTema(),
-                slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson)).toList());
+                slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson, zadaciSlajdova.get(s.getId()))).toList());
     }
 
     private Long aktivnoIzvodjenjeId(Long prezentacijaId) {

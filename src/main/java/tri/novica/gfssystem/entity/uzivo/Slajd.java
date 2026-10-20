@@ -6,8 +6,12 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import tri.novica.gfssystem.entity.banka.GrupaZadataka;
 
-/** Slajd prezentacije: INFO (naslov, Markdown sadržaj, slika) ili PITANJE (poseduje {@link Pitanje}). */
+/**
+ * Slajd prezentacije: INFO (naslov, Markdown sadržaj, slika), PITANJE (poseduje {@link Pitanje}), PLATNO ili ZADATAK
+ * (čvor banke {@code grupaZadataka}, tajmer i broj različitih varijanti).
+ */
 @Entity
 @Table(name = "slajdovi")
 @Getter @Setter @NoArgsConstructor
@@ -40,6 +44,14 @@ public class Slajd {
     /** Klodova serija upisa (MCP); null za slajdove napravljene u UI-ju ili uvozom. */
     @Column(length = 60)
     private String serija;
+    /** Čvor banke (list ili unutrašnji) ZADATAK slajda; brisanje grupe ostavlja slajd bez nje (ON DELETE SET NULL). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "grupa_zadataka_id")
+    private GrupaZadataka grupaZadataka;
+    /** Tajmer ZADATAK slajda u sekundama; null = bez tajmera. */
+    private Integer zadatakVremeSekunde;
+    /** Broj različitih varijanti koje se izvlače pri otvaranju; null = sve aktivne. */
+    private Integer zadatakBrojVarijanti;
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "pitanje_id")
     private Pitanje pitanje;

@@ -5,8 +5,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 
 /**
- * Šav za fazu 2 banke (spec 13.1): ko je student iza zahteva, nezavisno od toga da li ovaj build ima prijavu studenata.
- * Potpis je dogovoren sa drugim projektom i ne menja se; ko prvi merguje pravi interfejs, drugi uzima postojeći.
+ * Šav sa prijavom studenata: ko je student iza javnog zahteva. Podrazumevani bean je {@link NemaIdentiteta} (iz
+ * {@link IdentitetAutoKonfig}); pravi bean daje prijava studenata i potiskuje ga čim je u kontekstu.
  */
 public interface IdentitetStudenta {
     /** Student iza HTTP zahteva (kolačić gfs_student), prazno kad nije prijavljen. */

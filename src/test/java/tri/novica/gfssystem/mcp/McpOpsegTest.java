@@ -115,7 +115,8 @@ class McpOpsegTest {
             "Markdown.brojStavki(String)");
 
     /** Servisi van dozvoljenih oblasti (spec MCP 2): studenti, grupe, ocene, testovi i polaganja, predavanja i aktivnosti,
-     * onboarding i prijave, beleške i pregledi, izvođenja i njihovi rezultati. Po punom imenu klase, ne po prefiksu. */
+     * onboarding i prijave, beleške i pregledi, izvođenja i njihovi rezultati, dodele i rezultati zadataka, aktivnosti bodovanog
+     * runa i identitet studenta. Po punom imenu klase, ne po prefiksu. */
     static final Set<String> ZABRANJENE_KLASE = Set.of(
             SERVIS + ".StudentService",
             SERVIS + ".GrupaService",
@@ -133,6 +134,9 @@ class McpOpsegTest {
             SERVIS + ".uzivo.UcesnikService",
             SERVIS + ".uzivo.RezultatBuilder",
             SERVIS + ".uzivo.UzivoObjavljivac",
+            SERVIS + ".uzivo.ZadatakDodelaService",
+            SERVIS + ".uzivo.ZadatakRezultatBuilder",
+            KOREN + ".security.IdentitetStudenta",
             // prijava: sesije nastavnika, nalozi i kodovi studenata, obaveštenja, mejl, Moodle LTI (ključevi i registracije)
             SERVIS + ".prijava.NastavnikSesijaServis",
             SERVIS + ".prijava.StudentskaPrijava",

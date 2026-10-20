@@ -1,8 +1,8 @@
-# Slajdovi: INFO i PITANJE (GFS MCP)
+# Slajdovi: INFO, PITANJE i ZADATAK (GFS MCP)
 
-`dodaj_slajd` (`serija`, `prezentacijaId`, `posle?`, `slajd`) dodaje jedan slajd: bez `posle` na kraj, sa `posle` (id slajda) odmah iza tog slajda. U ovoj verziji dodaješ samo `INFO` i `PITANJE` (ostalo je 400 `Klod u ovoj verziji dodaje samo INFO i PITANJE slajdove.`), a postojeće slajdove ne menjaš. `slajd` se čita strogo: nepoznat ključ je `Nepoznato polje 'slajd.x'.`, a `null` za `postepeno` ili `tacna` je `Neispravan format podataka.` (izostavi ih ili pošalji true/false). Najviše 200 slajdova po prezentaciji; prezentacija koja se upravo izvodi se ne menja.
+`dodaj_slajd` (`serija`, `prezentacijaId`, `posle?`, `slajd`) dodaje jedan slajd: bez `posle` na kraj, sa `posle` (id slajda) odmah iza tog slajda. U ovoj verziji dodaješ samo `INFO`, `PITANJE` i `ZADATAK` (ostalo je 400 `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`), a postojeće slajdove ne menjaš. `slajd` se čita strogo: nepoznat ključ je `Nepoznato polje 'slajd.x'.`, a `null` za `postepeno` ili `tacna` je `Neispravan format podataka.` (izostavi ih ili pošalji true/false). Najviše 200 slajdova po prezentaciji; prezentacija koja se upravo izvodi se ne menja.
 
-Zajedničko za oba tipa:
+Zajedničko za sve tipove:
 - `beleske` (do 20 000 znakova): beleške za Novicu na konzoli; studenti ih ne vide.
 - `prelaz` (opciono): `{"efekat": "FADE" | "GURANJE" | "BRISANJE", "smer": "LEVO" | "DESNO" | "GORE" | "DOLE", "trajanjeMs": 100-5000}`; FADE nema smer, bez smera je DESNO, bez trajanja 500 ms.
 - Slika: fajl otpremi iz Bash-a sa `gfs-mcp-upload <gfs|gfs-staging> <fajl> --slika --serija <serija>` (PNG, JPEG, GIF ili WebP, do 10 MB, vrsta `SLIKA`), pa njen `medijId` stavi u `slikaId` slajda (INFO) ili pitanja (PITANJE). Prilog zadatka iz banke (`PRILOG_*`) nije slika za slajd.
@@ -28,6 +28,15 @@ Zajedničko za oba tipa:
 
 Polja koja ne važe za tip server briše.
 
+## ZADATAK
+Zadatak slajd na času: svaki student na telefonu dobija svoju nasumičnu varijantu iz grupe banke, upisuje odgovor po poljima grupe, a projektor posle pokazuje rezultate po varijanti i rešenje.
+- `zadatak` (obavezan za `ZADATAK`): `{"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4}`. `grupaId` je grupa iz banke **istog predmeta**, namene `PREDAVANJE` (list ili unutrašnji čvor: tada se izvlači naizmenično iz njegovih listova); inače `Grupa mora biti iz banke ovog predmeta, namena Predavanja.`, a nepostojeća `Grupa zadataka nije pronađena.`.
+- `brojVarijanti` (1-50, opciono): koliko različitih zadataka ide u salu; bez njega idu sve aktivne. Novica ga menja i u konzoli pre otvaranja, pa ga ne pogađaj: ako ne zna, izostavi ga.
+- `vremeSekunde` (5-600, opciono): tajmer za odgovor; bez njega nema tajmera.
+- Studenti dobijaju samo **aktivne** varijante (odobrene, sa uspešnim renderom). Nacrti se ne izvlače: slajd nad grupom bez aktivnih varijanti javlja upozorenje i na času se ne otvara (409). Zato na kraju uvek reci Novici koje grupe mora da odobri pre časa (`/banka/pregled`).
+- Odgovor `dodaj_slajd` nosi `slajd.zadatak` sa `putanja`, `brojAktivnih`, `brojVarijanti` i `upozorenja`. **Pročitaj `upozorenja` i javi ih Novici** rečima: `Tema je isključena.`, `Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa.`, `Isključene podgrupe se ne izvlače: …`. Upozorenje nije greška: slajd je dodat.
+- Bez `naslov`, `sadrzaj`, `pitanje` i `slikaId`: tekst zadatka dolazi iz varijante.
+
 ## Formule `$…$`
 - Važe u tekstu pitanja i u tekstu opcija (ne u INFO, beleškama, prihvatljivim odgovorima, jedinici ni oznakama skale) i crtaju se na projektoru i na telefonu. Unutra je LaTeX matematika: `\frac{a}{b}`, `x^2`, `\sqrt{2}`, `1011_{(2)}`.
 - Pravila: posle `$` koji otvara ne sme razmak; unutra nema novog reda ni drugog `$`; pre `$` koji zatvara nema razmaka ni `\`; odmah posle `$` koji zatvara ne sme cifra. `$` odmah posle cifre ne otvara formulu (`5$` je iznos, pa ni `2$x$` nije formula; piši `2 $x$`). `\$` je uvek znak dolara, a `$$...$$` ne postoji.
@@ -35,6 +44,14 @@ Polja koja ne važe za tip server briše.
 
 ## Primeri `slajd`
 Svaki primer je vrednost argumenta `slajd` u `dodaj_slajd`. `medijId` u slici je primer; pravi daje `gfs-mcp-upload --slika`.
+
+```json
+{
+  "tip": "ZADATAK",
+  "zadatak": {"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4},
+  "beleske": "Posle Vežbe 1: pretvaranje 2 → 10."
+}
+```
 
 ```json
 {

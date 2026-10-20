@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.uzivo.*;
@@ -13,12 +14,20 @@ import tri.novica.gfssystem.repository.uzivo.*;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
  * Snimci stanja izvođenja (samo čitanje). Svi podaci izvođenja se učitavaju sa po jednim upitom po tabeli
  * ({@link Podaci}); odgovori izbačenih učesnika se ne računaju nigde (rezultat, broj odgovora, poeni). Poeni i
  * rang-lista se računaju samo iz poslednje runde svakog slajda, i to po rundama (ne po odgovorima): posle PONOVI stara
  * runda prestaje da se računa odmah, i pre prvog novog odgovora.
+ *
+ * <p><b>Zadatak</b> ("ni ranije", spec 11.7): telefoni ({@link JavnoStanje}, {@link LicnoStanje}, {@link PocetnoStanje})
+ * nikad ne dobijaju tuđu varijantu (SVG, odgovori), id SVG-a rešenja pre RESENJE na zatvorenoj rundi ni tačne vrednosti
+ * pre TACAN na zatvorenoj rundi; javno stanje nema nijedan sadržaj varijante ({@link JavniZadatak}). Projektor
+ * ({@code NastavnickiZadatak.javniRezultat}) vidi slike svih izvučenih varijanti, a brojeve, tačnost i rešenje po tri
+ * nezavisna prekidača ({@link ZadatakRezultatBuilder}). Runda čiji snimak ne odgovara tipu slajda
+ * ({@link TokIzvodjenja#odgovaraSlajdu}) gradi se kao da runde nema.
  */
 @Service
 @RequiredArgsConstructor
@@ -33,14 +42,21 @@ public class StanjeService {
     private final PitanjeRundaRepository rundaRepository;
     private final OdgovorRepository odgovorRepository;
     private final UcesnikRepository ucesnikRepository;
+    private final ZadatakDodelaRepository dodelaRepository;
     private final PovezanostRegistar povezanost;
     private final JsonMapper jsonMapper;
     private final PlatnoJson platnoJson;
+    private final ZadaciSlajdova zadaci;
     private final Clock clock;
 
-    /** Sve što stanje izvođenja traži, učitano jednom. */
+    /**
+     * Sve što stanje izvođenja traži, učitano jednom. {@code zadaci}: opisi Zadatak slajdova (po id-ju slajda) među
+     * trenutnim i sledećim slajdom; prazna mapa kad nijedan od njih nije ZADATAK. Računa ih {@link #ucitaj} jednom, pa
+     * jedan {@link #snimci} košta najviše jedno čitanje stabla banke, a ne po jedno za svaki snimak.
+     * {@code dodeleRunde}: učesnik -> dodeljena varijanta u trenutnoj rundi ZADATAK slajda (samo neizbačeni), prazna van nje.
+     */
     record Podaci(Izvodjenje iz, List<Slajd> slajdovi, List<PitanjeRunda> runde, List<Ucesnik> ucesnici,
-                  List<Odgovor> odgovori) {
+                  List<Odgovor> odgovori, Map<Long, ZadatakSlajdaInfo> zadaci, Map<Long, Long> dodeleRunde) {
         /** Odgovori trenutne runde (po vremenu prijema). */
         List<Odgovor> odgovoriRunde(Long rundaId) {
             if (rundaId == null) return List.of();
@@ -76,26 +92,35 @@ public class StanjeService {
         List<Slajd> sl = p.slajdovi();
         int indeks = TokIzvodjenja.indeks(iz, sl);
         Slajd trenutni = TokIzvodjenja.trenutni(iz, sl);
-        Slajd sledeci = indeks + 1 >= 0 && indeks + 1 < sl.size() ? sl.get(indeks + 1) : null;
+        Slajd sledeci = sledeci(indeks, sl);
 
         PitanjeRunda runda = p.runda(iz.getTrenutnaRundaId()).orElse(null);
         List<Odgovor> odgovoriRunde = runda == null ? List.of() : p.odgovoriRunde(runda.getId());
-        Rezultat rezultat = runda == null ? null : RezultatBuilder.izgradi(snimak(runda), odgovoriRunde, false, true);
+        Rezultat rezultat = runda == null ? null : rezultat(snimak(runda), odgovoriRunde, false, true);
 
         List<Odgovor> bodovni = bodovniOdgovori(p);
         Map<Long, Integer> poeni = RangLista.poeniPoUcesniku(bodovni);
         Set<Long> odgovorili = new HashSet<>();
         odgovoriRunde.forEach(o -> odgovorili.add(o.getUcesnik().getId()));
+        ZadatakRunda zr = zadatakRunda(p, trenutni, false);
+        Map<Long, Odgovor> odgovorUcesnika = new HashMap<>();
+        odgovoriRunde.forEach(o -> odgovorUcesnika.putIfAbsent(o.getUcesnik().getId(), o));
         List<UcesnikStanje> ucesnici = p.ucesnici().stream()
-                .map(u -> new UcesnikStanje(u.getId(), u.getIme(), poeni.getOrDefault(u.getId(), 0),
-                        povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId())))
+                .map(u -> {
+                    Odgovor o = zr == null ? null : odgovorUcesnika.get(u.getId());
+                    return new UcesnikStanje(u.getId(), u.getIme(), poeni.getOrDefault(u.getId(), 0),
+                            povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId()),
+                            zr == null ? null : p.dodeleRunde().get(u.getId()), o == null ? null : o.getTacno());
+                })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
                 TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
-                trenutni == null ? null : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson),
-                sledeci == null ? null : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson),
+                trenutni == null ? null
+                        : SlajdMapper.uDetailsZaIzvodjenje(trenutni, platnoJson, p.zadaci().get(trenutni.getId())),
+                sledeci == null ? null
+                        : SlajdMapper.uDetailsZaIzvodjenje(sledeci, platnoJson, p.zadaci().get(sledeci.getId())),
                 iz.getFaza(), runda == null ? null : rundaInfo(iz, runda),
                 iz.isRezultatiPrikazani(), iz.isTacanPrikazan(), iz.isRangListaPrikazana(), iz.getEkran(),
                 iz.isQrPrikazan(), iz.getTelefonPrikaz(), iz.isDetaljiDozvoljeni(), iz.isTakmicenje(),
@@ -103,7 +128,124 @@ public class StanjeService {
                 povezanost.brojPovezanih(p.ucesnici().stream().map(Ucesnik::getId).toList()),
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
-                iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli());
+                iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr));
+    }
+
+    // ---------------------------------------------------------------- zadatak
+
+    /** Trenutna runda ZADATAK slajda sa snimkom koji mu odgovara. */
+    private record ZadatakRunda(PitanjeRunda runda, ZadatakSnimak snimak) {
+    }
+
+    /**
+     * Trenutna runda trenutnog ZADATAK slajda, samo ako pripada baš tom slajdu i snimak joj je {@link ZadatakSnimak};
+     * {@code zaTelefon}: još i samo u fazi OTVORENO ili ZATVORENO (kao {@link #javnaRunda}). Inače {@code null}.
+     */
+    private ZadatakRunda zadatakRunda(Podaci p, Slajd trenutni, boolean zaTelefon) {
+        Izvodjenje iz = p.iz();
+        if (trenutni == null || trenutni.getTip() != TipSlajda.ZADATAK) return null;
+        if (zaTelefon && iz.getFaza() != Faza.OTVORENO && iz.getFaza() != Faza.ZATVORENO) return null;
+        PitanjeRunda r = p.runda(iz.getTrenutnaRundaId())
+                .filter(x -> Objects.equals(x.getSlajdId(), trenutni.getId()))
+                .orElse(null);
+        if (r == null) return null;
+        SnimakRunde sn = snimak(r);
+        return TokIzvodjenja.odgovaraSlajdu(sn, trenutni) ? new ZadatakRunda(r, (ZadatakSnimak) sn) : null;
+    }
+
+    /** Rešenje se vidi samo kad je uključeno i runda je zatvorena (kao TACAN). */
+    private static boolean resenjeVidljivo(Izvodjenje iz) {
+        return iz.isResenjePrikazano() && iz.getFaza() == Faza.ZATVORENO;
+    }
+
+    /** Koliko će se varijanti izvući: {@code min(N, M)}, N iz konzole ili sa slajda ({@code null} = sve), M = kandidati. */
+    private static int brojZaOtvaranje(Izvodjenje iz, Slajd s, ZadatakSlajdaInfo info) {
+        int m = info == null ? 0 : info.brojAktivnihVarijanti();
+        Integer n = TokIzvodjenja.brojVarijanti(iz, s);
+        return n == null ? m : Math.min(n, m);
+    }
+
+    /** Odgovori na zadatak u rundi (samo neizbačeni), sa poljima iz {@code odgovori.polja}. */
+    private List<ZadatakRezultatBuilder.OdgovorZadatka> odgovoriZadatka(List<Odgovor> odgovori) {
+        return odgovori.stream()
+                .filter(o -> o.getVarijantaId() != null)
+                .map(o -> new ZadatakRezultatBuilder.OdgovorZadatka(o.getUcesnik().getId(), o.getVarijantaId(),
+                        polja(o), o.getTacno()))
+                .toList();
+    }
+
+    private static final TypeReference<LinkedHashMap<String, PoljeOdgovora>> POLJA = new TypeReference<>() {};
+
+    private Map<String, PoljeOdgovora> polja(Odgovor o) {
+        return o.getPolja() == null ? Map.of() : jsonMapper.readValue(o.getPolja(), POLJA);
+    }
+
+    private static Map<String, Boolean> ishod(Map<String, PoljeOdgovora> polja) {
+        Map<String, Boolean> m = new LinkedHashMap<>();
+        polja.forEach((k, v) -> m.put(k, v.tacno()));
+        return m;
+    }
+
+    private NastavnickiZadatak nastavnickiZadatak(Podaci p, Slajd trenutni, ZadatakRunda zr) {
+        if (trenutni == null || trenutni.getTip() != TipSlajda.ZADATAK) return null;
+        Izvodjenje iz = p.iz();
+        ZadatakSlajdaInfo info = p.zadaci().get(trenutni.getId());
+        List<VarijantaRunde> varijante = null;
+        ZadatakRezultat rezultat = null;
+        ZadatakRezultat javni = null;
+        if (zr != null) {
+            List<ZadatakRezultatBuilder.OdgovorZadatka> odgovori = odgovoriZadatka(p.odgovoriRunde(zr.runda().getId()));
+            varijante = ZadatakRezultatBuilder.varijanteRunde(zr.snimak(), p.dodeleRunde(), odgovori);
+            rezultat = ZadatakRezultatBuilder.izgradi(zr.snimak(), p.dodeleRunde(), odgovori, true, true, true);
+            boolean rez = iz.isRezultatiPrikazani();
+            boolean tacan = tacanVidljiv(iz);
+            boolean resenje = resenjeVidljivo(iz);
+            if (zadatakRunda(p, trenutni, true) != null && (rez || tacan || resenje)) {
+                javni = ZadatakRezultatBuilder.izgradi(zr.snimak(), p.dodeleRunde(), odgovori, rez, tacan, resenje);
+            }
+        }
+        return new NastavnickiZadatak(info, iz.getZadatakBrojVarijanti(), brojZaOtvaranje(iz, trenutni, info),
+                iz.isResenjePrikazano(), varijante, rezultat, javni);
+    }
+
+    /** Javni zadatak (telefoni): faza, runda, tajmer, broj varijanti i naziv grupe, bez sadržaja varijanti. */
+    private JavniZadatak javniZadatak(Podaci p, Slajd trenutni) {
+        if (trenutni == null || trenutni.getTip() != TipSlajda.ZADATAK) return null;
+        Izvodjenje iz = p.iz();
+        Faza faza = iz.getFaza() == null ? Faza.CEKA : iz.getFaza();
+        ZadatakSlajdaInfo info = p.zadaci().get(trenutni.getId());
+        ZadatakRunda zr = zadatakRunda(p, trenutni, true);
+        if (zr == null) {
+            return new JavniZadatak(faza, null, null, null, brojZaOtvaranje(iz, trenutni, info),
+                    info == null ? null : info.grupaNaziv(), false);
+        }
+        RundaInfo ri = rundaInfo(iz, zr.runda());
+        int izvuceno = zr.snimak().varijante() == null ? 0 : zr.snimak().varijante().size();
+        return new JavniZadatak(faza, zr.runda().getId(), ri.rokMs(), ri.preostaloMs(), izvuceno,
+                zr.snimak().grupaNaziv(), resenjeVidljivo(iz));
+    }
+
+    /**
+     * Lični zadatak: samo dodeljena varijanta učesnika, od otvaranja (SVG i polja); ishod u ZATVORENO kad je odgovorio,
+     * tačne vrednosti uz vidljiv TACAN, rešenje uz vidljiv RESENJE. {@code null} u CEKA, bez runde i bez dodele.
+     */
+    private LicniZadatak licniZadatak(Izvodjenje iz, Ucesnik u, LicniPodaci lp) {
+        ZadatakRunda zr = lp.zadatak();
+        if (zr == null) return null;
+        Long varijantaId = lp.dodele().get(u.getId());
+        VarijantaSnimak v = zr.snimak().varijanta(varijantaId).orElse(null);
+        if (v == null) return null;
+        Odgovor o = lp.odgovorRunde().get(u.getId());
+        boolean zatvoreno = iz.getFaza() == Faza.ZATVORENO;
+        Map<String, Boolean> ishod = zatvoreno && o != null ? ishod(polja(o)) : null;
+        return new LicniZadatak(zr.runda().getId(), v.varijantaId(), v.svgId(), v.polja() == null ? List.of() : v.polja(),
+                iz.getFaza(), o != null, ishod, zatvoreno && o != null ? o.getTacno() : null,
+                lp.tacan() ? v.odgovori() : null, resenjeVidljivo(iz) ? v.resenjeSvgId() : null);
+    }
+
+    /** Slajd posle onog na položaju {@code indeks} (-1 = prijava daje prvi), {@code null} na kraju. */
+    private static Slajd sledeci(int indeks, List<Slajd> slajdovi) {
+        return indeks + 1 >= 0 && indeks + 1 < slajdovi.size() ? slajdovi.get(indeks + 1) : null;
     }
 
     // ---------------------------------------------------------------- javno i lično stanje (telefoni)
@@ -156,15 +298,16 @@ public class StanjeService {
                 // pre otvaranja (ili bez runde) ništa osim tipa i faze
                 pitanje = trenutni.getPitanje() == null ? null
                         : JavnoPitanje.samoTip(trenutni.getPitanje().getTip(), faza);
-            } else {
-                pitanje = javnoPitanje(iz, r, snimak(r), tacanVidljiv(iz));
+            } else if (snimak(r) instanceof PitanjeSnimak s) {
+                // privremeno: javno pitanje samo iz PITANJE snimka (ZADATAK runda ga nema)
+                pitanje = javnoPitanje(iz, r, s, tacanVidljiv(iz));
             }
         }
         return new JavnoStanje(iz.getId(), iz.getVerzija(), clock.millis(), iz.getStatus(),
                 iz.getPrezentacija().getNaziv(), iz.getKod(), iz.getPrikaz(),
                 trenutni == null ? null : trenutni.getTip(), iz.getEkran(), iz.isTakmicenje(), iz.getTelefonPrikaz(),
                 iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, rezultatZaTelefon(iz, javniRezultat(p)),
-                javnaRangLista(p));
+                javnaRangLista(p), javniZadatak(p, trenutni));
     }
 
     /**
@@ -197,7 +340,8 @@ public class StanjeService {
         PitanjeRunda runda = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
         if (runda == null) return null;
         boolean tacan = tacanVidljiv(iz);
-        Rezultat r = RezultatBuilder.izgradi(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
+        Rezultat r = rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
+        if (r == null) return null;
         if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
             RezultatBrojevi b = r.brojevi();
             return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
@@ -273,7 +417,8 @@ public class StanjeService {
 
     /** Ono što lično stanje traži od celog izvođenja, izračunato jednom (i za {@link #licnaZaSve}). */
     private record LicniPodaci(Map<Long, Integer> poeni, Map<Long, Integer> mesto, Long rundaId,
-                               Map<Long, Odgovor> odgovorRunde, boolean tacan) {
+                               Map<Long, Odgovor> odgovorRunde, boolean tacan, ZadatakRunda zadatak,
+                               Map<Long, Long> dodele) {
     }
 
     private LicniPodaci licniPodaci(Podaci p) {
@@ -283,13 +428,16 @@ public class StanjeService {
         if (iz.isTakmicenje()) {
             RangLista.izracunaj(p.ucesnici(), bodovni).forEach(st -> mesto.put(st.ucesnikId(), st.mesto()));
         }
-        PitanjeRunda r = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
+        Slajd trenutni = TokIzvodjenja.trenutni(iz, p.slajdovi());
+        PitanjeRunda r = javnaRunda(p, trenutni);
+        ZadatakRunda zr = zadatakRunda(p, trenutni, true);
         Map<Long, Odgovor> odgovorRunde = new HashMap<>();
-        if (r != null) {
-            p.odgovoriRunde(r.getId()).forEach(o -> odgovorRunde.putIfAbsent(o.getUcesnik().getId(), o));
+        PitanjeRunda saOdgovorima = r != null ? r : zr == null ? null : zr.runda();
+        if (saOdgovorima != null) {
+            p.odgovoriRunde(saOdgovorima.getId()).forEach(o -> odgovorRunde.putIfAbsent(o.getUcesnik().getId(), o));
         }
         return new LicniPodaci(RangLista.poeniPoUcesniku(bodovni), mesto, r == null ? null : r.getId(), odgovorRunde,
-                tacanVidljiv(iz));
+                tacanVidljiv(iz), zr, zr == null ? Map.of() : p.dodeleRunde());
     }
 
     private LicnoStanje licno(Podaci p, Long ucesnikId, LicniPodaci lp) {
@@ -305,7 +453,7 @@ public class StanjeService {
         return new LicnoStanje(iz.getVerzija(), izbacen.getId(), izbacen.getIme(), 0, null, brojUcesnika, true, null);
     }
 
-    private static LicnoStanje licno(Izvodjenje iz, Ucesnik u, LicniPodaci lp, int brojUcesnika) {
+    private LicnoStanje licno(Izvodjenje iz, Ucesnik u, LicniPodaci lp, int brojUcesnika) {
         LicniOdgovor odgovor = null;
         if (lp.rundaId() != null) {
             Odgovor o = lp.odgovorRunde().get(u.getId());
@@ -314,7 +462,8 @@ public class StanjeService {
                     prikazi ? o.getPoeni() : null);
         }
         return new LicnoStanje(iz.getVerzija(), u.getId(), u.getIme(), lp.poeni().getOrDefault(u.getId(), 0),
-                iz.isTakmicenje() ? lp.mesto().get(u.getId()) : null, brojUcesnika, false, odgovor);
+                iz.isTakmicenje() ? lp.mesto().get(u.getId()) : null, brojUcesnika, false, odgovor,
+                licniZadatak(iz, u, lp));
     }
 
     // ---------------------------------------------------------------- lista i rezultati
@@ -339,25 +488,60 @@ public class StanjeService {
         Map<Long, List<Odgovor>> poRundi = new HashMap<>();
         p.odgovori().forEach(o -> poRundi.computeIfAbsent(o.getRunda().getId(), k -> new ArrayList<>()).add(o));
 
+        Map<Long, Map<Long, Long>> dodelePoRundi = new HashMap<>();
+        if (p.runde().stream().anyMatch(r -> !(snimak(r) instanceof PitanjeSnimak))) {
+            Set<Long> aktivni = new HashSet<>();
+            p.ucesnici().forEach(u -> aktivni.add(u.getId()));
+            for (Object[] red : dodelaRepository.paroviIzvodjenja(izvodjenjeId)) {
+                Long ucesnik = ((Number) red[1]).longValue();
+                if (aktivni.contains(ucesnik)) {
+                    dodelePoRundi.computeIfAbsent(((Number) red[0]).longValue(), k -> new HashMap<>())
+                            .put(ucesnik, ((Number) red[2]).longValue());
+                }
+            }
+        }
+
         List<RezultatPitanja> pitanja = new ArrayList<>();
         for (PitanjeRunda r : p.runde()) {
-            PitanjeSnimak snimak = snimak(r);
+            SnimakRunde snimak = snimak(r);
+            PitanjeSnimak pitanje = snimak instanceof PitanjeSnimak ps ? ps : null;
             List<Odgovor> odgovori = poRundi.getOrDefault(r.getId(), List.of());
             Integer procenat = null;
             if (snimak.imaTacanOdgovor() && !odgovori.isEmpty()) {
                 long tacnih = odgovori.stream().filter(o -> Boolean.TRUE.equals(o.getTacno())).count();
                 procenat = (int) Math.round(100.0 * tacnih / odgovori.size());
             }
+            PregledZadatka zadatak = snimak instanceof ZadatakSnimak zs
+                    ? pregledZadatka(zs, p.ucesnici(), dodelePoRundi.getOrDefault(r.getId(), Map.of()), odgovori) : null;
             pitanja.add(new RezultatPitanja(r.getId(), r.getSlajdId(),
-                    r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), snimak,
-                    RezultatBuilder.izgradi(snimak, odgovori, false, true), odgovori.size(), procenat));
+                    r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), pitanje,
+                    rezultat(snimak, odgovori, false, true), odgovori.size(), procenat, zadatak));
         }
         return new IzvodjenjeRezultati(info(p), p.iz().isTakmicenje(), pitanja, RangLista.izracunaj(p.ucesnici(), bodovniOdgovori(p)));
     }
 
+    /** Runda zadatka u pregledu: rezultat (sve vidljivo) i učesnici sa dodelom, po redu prijave. */
+    private PregledZadatka pregledZadatka(ZadatakSnimak s, List<Ucesnik> ucesnici, Map<Long, Long> dodele,
+                                          List<Odgovor> odgovori) {
+        List<ZadatakRezultatBuilder.OdgovorZadatka> oz = odgovoriZadatka(odgovori);
+        Map<Long, ZadatakRezultatBuilder.OdgovorZadatka> poUcesniku = new HashMap<>();
+        oz.forEach(o -> poUcesniku.putIfAbsent(o.ucesnikId(), o));
+        List<UcesnikZadatka> lista = new ArrayList<>();
+        for (Ucesnik u : ucesnici) {
+            Long varijantaId = dodele.get(u.getId());
+            if (varijantaId == null) continue;
+            ZadatakRezultatBuilder.OdgovorZadatka o = poUcesniku.get(u.getId());
+            String naziv = s.varijanta(varijantaId).map(VarijantaSnimak::naziv).orElse(null);
+            lista.add(new UcesnikZadatka(u.getId(), u.getIme(), varijantaId, naziv, o != null,
+                    o == null ? null : o.tacno(), o == null ? null : ishod(o.polja())));
+        }
+        return new PregledZadatka(s.slajdId(), s.grupaNaziv(), s.putanja(),
+                ZadatakRezultatBuilder.izgradi(s, dodele, oz, true, true, true), List.copyOf(lista));
+    }
+
     // ---------------------------------------------------------------- zajedničko (i za javno/lično stanje)
 
-    /** Izvođenje (404), slajdovi, runde, neizbačeni učesnici i njihovi odgovori. */
+    /** Izvođenje (404), slajdovi, runde, neizbačeni učesnici, njihovi odgovori i opisi Zadatak slajdova (trenutni, sledeći). */
     Podaci ucitaj(Long izvodjenjeId) {
         Izvodjenje iz = izvodjenjeRepository.findSaVezama(izvodjenjeId)
                 .orElseThrow(() -> new SystemException(IzvodjenjeService.NIJE_PRONADJENO, HttpStatus.NOT_FOUND));
@@ -367,7 +551,31 @@ public class StanjeService {
                 .filter(u -> !u.isIzbacen()).toList();
         List<Odgovor> odgovori = odgovorRepository.findAllByRundaIzvodjenjeId(izvodjenjeId).stream()
                 .filter(o -> !o.getUcesnik().isIzbacen()).toList();
-        return new Podaci(iz, slajdovi, runde, ucesnici, odgovori);
+        return new Podaci(iz, slajdovi, runde, ucesnici, odgovori, opisiZadataka(iz, slajdovi),
+                dodeleRunde(iz, slajdovi, ucesnici));
+    }
+
+    /** Dodele trenutne runde kad je trenutni slajd ZADATAK (jedan upit), samo neizbačeni; inače prazno, bez upita. */
+    private Map<Long, Long> dodeleRunde(Izvodjenje iz, List<Slajd> slajdovi, List<Ucesnik> ucesnici) {
+        Slajd trenutni = TokIzvodjenja.trenutni(iz, slajdovi);
+        if (trenutni == null || trenutni.getTip() != TipSlajda.ZADATAK || iz.getTrenutnaRundaId() == null) return Map.of();
+        Set<Long> aktivni = new HashSet<>();
+        ucesnici.forEach(u -> aktivni.add(u.getId()));
+        Map<Long, Long> m = new HashMap<>();
+        for (Object[] red : dodelaRepository.parovi(iz.getTrenutnaRundaId())) {
+            Long ucesnik = ((Number) red[0]).longValue();
+            if (aktivni.contains(ucesnik)) m.put(ucesnik, ((Number) red[1]).longValue());
+        }
+        return Map.copyOf(m);
+    }
+
+    /** Opisi ZADATAK slajdova među trenutnim i sledećim, jednim batch pozivom; bez ZADATAK slajda bez ijednog upita. */
+    private Map<Long, ZadatakSlajdaInfo> opisiZadataka(Izvodjenje iz, List<Slajd> slajdovi) {
+        List<Slajd> zadaciSlajdovi = Stream
+                .of(TokIzvodjenja.trenutni(iz, slajdovi), sledeci(TokIzvodjenja.indeks(iz, slajdovi), slajdovi))
+                .filter(s -> s != null && s.getTip() == TipSlajda.ZADATAK).toList();
+        return zadaciSlajdovi.isEmpty() ? Map.of()
+                : zadaci.za(iz.getPrezentacija().getPredmet().getId(), zadaciSlajdovi);
     }
 
     /** Odgovori koji nose poene: samo iz poslednje runde svakog slajda (po rundama izvođenja, ne po odgovorima). */
@@ -400,8 +608,16 @@ public class StanjeService {
         return izSnimka != null ? izSnimka : "runda-" + r.getId();
     }
 
-    PitanjeSnimak snimak(PitanjeRunda r) {
-        return jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+    SnimakRunde snimak(PitanjeRunda r) {
+        return jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
+    }
+
+    /**
+     * Rezultat runde iz snimka ({@link RezultatBuilder}); privremeno samo za PITANJE, ZADATAK runda još nema rezultat
+     * ({@code null}) dok ne dobije svoju ocenu i projekcije.
+     */
+    private static Rezultat rezultat(SnimakRunde s, List<Odgovor> odgovori, boolean javno, boolean tacan) {
+        return s instanceof PitanjeSnimak p ? RezultatBuilder.izgradi(p, odgovori, javno, tacan) : null;
     }
 
     IzvodjenjeInfo info(Podaci p) {

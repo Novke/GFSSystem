@@ -14,6 +14,7 @@ import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.OdgovorRepository;
 import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -26,6 +27,12 @@ import java.util.stream.Collectors;
  * Prijem odgovora učesnika (spec 1.11, 4.5): zaključa red izvođenja (pa ide redom sa komandama i zatvaranjem po roku),
  * proveri izvođenje, učesnika, fazu i rundu, rok + 1 s i jedinstvenost, oceni odgovor iz snimka runde i upiše ga.
  * Svako odbijanje je {@link OdgovorOdbijen} sa porukom za učesnika. Ne menja verziju stanja (verzija raste po komandi).
+ *
+ * <p><b>Zadatak</b> ({@link ZadatakSnimak}): ocenjuje se po varijanti iz snimka runde koju učesnik ima u dodeli
+ * ({@code zadatak_dodele}; bez dodele {@value #NIJE_DODELJEN}), polje po polje ({@link OcenaZadatka}), nikad po
+ * trenutnoj banci: izmena ili arhiviranje varijante posle otvaranja ne menja ocenu. Upisuje se {@code polja} (JSON
+ * {@code kljuc -> PoljeOdgovora}), {@code varijantaId}, {@code tacno}, poeni i vreme; ostala polja odgovora su
+ * {@code null}. Za pitanje se {@code cmd.polja} ignoriše.
  *
  * <p><b>Vreme odgovora</b> ({@code vremeMs}, za poene i rang) ne računa pauze tajmera. Kad runda ima trajanje (tajmer
  * od otvaranja), {@code trajanjeMs - preostalo} je vreme koje je tajmer zaista radio: preostalo je {@code rok - sada}
@@ -44,11 +51,13 @@ public class OdgovorService {
     public static final String ISTEKLO = "Vreme je isteklo.";
     public static final String NIJE_PRIJAVLJEN = "Nisi prijavljen na ovo izvođenje.";
     public static final String ZAVRSENO = IzvodjenjeService.ZAVRSENO;
+    public static final String NIJE_DODELJEN = "Zadatak ti nije dodeljen.";
 
     private final IzvodjenjeRepository izvodjenjeRepository;
     private final PitanjeRundaRepository rundaRepository;
     private final OdgovorRepository odgovorRepository;
     private final UcesnikRepository ucesnikRepository;
+    private final ZadatakDodelaRepository dodelaRepository;
     private final ApplicationEventPublisher publisher;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -79,7 +88,12 @@ public class OdgovorService {
             throw new OdgovorOdbijen(VEC_ODGOVORIO);
         }
 
-        PitanjeSnimak snimak = jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+        SnimakRunde snimakRunde = jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
+        if (snimakRunde instanceof ZadatakSnimak zadatak) {
+            upisiZadatak(iz, u, r, zadatak, cmd, sada);
+            return;
+        }
+        PitanjeSnimak snimak = (PitanjeSnimak) snimakRunde;
         OdgovorVrednost v = vrednost(snimak.tip(), cmd);
         Boolean tacno;
         try {
@@ -102,6 +116,38 @@ public class OdgovorService {
         o.setVremeMs(vremeMs);
         o.setSakriven(false);
         o.setKreirano(sada);
+        sacuvaj(iz, u, o);
+    }
+
+    /** Zadatak: dodela, varijanta iz snimka po dodeli, ocena po poljima, upis. */
+    private void upisiZadatak(Izvodjenje iz, Ucesnik u, PitanjeRunda r, ZadatakSnimak snimak, OdgovorCmd cmd,
+                              LocalDateTime sada) {
+        Long varijantaId = dodelaRepository.findByRundaIdAndUcesnikId(r.getId(), u.getId())
+                .map(d -> d.getVarijanta().getId())
+                .orElseThrow(() -> new OdgovorOdbijen(NIJE_DODELJEN));
+        VarijantaSnimak v = snimak.varijanta(varijantaId).orElseThrow(() -> new OdgovorOdbijen(NIJE_DODELJEN));
+        OcenaZadatka.Ishod ishod;
+        try {
+            ishod = OcenaZadatka.oceni(v, cmd.polja());
+        } catch (SystemException e) {
+            throw new OdgovorOdbijen(e.getMessage());
+        }
+        long vremeMs = vremeMs(r, sada);
+
+        Odgovor o = new Odgovor();
+        o.setRunda(r);
+        o.setUcesnik(u);
+        o.setPolja(jsonMapper.writeValueAsString(ishod.polja()));
+        o.setVarijantaId(varijantaId);
+        o.setTacno(ishod.tacno());
+        o.setPoeni(Ocenjivac.poeni(ishod.tacno(), iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
+        o.setVremeMs(vremeMs);
+        o.setSakriven(false);
+        o.setKreirano(sada);
+        sacuvaj(iz, u, o);
+    }
+
+    private void sacuvaj(Izvodjenje iz, Ucesnik u, Odgovor o) {
         try {
             // IDENTITY: insert ide odmah, pa UNIQUE(runda_id, ucesnik_id) puca ovde (poslednja brana)
             odgovorRepository.save(o);

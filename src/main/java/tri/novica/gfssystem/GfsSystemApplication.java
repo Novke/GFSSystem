@@ -11,6 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 
 import java.time.Clock;
+import java.util.Random;
 
 // bez korisnika sa generisanom lozinkom: nastavnik i studenti se prijavljuju našim sesijama (security/SecurityConfig);
 // MCP stateless server pravi mcp/McpKonfig (isključena SDK provera argumenata prema šemi, vidi McpKonfig.StatelessServer)
@@ -35,6 +36,12 @@ public class GfsSystemApplication {
     @Bean
     Clock clock() {
         return Clock.systemDefaultZone();
+    }
+
+    /** Jedini izvor slučajnosti za izvlačenje i raspodelu zadataka na času; testovi ga zamenjuju seed-ovanim ({@code SeedRandom}). */
+    @Bean
+    Random random() {
+        return new Random();
     }
 
 }

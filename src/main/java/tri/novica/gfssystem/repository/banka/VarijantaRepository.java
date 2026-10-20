@@ -97,6 +97,40 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             from Varijanta v join v.grupa g where v.serija = :serija order by v.id""")
     List<Object[]> zaPonistavanje(@Param("serija") String serija);
 
+    /**
+     * AKTIVNE varijante sa gotovim SVG-om po grupi, jedan upit: redovi {@code [grupaId, broj]}, grupe bez njih nisu tu
+     * (kandidati slajda Zadatak, {@code KandidatiZadatka}).
+     */
+    @Query("""
+            select v.grupa.id, count(v) from Varijanta v
+            where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
+            and v.renderSvg is not null group by v.grupa.id""")
+    List<Object[]> aktivneSaSvgPoGrupi(@Param("ids") Collection<Long> ids);
+
+    /**
+     * AKTIVNE varijante zadatih grupa sa SVG-om teksta (inner join: bez njega varijanta nije kandidat) i, kad ga ima,
+     * SVG rešenja, po grupi pa po id-ju; jedan upit bez upita po varijanti.
+     */
+    @Query("""
+            select v from Varijanta v join fetch v.renderSvg left join fetch v.renderResenjeSvg
+            where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
+            order by v.grupa.id, v.id""")
+    List<Varijanta> aktivneZaGrupe(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Zaključava (SELECT ... FOR UPDATE, do kraja transakcije) zadate varijante koje su i dalje kandidati slajda Zadatak
+     * (AKTIVNE sa SVG-om teksta) i vraća njihove id-jeve rastuće: obrisane i one koje su u međuvremenu izašle iz AKTIVNIH
+     * nisu u rezultatu (uslov proverava baza nad poslednjom verzijom reda, posle čekanja na ključ). Zove ga samo otvaranje
+     * runde ({@code ZadatakDodelaService.snimak}), posle zaključanog reda izvođenja. Nativan upit sa skalarnim rezultatom:
+     * zaključava samo redove {@code varijante} po primarnom ključu, rastuće po id-ju (ne i redove grupa ili medija preko
+     * EAGER veza) i ne vraća entitete (entitet učitan pre ključa se ne osvežava). {@code ids} ne sme biti prazan.
+     */
+    @Query(value = """
+            select v.id from varijante v
+            where v.id in (:ids) and v.status = 'AKTIVNA' and v.render_svg_id is not null
+            order by v.id for update""", nativeQuery = true)
+    List<Long> zakljucajKandidate(@Param("ids") Collection<Long> ids);
+
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying
     @Query("update Varijanta v set v.renderHash = null where v.grupa.predmet.id = :predmetId")

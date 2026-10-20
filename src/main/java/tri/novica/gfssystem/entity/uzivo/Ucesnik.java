@@ -5,10 +5,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.DynamicUpdate;
+import tri.novica.gfssystem.entity.Student;
 
 import java.time.LocalDateTime;
 
-/** Učesnik izvođenja (telefon studenta). U bazi je samo SHA-256 (hex) tokena iz kolačića, nikad sam token. */
+/**
+ * Učesnik izvođenja (telefon studenta). U bazi je samo SHA-256 (hex) tokena iz kolačića, nikad sam token. {@code student}
+ * je prijavljen student iza učesnika (bodovan run); null za učesnika koji je samo ukucao ime.
+ */
 @Entity
 @Table(name = "ucesnici")
 @Getter @Setter @NoArgsConstructor
@@ -26,6 +30,9 @@ public class Ucesnik {
     private boolean izbacen;
     @Column(nullable = false)
     private LocalDateTime kreirano;
+    /** Brisanje studenta ostavlja učesnika bez njega (ON DELETE SET NULL). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Student student;
 
     @Override
     public boolean equals(Object o) {

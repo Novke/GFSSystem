@@ -146,7 +146,7 @@ class VodicTest {
     void vodicPitanjaPokrivaSveTipove() {
         String s = tekst(VodicTema.PITANJA);
         for (String izraz : List.of("TACNO_NETACNO", "postepeno", "vremeSekunde", "5-600", "api/public/mediji/", "\\$",
-                "50", "gfs-mcp-upload", "dodaj_slajd", "slikaId")) {
+                "50", "gfs-mcp-upload", "dodaj_slajd", "slikaId", "ZADATAK", "brojVarijanti", "upozorenja")) {
             assertTrue(s.contains(izraz), "vodič pitanja nema: " + izraz);
         }
         for (TipPitanja tip : TipPitanja.values()) {
@@ -159,19 +159,24 @@ class VodicTest {
         List<Map<String, Object>> primeri = jsonPrimeri(tekst(VodicTema.PITANJA));
         Set<TipPitanja> tipovi = EnumSet.noneOf(TipPitanja.class);
         boolean info = false;
+        boolean zadatak = false;
         for (Map<String, Object> primer : primeri) {
             SlajdCmd slajd = patch(Map.of("slajd", primer)).strogo("slajd", SlajdCmd.class);
             SlajdCmd n = SlajdPP.normalizuj(slajd);
             SlajdPP.proveri(n);
             SlajdPP.slikeSlajda(n);
-            assertTrue(EnumSet.of(TipSlajda.INFO, TipSlajda.PITANJE).contains(n.tip()), primer.toString());
+            assertTrue(EnumSet.of(TipSlajda.INFO, TipSlajda.PITANJE, TipSlajda.ZADATAK).contains(n.tip()), primer.toString());
             if (n.tip() == TipSlajda.INFO) {
                 info = true;
+            } else if (n.tip() == TipSlajda.ZADATAK) {
+                zadatak = true;
+                assertNotNull(n.zadatak().grupaId(), primer.toString());
             } else {
                 tipovi.add(n.pitanje().tip());
             }
         }
         assertTrue(info, "vodič pitanja ima primer INFO slajda");
+        assertTrue(zadatak, "vodič pitanja ima primer ZADATAK slajda");
         assertEquals(EnumSet.allOf(TipPitanja.class), tipovi, "po primer za svaki tip pitanja");
     }
 

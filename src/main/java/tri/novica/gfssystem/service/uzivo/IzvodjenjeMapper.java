@@ -23,6 +23,6 @@ public final class IzvodjenjeMapper {
                 i.getKod(), i.getStatus(), i.isCuvanje(),
                 g == null ? null : new GrupaKratko(g.getId(), g.getNaziv()),
                 pr == null ? null : new PredavanjeKratko(pr.getId(), pr.getRb(), pr.getDatum(), pr.getTema()),
-                i.getPocetak(), i.getKraj(), brojUcesnika, brojPitanja);
+                i.getPocetak(), i.getKraj(), brojUcesnika, brojPitanja, i.isBoduje());
     }
 }

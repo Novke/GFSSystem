@@ -37,6 +37,12 @@ public class Odgovor {
     private boolean sakriven;
     @Column(nullable = false)
     private LocalDateTime kreirano;
+    /** Odgovor na zadatak po poljima šeme: JSON {@code kljuc -> {vrednost, tacno}}; null za PITANJE. */
+    @Column(columnDefinition = "text")
+    private String polja;
+    /** Varijanta dodeljena učesniku u ZADATAK rundi (brisanje varijante: SET NULL); null za PITANJE. */
+    @Column(name = "varijanta_id")
+    private Long varijantaId;
 
     @Override
     public boolean equals(Object o) {

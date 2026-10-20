@@ -7,9 +7,10 @@
 #                    primenjeni, a Flyway istorije nema (kao reset staging baze iz dump-a posle migracije):
 #                    baseline 1 + V2 i sve sledeće moraju da prođu kao no-op
 #   rollback       - šema gf, novi jar je migrira do kraja i staje; JDBC upiše predmet, prezentaciju i INFO slajd, pa stara
-#                    slika (OLD_IMAGE, trenutna prod slika) mora da startuje nad novom šemom i da prođe jedan PUT slajda
-#                    (rollback bez DB posla: DEFAULT u DDL-u, nullable kolone, Flyway preskače buduće verzije). Preskače se
-#                    sa porukom kad slike OLD_IMAGE nema.
+#                    slika (OLD_IMAGE, trenutna prod slika) mora da startuje nad novom šemom, prođe jedan PUT slajda i
+#                    pokrene pa završi izvođenje (upis u izvodjenja bez novih kolona; rollback bez DB posla: DEFAULT u
+#                    DDL-u, nullable kolone, Flyway preskače buduće verzije). Preskače se sa porukom kad slike OLD_IMAGE
+#                    nema.
 # Za svaki scenario pravi bazu ${DB_PREFIX}<scenario> u test MySQL-u, učita dump šeme (bez podataka), pokrene jar
 # (ddl-auto=validate) i ispiše flyway_schema_history. Izlaz != 0 ako bilo koji scenario ne prođe.
 #
@@ -78,9 +79,10 @@ pocisti() { zaustavi_app; zaustavi_staru; }
 trap pocisti EXIT
 
 # Stara slika nad bazom $1 (posle novog jar-a): kontejner u mrežnom prostoru test MySQL-a (127.0.0.1:3306 je on), Started,
-# pa PUT INFO slajda $2 kroz curl iz kontejnera. Vraća 0 kad PUT vrati izmenjen naslov.
+# pa kroz curl iz kontejnera PUT INFO slajda $3, pokretanje izvođenja prezentacije $2 ("ne čuvaj") i komanda ZAVRSI. Vraća 0
+# kad PUT vrati izmenjen naslov, pokretanje vrati izvođenje sa kodom i ZAVRSI odgovori 200.
 proba_stare_slike() {
-  local db="$1" slajd="$2" stari_log="$3" i stanje odgovor
+  local db="$1" prezentacija="$2" slajd="$3" stari_log="$4" i stanje odgovor izv http
   zaustavi_staru
   docker run -d --rm --name "$stara_app" --network "container:$MYSQL_CONTAINER" \
     -e SPRING_PROFILES_ACTIVE=dev \
@@ -109,14 +111,35 @@ proba_stare_slike() {
   odgovor="$(docker exec "$stara_app" curl -fsS -X PUT -H 'Content-Type: application/json' \
     --data '{"tip":"INFO","naslov":"Rollback proba","postepeno":false}' \
     "http://127.0.0.1:${APP_PORT}/slajdovi/${slajd}" 2>&1)" || odgovor="PUT nije uspeo: $odgovor"
+  if [[ "$odgovor" != *'"naslov":"Rollback proba"'* ]]; then
+    docker logs "$stara_app" >"$stari_log" 2>&1 || true
+    zaustavi_staru
+    echo "PUT /slajdovi/$slajd (stara slika): NEUSPEH, log: $stari_log"
+    printf '  %s\n' "${odgovor:0:300}"
+    return 1
+  fi
+  echo "PUT /slajdovi/$slajd (stara slika): OK"
+  # izvođenje: INSERT u izvodjenja bez novih kolona (DEFAULT u DDL-u), pa ZAVRSI; odgovor počinje sa {"id":<izvođenje>
+  odgovor="$(docker exec "$stara_app" curl -fsS -X POST -H 'Content-Type: application/json' --data '{"cuvanje":false}' \
+    "http://127.0.0.1:${APP_PORT}/prezentacije/${prezentacija}/izvodjenja" 2>&1)" || odgovor="POST nije uspeo: $odgovor"
+  izv="$(sed -nE 's/^\{"id":([0-9]+),.*/\1/p' <<<"$odgovor")"
+  if [[ -z "$izv" || "$odgovor" != *'"kod":"'* ]]; then
+    docker logs "$stara_app" >"$stari_log" 2>&1 || true
+    zaustavi_staru
+    echo "POST /prezentacije/$prezentacija/izvodjenja (stara slika): NEUSPEH, log: $stari_log"
+    printf '  %s\n' "${odgovor:0:300}"
+    return 1
+  fi
+  echo "POST /prezentacije/$prezentacija/izvodjenja (stara slika): OK (izvođenje $izv)"
+  http="$(docker exec "$stara_app" curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+    --data '{"tip":"ZAVRSI"}' "http://127.0.0.1:${APP_PORT}/izvodjenja/${izv}/komande" 2>&1)" || http="curl: $http"
   docker logs "$stara_app" >"$stari_log" 2>&1 || true
   zaustavi_staru
-  if [[ "$odgovor" == *'"naslov":"Rollback proba"'* ]]; then
-    echo "PUT /slajdovi/$slajd (stara slika): OK"
+  if [[ "$http" == "200" ]]; then
+    echo "POST /izvodjenja/$izv/komande ZAVRSI (stara slika): OK"
     return 0
   fi
-  echo "PUT /slajdovi/$slajd (stara slika): NEUSPEH, log: $stari_log"
-  printf '  %s\n' "${odgovor:0:300}"
+  echo "POST /izvodjenja/$izv/komande ZAVRSI (stara slika): NEUSPEH ($http), log: $stari_log"
   return 1
 }
 
@@ -179,14 +202,15 @@ for s in "${SCENARIJI[@]}"; do
 
   if [[ "$s" == "rollback" && "$rezultat" == "ok" ]]; then
     # podaci koje stara slika menja: predmet, prezentacija i INFO slajd (bez novih kolona, kao što ih stara slika piše)
-    slajd="$(mysql_exec -N -B "$db" -e "
+    read -r prezentacija slajd < <(mysql_exec -N -B "$db" -e "
       INSERT INTO predmeti (naziv) VALUES ('Rollback proba');
       INSERT INTO prezentacije (predmet_id, naziv, takmicenje, telefon_prikaz, detalji_dozvoljeni, kreirano, izmenjeno)
         VALUES (LAST_INSERT_ID(), 'Rollback proba', 0, 'DUGMAD', 0, NOW(6), NOW(6));
+      SET @prezentacija := LAST_INSERT_ID();
       INSERT INTO slajdovi (prezentacija_id, rb, tip, naslov, sadrzaj, postepeno)
-        VALUES (LAST_INSERT_ID(), 1, 'INFO', 'Pre rollback-a', 'Tekst slajda', 0);
-      SELECT LAST_INSERT_ID();")"
-    if ! proba_stare_slike "$db" "$slajd" "${log%.log}-stara.log"; then
+        VALUES (@prezentacija, 1, 'INFO', 'Pre rollback-a', 'Tekst slajda', 0);
+      SELECT @prezentacija, LAST_INSERT_ID();")
+    if ! proba_stare_slike "$db" "$prezentacija" "$slajd" "${log%.log}-stara.log"; then
       neuspeli+=("$s")
       rezultat="stara slika"
     fi

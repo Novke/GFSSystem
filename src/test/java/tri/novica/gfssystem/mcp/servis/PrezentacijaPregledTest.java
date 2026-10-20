@@ -3,6 +3,7 @@ package tri.novica.gfssystem.mcp.servis;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
@@ -10,6 +11,7 @@ import tri.novica.gfssystem.dto.uzivo.PredmetKratko;
 import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaDetails;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
+import tri.novica.gfssystem.dto.uzivo.ZadatakSlajdaInfo;
 import tri.novica.gfssystem.dto.uzivo.platno.*;
 import tri.novica.gfssystem.entity.uzivo.SmerPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
@@ -379,10 +381,14 @@ class PrezentacijaPregledTest {
         SlajdDetails bez = PrezentacijaPregled.bezPoteza(s);
         assertEquals(new SlajdDetails(3L, 2, TipSlajda.PLATNO, "N", "S", new MedijInfo(SLIKA, "a", "image/png", 1), "B",
                 true, null, PlatnoPregled.bezPoteza(platno(1)), new Prelaz(TipPrelaza.FADE, null, 500)), bez);
+        ZadatakSlajdaInfo zadatak = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10", List.of(), true, 3, List.of(), false,
+                List.of(), List.of());
+        assertEquals(zadatak, PrezentacijaPregled.bezPoteza(new SlajdDetails(3L, 2, TipSlajda.PLATNO, null, null, null,
+                null, false, null, platno(1), null, zadatak)).zadatak(), "zadatak ostaje i kad se potezi brišu");
         SlajdDetails info = new SlajdDetails(4L, 1, TipSlajda.INFO, "N", null, null, null, false, null, null, null);
         assertSame(info, PrezentacijaPregled.bezPoteza(info));
-        // nova komponenta (B: zadatak, A2: verzija) mora ući i u kopiju bez poteza
-        assertEquals(11, SlajdDetails.class.getRecordComponents().length,
+        // nova komponenta (A2: verzija) mora ući i u kopiju bez poteza
+        assertEquals(12, SlajdDetails.class.getRecordComponents().length,
                 "SlajdDetails ima novu komponentu: dopuni PrezentacijaPregled.bezPoteza i ovaj test");
     }
 
@@ -392,5 +398,25 @@ class PrezentacijaPregledTest {
         assertEquals(List.of(), PlatnoPregled.slojevi(new Platno(1, new Pozadina("#FFFFFF", null), null, null)));
         List<McpSlojSazetak> s = PlatnoPregled.slojevi(platno(1));
         assertThrows(UnsupportedOperationException.class, () -> Collections.addAll(s, s.getFirst()));
+    }
+
+    @Test
+    void zadatakSlajdImaSazetakBezSvg() {
+        ZadatakSlajdaInfo z = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10",
+                List.of(new GrupaPutanja(1L, "Konverzije"), new GrupaPutanja(3L, "2 → 10")), true, 6, List.of(), false,
+                List.of(), List.of("Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa."));
+        SlajdDetails s = new SlajdDetails(9L, 1, TipSlajda.ZADATAK, null, null, null, null, false, null, null, null, z);
+        McpSlajdSazetak m = PrezentacijaPregled.sazetak(s);
+        assertEquals(0, m.brojKoraka());
+        assertEquals(3L, m.zadatak().grupaId());
+        assertEquals(6, m.zadatak().brojAktivnih());
+        assertEquals(4, m.zadatak().brojVarijanti());
+        assertEquals(120, m.zadatak().vremeSekunde());
+        assertEquals("2 → 10", m.zadatak().putanja().getLast().naziv());
+        String json = JSON.writeValueAsString(m);
+        assertFalse(json.toLowerCase().contains("svg"), json);
+        assertFalse(json.contains("grupaNaziv"), json);
+        assertTrue(json.contains("odobri nacrte"), json);
+        assertNull(PrezentacijaPregled.sazetak(platnoSlajd(1L, 1, platno(1))).zadatak());
     }
 }

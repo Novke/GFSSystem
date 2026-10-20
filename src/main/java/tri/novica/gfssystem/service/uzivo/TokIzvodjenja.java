@@ -2,6 +2,7 @@ package tri.novica.gfssystem.service.uzivo;
 
 import tri.novica.gfssystem.entity.uzivo.Izvodjenje;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
+import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 
 import java.util.List;
 
@@ -50,6 +51,35 @@ public final class TokIzvodjenja {
             case INFO -> s.isPostepeno() ? Markdown.brojStavki(s.getSadrzaj()) : 0;
             case PLATNO -> PlatnoJson.brojKoraka(s.getPlatno());
             default -> 0;
+        };
+    }
+
+    /** Slajd koji otvara runde: PITANJE sa pitanjem ili ZADATAK (i bez grupe; otvaranje tada javlja 409). */
+    public static boolean saRundama(Slajd s) {
+        if (s == null) return false;
+        return (s.getTip() == TipSlajda.PITANJE && s.getPitanje() != null) || s.getTip() == TipSlajda.ZADATAK;
+    }
+
+    /**
+     * Broj varijanti koje se izvlače pri otvaranju ZADATAK slajda, {@code null} = sve aktivne: izmena iz konzole
+     * ({@code Izvodjenje.zadatakBrojVarijanti}: {@code null} = kao na slajdu, 0 = sve), inače broj sa slajda.
+     */
+    public static Integer brojVarijanti(Izvodjenje iz, Slajd s) {
+        Integer izmena = iz.getZadatakBrojVarijanti();
+        if (izmena == null) return s.getZadatakBrojVarijanti();
+        return izmena == 0 ? null : izmena;
+    }
+
+    /**
+     * Da li runda sa ovim snimkom pripada slajdu ovakvog tipa ({@link PitanjeSnimak} za PITANJE, {@link ZadatakSnimak}
+     * za ZADATAK). Slajd može promeniti tip usred runa, pa runda druge vrste ne sme postati njegova trenutna.
+     */
+    public static boolean odgovaraSlajdu(SnimakRunde sn, Slajd s) {
+        if (sn == null || s == null) return false;
+        return switch (s.getTip()) {
+            case PITANJE -> sn instanceof PitanjeSnimak;
+            case ZADATAK -> sn instanceof ZadatakSnimak;
+            default -> false;
         };
     }
 }

@@ -50,6 +50,14 @@ public final class OcenaPolja {
         return kljuc(polje, s, false);
     }
 
+    /**
+     * Ključ kao u oceni ({@link #tacno}): kao {@link #kljucTeksta}, ali polje sa {@code zanemariVelicinu = false} čuva
+     * veličinu slova, pa se "ABC" i "abc" ne spajaju u istu grupu rezultata (jedno je tačno, drugo nije).
+     */
+    public static String kljucOcene(Polje polje, String s) {
+        return kljuc(polje, s, polje != null && Boolean.FALSE.equals(polje.zanemariVelicinu()));
+    }
+
     private static boolean brojTacan(Polje polje, OdgovorPolja ocekivano, Object dato) {
         if (!(dato instanceof String s) || ocekivano.broj() == null || !Double.isFinite(ocekivano.broj())) return false;
         Double broj = Normalizacija.broj(s);

@@ -30,8 +30,8 @@ import java.util.Set;
  * {@code McpOpsegTest.DOZVOLJENE_METODE}, a skup njenih javnih metoda je zakucan u {@code McpFasadeTest.METODE}.
  * <p>
  * Čitanje je sažeto ({@link PrezentacijaPregled}: strane koje staju u jedan odgovor) ili pun slajd bez poteza crteža
- * ({@link McpSlajd}). Klod pravi prezentacije i dodaje slajdove sa serijom; u A1 samo tipove iz {@link #DOZVOLJENI_TIPOVI}
- * (B dodaje ZADATAK, A2 PLATNO), a postojeće slajdove ne menja. Pravljenje troši jedno pravljenje iz dnevnog budžeta ključa
+ * ({@link McpSlajd}). Klod pravi prezentacije i dodaje slajdove sa serijom; samo tipove iz {@link #DOZVOLJENI_TIPOVI}
+ * (INFO, PITANJE i ZADATAK; A2 dodaje PLATNO), a postojeće slajdove ne menja. Pravljenje troši jedno pravljenje iz dnevnog budžeta ključa
  * pre upisa; prezentacija koja se upravo izvodi se ne menja ({@code PrezentacijaService.dodajSlajdIzSerije}, 409).
  * <p>
  * Slike za slajdove (spec MCP 4.5) stižu kroz {@code POST /mcp/slike} ({@code McpUploadRest}), ne kroz argument alata;
@@ -42,9 +42,9 @@ import java.util.Set;
 public class McpPrezentacije {
 
     /** Tipovi slajda koje Klod dodaje kroz {@code dodaj_slajd}. */
-    static final Set<TipSlajda> DOZVOLJENI_TIPOVI = EnumSet.of(TipSlajda.INFO, TipSlajda.PITANJE);
+    static final Set<TipSlajda> DOZVOLJENI_TIPOVI = EnumSet.of(TipSlajda.INFO, TipSlajda.PITANJE, TipSlajda.ZADATAK);
     /** 400 za {@code dodaj_slajd} sa tipom van {@link #DOZVOLJENI_TIPOVI}. */
-    static final String SAMO_INFO_I_PITANJE = "Klod u ovoj verziji dodaje samo INFO i PITANJE slajdove.";
+    static final String SAMO_DOZVOLJENI = "Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.";
     private static final String PREDMET_OBAVEZAN = "Predmet je obavezan.";
 
     private final McpLinkovi linkovi;
@@ -99,8 +99,8 @@ public class McpPrezentacije {
     }
 
     /**
-     * Klodov INFO ili PITANJE slajd sa serijom, na kraj ili odmah posle {@code posle}. Tip van {@link #DOZVOLJENI_TIPOVI}
-     * je 400 {@value #SAMO_INFO_I_PITANJE} bez troška (bez tipa odlučuje {@code SlajdPP}); zatim jedno pravljenje iz budžeta,
+     * Klodov INFO, PITANJE ili ZADATAK slajd sa serijom, na kraj ili odmah posle {@code posle}. Tip van {@link #DOZVOLJENI_TIPOVI}
+     * je 400 {@value #SAMO_DOZVOLJENI} bez troška (bez tipa odlučuje {@code SlajdPP}); zatim jedno pravljenje iz budžeta,
      * pa servis pod ključem prezentacije (409 dok se izvodi, pa puna provera sadržaja i Markdown slika).
      */
     public McpSlajdSazetak dodajSlajd(Long prezentacijaId, Long posle, SlajdCmd cmd, String serija) {
@@ -110,7 +110,7 @@ public class McpPrezentacije {
             throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
         if (cmd.tip() != null && !DOZVOLJENI_TIPOVI.contains(cmd.tip())) {
-            throw new SystemException(SAMO_INFO_I_PITANJE, HttpStatus.BAD_REQUEST);
+            throw new SystemException(SAMO_DOZVOLJENI, HttpStatus.BAD_REQUEST);
         }
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         return PrezentacijaPregled.sazetak(prezentacijaService.dodajSlajdIzSerije(id, cmd, posle, serija));

@@ -64,7 +64,9 @@ public class PrezentacijaAlati {
             + "kraja slajda). INFO: naslov i Markdown sadržaj (do 1 000 znakova); PITANJE: tip, tekst i opcije sa tačnim; "
             + "PLATNO: slojevi redom od najnižeg, sa id, tipom, nazivom, `okvir` `[x, y, sirina, visina]` na platnu 960 x 540, "
             + "tekstom (pasusi spojeni sa `\\n`, preovlađujući font i veličina), tabelom kao mrežom teksta, `latex` formule, "
-            + "`medijId` slike i crteža i brojem tačaka crteža. Skraćen tekst se završava sa `…`; ceo slajd daje `slajd`.",
+            + "`medijId` slike i crteža i brojem tačaka crteža; ZADATAK: `zadatak` sa `grupaId`, `putanja` od korena banke "
+            + "(poslednji element je sama grupa), `brojAktivnih`, `brojVarijanti`, `vremeSekunde`, isključenjima i "
+            + "`upozorenja`. Skraćen tekst se završava sa `…`; ceo slajd daje `slajd`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
     public CallToolResult prezentacija(
@@ -113,11 +115,13 @@ public class PrezentacijaAlati {
         });
     }
 
-    @McpTool(name = "dodaj_slajd", description = "Dodaje jedan `INFO` ili `PITANJE` slajd sa tvojom serijom u prezentaciju "
-            + "(i Novicinu): bez `posle` na kraj, sa `posle` odmah iza tog slajda. Oblik `slajd` i pravila su u vodiču "
-            + "`pitanja`; drugi tip je greška `Klod u ovoj verziji dodaje samo INFO i PITANJE slajdove.`, a prezentacija koja "
-            + "se upravo izvodi se ne menja. Vraća `{slajd, link}` (sažetak slajda kao u `prezentacija`). "
-            + McpAlati.NE_PONAVLJAJ,
+    @McpTool(name = "dodaj_slajd", description = "Dodaje jedan `INFO`, `PITANJE` ili `ZADATAK` slajd sa tvojom serijom u "
+            + "prezentaciju (i Novicinu): bez `posle` na kraj, sa `posle` odmah iza tog slajda. Oblik `slajd` i pravila su u "
+            + "vodiču `pitanja`; drugi tip je greška `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`, a "
+            + "prezentacija koja se upravo izvodi se ne menja. ZADATAK: `{tip: \"ZADATAK\", zadatak: {grupaId, vremeSekunde?, "
+            + "brojVarijanti?}}`; grupa iz banke istog predmeta, namena PREDAVANJE; prazno `brojVarijanti` = sve aktivne "
+            + "(Novica ga menja i u konzoli). Pročitaj `slajd.zadatak.upozorenja` i javi ih Novici. Vraća `{slajd, link}` "
+            + "(sažetak slajda kao u `prezentacija`). " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false,
                     openWorldHint = false))
     public CallToolResult dodajSlajd(
@@ -125,8 +129,9 @@ public class PrezentacijaAlati {
             @McpToolParam(description = "Serija ovog zahteva.") String serija,
             @McpToolParam(description = "Id prezentacije iz `prezentacije` ili `napravi_prezentaciju`.") Long prezentacijaId,
             @McpToolParam(description = "Id slajda iza kog se dodaje; bez njega na kraj.", required = false) Long posle,
-            @McpToolParam(description = "Slajd: `tip` (`INFO` ili `PITANJE`), `naslov`, `sadrzaj`, `slikaId`, `beleske`, "
-                    + "`postepeno`, `pitanje`, `prelaz` (vodič `pitanja`); `platno` se u ovoj verziji ne šalje.")
+            @McpToolParam(description = "Slajd: `tip` (`INFO`, `PITANJE` ili `ZADATAK`), `naslov`, `sadrzaj`, `slikaId`, "
+                    + "`beleske`, `postepeno`, `pitanje`, `zadatak`, `prelaz` (vodič `pitanja`); `platno` se u ovoj verziji ne "
+                    + "šalje.")
             SlajdCmd slajd) {
         return McpGreske.izvrsi("dodaj_slajd", serija, poziv -> {
             poziv.id("prezentacija", prezentacijaId);

@@ -194,11 +194,58 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   IT need a real MySQL (`SPRING_DATASOURCE_URL`, e.g. `jdbc:mysql://localhost:3307/gftest` on novica-dev (throwaway `gfs-redizajn-mysql`, never `shared-mysql`)); the rest are
   plain unit tests.
 
+### Zadatak slide (banka phase 2, project B)
+
+Slide type `ZADATAK` (spec `docs/superpowers/specs/2026-10-18-mcp-nastava-design.md` 11 and banka spec 4 in the wrapper repo): every
+phone gets its own random variant from a node of the subject's PREDAVANJE bank, the student types the answers per field of the
+group's schema, the console and projector show results per variant and, on `Shift+R` (`RESENJE`), the solution.
+- **Slide:** `slajdovi.grupa_zadataka_id` (FK `ON DELETE SET NULL`), `zadatak_vreme_sekunde` (5-600 or null), `zadatak_broj_varijanti`
+  (1-50 or null = all active). `SlajdCmd.zadatak` / `SlajdDetails.zadatak` (`ZadatakSlajdaInfo`: path, leaf or not, candidates, schema
+  for a leaf, exclusions, warnings, built by `ZadaciSlajdova` in one batch per request). The group must be of the same subject,
+  purpose PREDAVANJE (400 otherwise); a deleted group leaves the slide without one (warning, 409 on opening).
+- **Candidates and drawing** (`service/banka/KandidatiZadatka`, `service/uzivo/IzborVarijanti`): AKTIVNE variants with a render SVG in the
+  leaves under the node, excluded subtrees (`iskljucene_teme`) skipped with a warning; `min(N, candidates)` drawn alternately per leaf.
+  Randomness only from the `java.util.Random` bean (tests: `SeedRandom`).
+- **Round snapshot** is a union (`SnimakRunde` = `PitanjeSnimak` | `ZadatakSnimak`, JSON `vrsta`; an old snapshot without `vrsta` is
+  PITANJE). `ZadatakSnimak` holds only the drawn variants with their schema, correct answers and SVG ids at opening time: grading,
+  results and the overview always follow the snapshot, never the current bank. A round whose snapshot does not match the slide type
+  (`TokIzvodjenja.odgovaraSlajdu`) is treated as no round.
+- **Assignment** (`ZadatakDodelaService`, table `zadatak_dodele`, `UNIQUE(runda_id, ucesnik_id)`, FK to `varijante` RESTRICT): always
+  under the locked run row (open, reopen, `PONOVI`, participant join): an empty round deals evenly, a late participant gets a
+  least-assigned variant. Opening locks the node's candidates after the run row (`VarijantaRepository.zakljucajKandidate`, ascending
+  ids) and draws only those still AKTIVNE, so a variant deleted while the round opens never enters the snapshot (lock order run ->
+  variants; deletion takes group -> variants and never the run, so no cycle).
+- **Commands:** `BROJ_VARIJANTI` (only on a ZADATAK slide in CEKA; `null` = as on the slide, `0` = all, `1..50`; cleared on slide
+  change) and `RESENJE` (toggle; on needs a closed round and at least one variant with a solution). `TACAN` on a paper-only task
+  (no fields) is 409.
+- **Answers** (`OdgovorService` + `OcenaZadatka`): STOMP `polja` (`kljuc -> string` for BROJ/TEKST, list of option ids for
+  JEDAN_TACAN/VISE_TACNIH); the variant comes from the assignment, never from the message; each field graded by `OcenaPolja`
+  against the snapshot, the task is correct when all fields are. Stored in `odgovori.polja` (JSON `kljuc -> {vrednost, tacno}`) and
+  `odgovori.varijanta_id`.
+- **"Ni ranije" for the task** (`StanjeService`, `ZadatakRezultatBuilder`): phones (`JavnoStanje.zadatak` = `JavniZadatak`,
+  `LicnoStanje.zadatak` = `LicniZadatak`, `PocetnoStanje`) never get another participant's variant, a solution SVG id before
+  `RESENJE` on a closed round, or correct values before `TACAN` on a closed round; the public state carries no variant content at
+  all. The projector (`NastavnickiZadatak.javniRezultat`) follows three independent switches (results, TACAN, RESENJE). The teacher
+  API (`/izvodjenja/{id}/stanje`, `/rezultati`, teacher STOMP) carries everything, so on prod the task is only safe while the teacher
+  API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot).
+- **Student identity seam:** `security/IdentitetStudenta` (`studentId(request)`, `dostupno()`); `NemaIdentiteta` is the bean only when no
+  other exists (`IdentitetAutoKonfig`, `@ConditionalOnMissingBean`). Until the login project lands, a scored run (`PokreniCmd.boduje`)
+  is 409 `Prijava studenata još nije dostupna.`.
+- **Not done yet (BE-8):** activities in a scored run (attendance and solved tasks written to the lecture) are not implemented; the
+  scored run cannot start anyway without student login. When it is added, manual activity edits in `PredavanjeService` must lock the
+  lecture row first (plan task BE-8).
+- Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
+  grading, SVG survival, overview), `OcenaZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
+  projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
+
 ## Banka zadataka (faza 1)
 
 Per-subject bank of tasks for lectures and tests: a tree of groups, variants of a task (LaTeX text and solution rendered to SVG
-for the phone) and the schema of the answers the student types. Phase 1 is the bank itself (REST, no student-facing part, no
-assignment to lectures yet: `koriscenoNaCasu` is always `false`, phase 2 fills it from `zadatak_dodele`). Spec and plan:
+for the phone) and the schema of the answers the student types. Phase 1 is the bank itself (REST); phase 2 is the Zadatak slide
+(see "Zadatak slide" under Uživo). `koriscenoNaCasu` (variant and group) is true when a variant has a row in `zadatak_dodele` or is in
+a round snapshot (drawn, not yet assigned): such a variant or group is not deleted (409 `Korišćeno na času; arhiviraj.`). The SVGs of a
+variant with `ikadOdobrena` are never deleted, neither on a new render nor on deletion: round snapshots keep them by UUID (orphan
+`RENDER_SVG` rows are accepted). Candidates of a node: `KandidatiZadatka`. Spec and plan:
 `docs/superpowers/specs/2026-10-17-banka-zadataka-design.md` and `.../plans/2026-10-17-banka-zadataka.md` in the wrapper repo.
 
 - **Packages:** `entity|repository|dto|rest/banka/` (`GrupaZadataka`, `Varijanta`, `VarijantaPrilog`; `GrupaZadatakaRest`, `VarijantaRest`,
@@ -688,15 +735,17 @@ checks it (`ddl-auto=validate`), so an entity change needs a new migration `V<n>
 is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - `V1` = schema of prod `gf` before onboarding (the baseline: an existing DB without `flyway_schema_history` gets a
   baseline at 1 via `baseline-on-migrate`, a fresh DB runs it). `V2` = onboarding, `V3` = search/sort indexes, `V4` = `beleske`
-  (teacher notes). **V2-V4 and V6-V12 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
+  (teacher notes). **V2-V4 and V6-V13 are idempotent** (`CREATE TABLE IF NOT EXISTS`; columns and indexes guarded by
   `information_schema` + `PREPARE`/`EXECUTE`, pattern in `V2__onboarding.sql`).
 - **Rule: every new migration must be idempotent.** Staging `reset-db.sh` rebuilds `gf_staging` from the prod schema dump
   and a DB that already has the objects but no Flyway history must still migrate (no "Duplicate key name"/"already exists").
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
   `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. `V11` = `banka_zadataka` (tables `grupe_zadataka`, `varijante`, `varijanta_prilozi`, column `mediji.vrsta` `varchar(20) NOT NULL DEFAULT 'SLIKA'`, nullable `predmeti.latex_preambula`), idempotent. `V12` = `mcp_banka` (`izvor`/`serija` on groups, `ikad_odobrena`,
   `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
-  idempotent, **if it is merged first**. **Next free version: `V13`** (after V12 is on `staging`). Branch `feature/prijava`
-  carries the provisional `V15__prijava.sql` (renumbered to the next free version at its merge into `staging`).
+  idempotent. `V13` = slide Zadatak (`slajdovi` group/timer/count, `izvodjenja.boduje`/`resenje_prikazano`/`zadatak_broj_varijanti`,
+  `ucesnici.student_id`, `odgovori.polja`/`varijanta_id`, table `zadatak_dodele`; see "Zadatak slide"), idempotent. **Next free
+  version: `V14`** (on `staging`). Branch `feature/prijava` carries the provisional `V15__prijava.sql` (renumbered to the next free
+  version, today `V14`, at its merge into `staging`).
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

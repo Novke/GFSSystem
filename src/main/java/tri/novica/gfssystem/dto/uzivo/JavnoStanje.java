@@ -7,10 +7,18 @@ import java.util.List;
 /**
  * Stanje izvođenja za telefone i javni topik (spec 4.4). {@code rezultat} samo kad su rezultati prikazani (bez
  * sakrivenih tekstova, tačnost tek posle TACAN, tekstovi opcija samo kad je tekst dozvoljen); {@code rangLista} (top 5, bez id-jeva) samo kad je prikazana ili na
- * kraju takmičenja.
+ * kraju takmičenja. {@code zadatak}: Zadatak slajd bez sadržaja varijanti ({@link JavniZadatak}), {@code null} van njega.
  */
 public record JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,
                           String kod, Prikaz prikaz, TipSlajda slajdTip, Ekran ekran, boolean takmicenje,
                           TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, int brojUcesnika,
-                          JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista) {
+                          JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista, JavniZadatak zadatak) {
+
+    public JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,
+                       String kod, Prikaz prikaz, TipSlajda slajdTip, Ekran ekran, boolean takmicenje,
+                       TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, int brojUcesnika,
+                       JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista) {
+        this(izvodjenjeId, verzija, serverVremeMs, status, naziv, kod, prikaz, slajdTip, ekran, takmicenje, telefonPrikaz,
+                detaljiDozvoljeni, brojUcesnika, pitanje, rezultat, rangLista, null);
+    }
 }

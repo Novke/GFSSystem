@@ -18,6 +18,7 @@ import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.OdgovorRepository;
 import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -48,6 +49,7 @@ class OdgovorServiceTest {
     @Mock PitanjeRundaRepository rundaRepository;
     @Mock OdgovorRepository odgovorRepository;
     @Mock UcesnikRepository ucesnikRepository;
+    @Mock ZadatakDodelaRepository dodelaRepository;
     @Mock ApplicationEventPublisher publisher;
 
     final MutableClock clock = new MutableClock(T0.plusSeconds(10).atZone(ZONA).toInstant(), ZONA);
@@ -85,7 +87,7 @@ class OdgovorServiceTest {
         when(odgovorRepository.save(any(Odgovor.class))).thenAnswer(i -> i.getArgument(0));
 
         service = new OdgovorService(izvodjenjeRepository, rundaRepository, odgovorRepository, ucesnikRepository,
-                publisher, jsonMapper, clock);
+                dodelaRepository, publisher, jsonMapper, clock);
     }
 
     PitanjeRunda runda(PitanjeSnimak s) {

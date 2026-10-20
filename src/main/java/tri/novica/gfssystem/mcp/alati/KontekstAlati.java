@@ -36,7 +36,7 @@ public class KontekstAlati {
 
     @McpTool(name = "vodic", description = "Vodič za rad sa GFS-om, kao tekst. Teme: `pravila` (tok rada, nacrti, serije, "
             + "isključene teme, pregled, poništavanje; čitaj pre prvog upisa), `banka` (LaTeX za telefon, preambula, "
-            + "zabranjene komande, prilozi, šema polja i odgovori, slike rendera), `pitanja` (INFO i PITANJE slajdovi, formule, "
+            + "zabranjene komande, prilozi, šema polja i odgovori, slike rendera), `pitanja` (INFO, PITANJE i ZADATAK slajdovi, formule, "
             + "granice). Pročitaj temu pre rada u toj oblasti.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
