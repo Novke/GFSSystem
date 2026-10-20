@@ -379,6 +379,15 @@ class PristupMatricaTest {
         // WebSocket ulazi iz WebSocketHandlerMapping-a, ne iz @RequestMapping-a
         assertTrue(kljucevi.contains("GET /ws"), "WebSocket /ws nije skupljen: " + kljucevi);
         assertTrue(kljucevi.contains("GET /public/ws"), "WebSocket /public/ws nije skupljen: " + kljucevi);
+        // MCP: /mcp je Spring AI RouterFunction (ne @RequestMapping), upload putanje su @RequestMapping (test ključ uključuje MCP)
+        Map<String, String> izvori = new LinkedHashMap<>();
+        endpointi().forEach(e -> izvori.put(e.kljuc(), e.izvor()));
+        for (String k : List.of("GET /mcp", "POST /mcp")) {
+            assertTrue(izvori.getOrDefault(k, "").startsWith("RouterFunction"), k + " nije skupljen iz RouterFunction-a: " + izvori.get(k));
+        }
+        for (String k : List.of("POST /mcp/prilozi", "POST /mcp/slike")) {
+            assertTrue(izvori.containsKey(k), k + " nije skupljen");
+        }
         // mapiranje bez metode (BasicErrorController) daje svih pet metoda
         for (HttpMethod m : SVE_METODE) {
             assertTrue(kljucevi.contains(m.name() + " /error"), "mapiranje bez metode: nema " + m + " /error");

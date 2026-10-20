@@ -43,14 +43,26 @@ public class SecurityConfig {
     static final String POTREBNA_PRIJAVA = "Potrebna je prijava.";
     static final String NEMAS_PRISTUP = "Nemaš pristup.";
     static final String NEISPRAVAN_ZAHTEV = "Neispravan zahtev.";
+    static final String MCP_ENDPOINT = "spring.ai.mcp.server.streamable-http.mcp-endpoint";
 
     /**
-     * MCP (spec 13.2): sopstveni lanac pre glavnog, bez nastavničke sesije i bez provere porekla; ključ proverava MCP filter
-     * (servlet filter visokog prioriteta, radi pre lanca). Dok MCP endpointa nema, lanac postoji, a putanje daju 404.
+     * MCP (spec 3 i 13.2): sopstveni lanac pre glavnog za tačno {@code /mcp}, {@code /mcp/prilozi} i {@code /mcp/slike},
+     * {@code permitAll}, bez nastavničke sesije ({@link GfsAutentikacijaFilter} ovde ne radi, pa ni 401 "Potrebna je
+     * prijava."), bez provere porekla (Claude Code nije pregledač), bez CORS-a i CSRF-a, stateless. Jedini autoritet je
+     * {@code mcp.McpKljucFilter}: servlet filter reda {@code HIGHEST_PRECEDENCE + 10}, pre Spring Security filtera (red
+     * {@code -100}), koji bez ključeva odgovara 404, a bez ispravnog {@code Authorization: Bearer} 401 sa
+     * {@code WWW-Authenticate: Bearer}. Putanje ispod {@code /mcp} van ove tri idu glavnim lancem (ADMIN).
+     * <p>
+     * Putanja MCP endpointa je svojstvo Spring AI-ja; matrica je zna kao {@code /mcp}, pa druga vrednost ruši start.
      */
     @Bean
     @Order(1)
-    SecurityFilterChain mcpLanac(HttpSecurity http) throws Exception {
+    SecurityFilterChain mcpLanac(HttpSecurity http,
+                                 @Value("${" + MCP_ENDPOINT + ":/mcp}") String mcpEndpoint) throws Exception {
+        if (!"/mcp".equals(mcpEndpoint)) {
+            throw new IllegalStateException(MCP_ENDPOINT + " mora biti /mcp (PristupMatrica i MCP lanac znaju tu putanju), "
+                    + "a podešeno je " + mcpEndpoint);
+        }
         http.securityMatcher(PristupMatrica.matcher(PristupMatrica.mcp()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
                 .csrf(AbstractHttpConfigurer::disable)

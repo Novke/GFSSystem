@@ -54,7 +54,22 @@ class PristupMatricaKlasaTest {
         assertEquals(MCP, PristupMatrica.klasa(POST, "/mcp"));
         assertEquals(MCP, PristupMatrica.klasa(GET, "/mcp"));
         assertEquals(MCP, PristupMatrica.klasa(POST, "/mcp/prilozi"));
-        assertEquals(MCP, PristupMatrica.klasa(GET, "/mcp/slike/{id}"));
+        assertEquals(MCP, PristupMatrica.klasa(POST, "/mcp/slike"));
+        // svaka metoda na tačnim putanjama: lanac MCP-a ih hvata ceo, pa nastavnički lanac nikad ne odgovara 401 "Potrebna je prijava."
+        assertEquals(MCP, PristupMatrica.klasa(GET, "/mcp/prilozi"));
+        assertEquals(MCP, PristupMatrica.klasa(DELETE, "/mcp"));
+    }
+
+    @Test
+    void mcpSamoTacnePutanjeBezPrefiksa() {
+        // ključ MCP-a ne otvara ništa ispod /mcp osim tri tačne putanje (spec 3): ostalo je ADMIN
+        assertEquals(ADMIN, PristupMatrica.klasa(GET, "/mcp/slike/{id}"));
+        assertEquals(ADMIN, PristupMatrica.klasa(POST, "/mcp/nesto"));
+        assertEquals(ADMIN, PristupMatrica.klasa(POST, "/mcp/prilozi/x"));
+        assertEquals(ADMIN, PristupMatrica.klasa(POST, "/mcp/"));
+        assertEquals(List.of("/mcp", "/mcp/prilozi", "/mcp/slike"),
+                PristupMatrica.mcp().stream().map(PristupMatrica.Pravilo::uzorak).toList());
+        assertTrue(PristupMatrica.mcp().stream().allMatch(p -> p.metod() == null));
     }
 
     @Test

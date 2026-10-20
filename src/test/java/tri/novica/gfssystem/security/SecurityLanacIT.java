@@ -78,10 +78,14 @@ class SecurityLanacIT {
     }
 
     @Test
-    void mcpLanacNemaEndpointa() throws Exception {
-        // lanac MCP-a postoji (permitAll, bez provere porekla), endpoint stiže sa MCP granom: ovde nije 200
-        mvc.perform(post("/mcp")).andExpect(status().is(not(200))).andExpect(status().is(not(401)))
-                .andExpect(status().is(not(403)));
+    void mcpBezKljucaOdbijaFilterKljucaNeNastavnickiLanac() throws Exception {
+        // MCP lanac (permitAll, bez provere porekla); odgovara McpKljucFilter, nikad "Potrebna je prijava." (vidi McpLanacIT)
+        for (String putanja : new String[]{"/mcp", "/mcp/prilozi", "/mcp/slike"}) {
+            mvc.perform(post(putanja).header("Origin", "https://napadac.example.com"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+                    .andExpect(jsonPath("$.reason").value("Neispravan MCP ključ."));
+        }
         mvc.perform(get("/mcp/slike/1")).andExpect(status().is(not(200)));
     }
 

@@ -26,8 +26,7 @@ import java.util.Set;
  * segment. {@code metod == null} znači svaka metoda. Liste se ne preklapaju (test), pa redosled u {@link #klasa} ne
  * menja ishod; MCP se ipak gleda prvi, jer njegov lanac ({@code @Order(1)}) hvata te putanje pre glavnog.
  * <p>
- * Uzorci čiji endpointi stižu kasnije (nalog studenta, LTI, MCP) su ovde već sada, da njihovo svrstavanje ne zavisi od
- * toga ko prvi merguje.
+ * Uzorci čiji endpointi stižu kasnije (LTI) su ovde već sada, da njihovo svrstavanje ne zavisi od toga ko prvi merguje.
  */
 public final class PristupMatrica {
 
@@ -84,10 +83,15 @@ public final class PristupMatrica {
             // povezivanje traži i studenta i važeći gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 
-    /** {@code /mcp}, {@code /mcp/prilozi}, {@code /mcp/slike} i sve ispod {@code /mcp}: isto što hvata MCP lanac. */
+    /**
+     * Tačno {@code /mcp} (Spring AI {@code RouterFunction}), {@code /mcp/prilozi} i {@code /mcp/slike} ({@code McpUploadRest}),
+     * svaka metoda, bez prefiksa: isto što hvata MCP lanac. Ključ proverava {@code McpKljucFilter} (servlet filter pre lanca,
+     * 401 Bearer, 404 kad je MCP isključen); ostalo ispod {@code /mcp} je ADMIN, pa ključ ne otvara ništa drugo.
+     */
     private static final List<Pravilo> MCP = List.of(
             new Pravilo(null, "/mcp"),
-            new Pravilo(null, "/mcp/**"));
+            new Pravilo(null, "/mcp/prilozi"),
+            new Pravilo(null, "/mcp/slike"));
 
     private static final Map<String, PathPattern> UZORCI = new LinkedHashMap<>();
 

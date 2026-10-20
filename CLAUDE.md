@@ -39,7 +39,7 @@ src/main/java/tri/novica/gfssystem/
 ├── mcp/             # MCP server for Claude: core (key filter, errors, patch, budget), alati/ (tools), servis/ (facades), rest/ (upload)
 ├── repository/      # Spring Data repositories
 ├── rest/            # REST controllers
-├── security/        # Security config (CORS)
+├── security/        # Spring Security (SecurityConfig: MCP chain + main chain), PristupMatrica, sessions, CORS
 ├── service/         # Business logic services
 ├── utility/         # Utility classes (Mapper, Sorting)
 └── validation/      # Custom validators
@@ -394,6 +394,12 @@ through the plan's "Tačke proširenja za B i A2".
   client). Startup check `McpKonfig.mcpProvera`: MCP on with a protocol other than STATELESS, or a `RouterFunction` route outside
   the filtered path, fails the start. Backend paths are only `/mcp`, `/mcp/prilozi`, `/mcp/slike` (nginx `/api/mcp...`),
   **never under `/public/**`**.
+- **With the login (Spring Security, `security/`):** MCP is its own access class (`PristupMatrica.mcp()`: exactly those three
+  paths, any method, no prefix) with its own chain `SecurityConfig.mcpLanac` (`@Order(1)`: `permitAll`, no teacher session, no
+  origin check, no CORS/CSRF, stateless; the start fails unless the endpoint property is `/mcp`). `McpKljucFilter` (order
+  `HIGHEST_PRECEDENCE + 10`) runs before the Spring Security filter (`-100`) and stays the only authority there; any other path
+  under `/mcp` goes through the main chain as ADMIN, so the key opens nothing else and a teacher cookie alone never opens MCP
+  (`security/McpLanacIT`, `McpLanacIskljucenIT`, real Tomcat).
 - **Package `mcp`:** `alati/` (`KontekstAlati`, `BankaAlati`, `VarijanteAlati`, `PrezentacijaAlati`; 28 `@McpTool` methods in
   A1, Serbian snake_case ASCII names, object parameter types (`Long`, `Boolean`), never primitives, every write tool takes a
   required `serija`), `servis/` (facades `McpKontekst`, `McpBanka`, `McpPrezentacije`, the MCP DTO records `Mcp*` and the helpers
@@ -587,7 +593,8 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
 - **Versions:** `V5` is a deliberate permanent gap (never reuse it), `V6` = `prag_prolaza` (nullable `testovi.prag_prolaza`),
   `V7` = uživo (presentations, runs, participants, answers, media), idempotent. `V8` = platno (`slajdovi.platno` JSON, `prezentacije.tema`), idempotent. `V9` = `grupe.wa_link` (nullable), idempotent. `V10` = `prelaz_slajda` (nullable `slajdovi.prelaz_efekat`, `prelaz_smer`, `prelaz_ms`), idempotent. `V11` = `banka_zadataka` (tables `grupe_zadataka`, `varijante`, `varijanta_prilozi`, column `mediji.vrsta` `varchar(20) NOT NULL DEFAULT 'SLIKA'`, nullable `predmeti.latex_preambula`), idempotent. `V12` = `mcp_banka` (`izvor`/`serija` on groups, `ikad_odobrena`,
   `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
-  idempotent, **if it is merged first**. **Next free version: `V13`** (after V12 is on `staging`).
+  idempotent, **if it is merged first**. **Next free version: `V13`** (after V12 is on `staging`). Branch `feature/prijava`
+  carries the provisional `V15__prijava.sql` (renumbered to the next free version at its merge into `staging`).
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

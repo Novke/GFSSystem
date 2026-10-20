@@ -26,6 +26,8 @@ POST /banka/predmeti/{id}/renderuj-sve ADMIN
 GET /banka/pretraga ADMIN
 POST /banka/prilozi ADMIN
 POST /banka/render-proba ADMIN
+GET /banka/serije ADMIN
+POST /banka/serije/{serija}/odbaci ADMIN
 GET /banka/stablo ADMIN
 DELETE /banka/varijante/{id} ADMIN
 GET /banka/varijante/{id} ADMIN
@@ -62,6 +64,7 @@ GET /grupe/{id}/pregled ADMIN
 GET /grupe/{id}/prisustvo ADMIN
 GET /grupe/{id}/studenti ADMIN
 PATCH /grupe/{id}/wa-link ADMIN
+DELETE /iskljucene-teme/{id} ADMIN
 GET /izvodjenja ADMIN
 DELETE /izvodjenja/{id} ADMIN
 POST /izvodjenja/{id}/komande ADMIN
@@ -75,6 +78,10 @@ POST /lti/registracije ADMIN
 GET /lti/registracije/vrednosti ADMIN
 DELETE /lti/registracije/{id} ADMIN
 PUT /lti/registracije/{id} ADMIN
+GET /mcp MCP
+POST /mcp MCP
+POST /mcp/prilozi MCP
+POST /mcp/slike MCP
 POST /mediji ADMIN
 GET /obavestenja ADMIN
 GET /obavestenja/broj ADMIN
@@ -108,6 +115,8 @@ DELETE /predavanja/{pId}/zadatak/{sId} ADMIN
 GET /predmeti ADMIN
 POST /predmeti ADMIN
 GET /predmeti/{id} ADMIN
+GET /predmeti/{id}/iskljucene-teme ADMIN
+POST /predmeti/{id}/iskljucene-teme ADMIN
 GET /predmeti/{id}/latex-preambula ADMIN
 PUT /predmeti/{id}/latex-preambula ADMIN
 GET /predmeti/{id}/poeni ADMIN
@@ -141,6 +150,7 @@ GET /public/uzivo/{kod}/ja ANONIMNO
 POST /public/uzivo/{kod}/prijava ANONIMNO
 GET /public/ws ANONIMNO
 DELETE /slajdovi/{id} ADMIN
+GET /slajdovi/{id} ADMIN
 PUT /slajdovi/{id} ADMIN
 POST /slajdovi/{id}/dupliraj ADMIN
 GET /slajdovi/{id}/potezi ADMIN
