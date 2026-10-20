@@ -14,6 +14,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
@@ -56,6 +57,7 @@ class IzvodjenjeServiceTest {
     @Mock KodGenerator kodGenerator;
     @Mock RokPlaner rokPlaner;
     @Mock StanjeService stanjeService;
+    @Mock ZadatakDodelaService zadatakDodelaService;
     @Mock ImenaUcesnika imenaUcesnika;
     @Mock IdentitetStudenta identitet;
     @Mock ApplicationEventPublisher publisher;
@@ -134,7 +136,7 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                stanjeService, zadatakDodelaService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {
@@ -1161,9 +1163,31 @@ class IzvodjenjeServiceTest {
     // ---------------------------------------------------------------- 11. svaka komanda zaključava i objavljuje
 
     @ParameterizedTest
-    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI"},
+            mode = EnumSource.Mode.EXCLUDE)
     void svakaKomandaZakljucavaObjavljujeIVracaStanje(TipKomande tip) {
         doS2Zatvoreno();
+        proveriKomandu(tip);
+    }
+
+    /** RESENJE (zatvorena runda sa rešenjem) i BROJ_VARIJANTI (CEKA) važe samo na Zadatak slajdu (S4 posle S3). */
+    @ParameterizedTest
+    @EnumSource(value = TipKomande.class, names = {"RESENJE", "BROJ_VARIJANTI"})
+    void zadatakKomandeZakljucavajuIObjavljuju(TipKomande tip) {
+        Slajd z = new Slajd();
+        z.setId(14L);
+        z.setRb(4);
+        z.setTip(TipSlajda.ZADATAK);
+        z.setPrezentacija(prez);
+        slajdovi.add(z);
+        when(zadatakDodelaService.snimak(z, null)).thenReturn(new ZadatakSnimak(14L, 3L, "K",
+                List.of(new GrupaPutanja(3L, "K")), null,
+                List.of(new VarijantaSnimak(31L, "V1", 3L, "svg-31", "resenje-31", List.of(), Map.of()))));
+        idiNa(3);
+        if (tip == TipKomande.RESENJE) {
+            k(TipKomande.OTVORI_ZATVORI);
+            k(TipKomande.OTVORI_ZATVORI);
+        }
         proveriKomandu(tip);
     }
 

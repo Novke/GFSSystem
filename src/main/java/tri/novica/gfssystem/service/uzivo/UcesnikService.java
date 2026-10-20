@@ -45,6 +45,7 @@ public class UcesnikService {
     private final UcesnikRepository ucesnikRepository;
     private final StudentRepository studentRepository;
     private final ImenaUcesnika imenaUcesnika;
+    private final ZadatakDodelaService zadatakDodelaService;
     private final TokenGenerator tokenGenerator;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
@@ -95,8 +96,10 @@ public class UcesnikService {
      * 400 za neispravno ime, 409 kad izvođenje već ima 300 učesnika. Sa {@code studentId} (prijavljen student koji
      * postoji) ukucano ime se ignoriše: ime je {@link ImenaUcesnika#imeStudenta} (nikad 400), a učesnik nosi studenta;
      * ako izvođenje već ima neizbačenog učesnika tog studenta, isti red dobija nov token (stari prestaje da važi), bez
-     * novog reda i bez granice od 300. Bez studenta bodovan run je 403, pre provere imena. Ne menja verziju stanja
-     * (verzija raste po komandi), ali objavljuje promenu: broj i imena učesnika.
+     * novog reda i bez granice od 300. Bez studenta bodovan run je 403, pre provere imena. Učesnik koji uđe dok je
+     * otvorena ZADATAK runda odmah dobija svoj zadatak ({@link ZadatakDodelaService#dodeliNovom}, pod istim zaključanim
+     * redom izvođenja; isti student i dalje ima tačno jednu dodelu). Ne menja verziju stanja (verzija raste po komandi),
+     * ali objavljuje promenu: broj i imena učesnika.
      */
     public Prijavljen prijavi(String kod, String ime, Optional<Long> studentId) {
         // samo id pre zaključavanja: entitet učitan ranije ne bi video završetak do kog je došlo dok se čekalo
@@ -120,6 +123,7 @@ public class UcesnikService {
             Ucesnik u = postojeci.get();
             String token = tokenGenerator.novi();
             u.setTokenHash(TokenHash.od(token));
+            zadatakDodelaService.dodeliNovom(iz, u);
             publisher.publishEvent(new UcesnikPrijavljen(iz.getId()));
             return new Prijavljen(info(u), token, true);
         }
@@ -140,6 +144,7 @@ public class UcesnikService {
         u.setKreirano(LocalDateTime.now(clock));
         u.setStudent(student);
         u = ucesnikRepository.save(u);
+        zadatakDodelaService.dodeliNovom(iz, u);
         publisher.publishEvent(new UcesnikPrijavljen(iz.getId()));
         return new Prijavljen(info(u), token, student != null);
     }

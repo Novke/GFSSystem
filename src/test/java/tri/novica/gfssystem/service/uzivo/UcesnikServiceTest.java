@@ -45,6 +45,7 @@ class UcesnikServiceTest {
     @Mock UcesnikRepository ucesnikRepository;
     @Mock StudentRepository studentRepository;
     @Mock ApplicationEventPublisher publisher;
+    @Mock ZadatakDodelaService zadatakDodelaService;
 
     final MutableClock clock = new MutableClock(T0.atZone(ZONA).toInstant(), ZONA);
     final TokenGenerator tokenGenerator = new TokenGenerator();
@@ -73,7 +74,7 @@ class UcesnikServiceTest {
         });
 
         service = new UcesnikService(izvodjenjeRepository, ucesnikRepository, studentRepository,
-                new ImenaUcesnika(ucesnikRepository), tokenGenerator, publisher, clock);
+                new ImenaUcesnika(ucesnikRepository), zadatakDodelaService, tokenGenerator, publisher, clock);
     }
 
     static Izvodjenje izvodjenje(Long id, String kod, Prezentacija prez) {
@@ -131,6 +132,8 @@ class UcesnikServiceTest {
         assertSame(iz, u.getIzvodjenje());
         assertEquals(T0, u.getKreirano());
         verify(publisher).publishEvent(new UcesnikPrijavljen(5L));
+        // otvorena ZADATAK runda: nov učesnik odmah dobija zadatak (servis sam proverava fazu i rundu)
+        verify(zadatakDodelaService).dodeliNovom(iz, u);
     }
 
     @Test
@@ -238,6 +241,7 @@ class UcesnikServiceTest {
         when(studentRepository.findById(9L)).thenReturn(Optional.empty());
         ocekuj(403, "Potrebna je prijava studenta.", () -> service.prijavi(KOD, "Ana", Optional.of(9L)));
         verify(ucesnikRepository, never()).save(any());
+        verifyNoInteractions(zadatakDodelaService);
         // pod zaključanim izvođenjem
         verify(izvodjenjeRepository, times(3)).findByIdForUpdate(5L);
     }
@@ -297,6 +301,8 @@ class UcesnikServiceTest {
         assertEquals(TokenHash.od(drugi.token()), u.getTokenHash());
         assertEquals("Ana Petrović", u.getIme());
         assertEquals(301, sacuvani.size());
+        // i postojeći red ide kroz dodelu (bez dupliranja: servis preskače učesnika koji već ima dodelu)
+        verify(zadatakDodelaService, times(2)).dodeliNovom(iz, u);
     }
 
     // ---------------------------------------------------------------- ja i token
