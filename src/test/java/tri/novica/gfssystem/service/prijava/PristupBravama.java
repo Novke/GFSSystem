@@ -14,4 +14,20 @@ public final class PristupBravama {
     public static String bravaKoda(KodServis kodovi, String indeks) {
         return "gfs-kod:" + kodovi.indeks(indeks).hmac().substring(0, 32);
     }
+
+    /** Koliko (s) {@code KodServis} čeka bravu indeksa; testovi spuštaju sa 10 s da ne čekaju zaista. */
+    public static void cekanjeBraveIndeksa(KodServis kodovi, int sekundi) {
+        kodovi.cekanjeBrave(sekundi);
+    }
+
+    /** Koliko (s) {@code ObavestenjeServis} čeka bravu ukupnog brojača mejlova nastavniku. */
+    public static void cekanjeBraveMejla(ObavestenjeServis obavestenja, int sekundi) {
+        obavestenja.cekanjeBraveMejla(sekundi);
+    }
+
+    /** Vraća oba čekanja na podrazumevana (u {@code @AfterEach} testova koji su ih menjali). */
+    public static void vratiCekanja(KodServis kodovi, ObavestenjeServis obavestenja) {
+        kodovi.cekanjeBrave(KodServis.CEKANJE_BRAVE_S);
+        obavestenja.cekanjeBraveMejla(ObavestenjeServis.CEKANJE_BRAVE_MEJL_S);
+    }
 }

@@ -96,7 +96,7 @@ public class KodServis {
     private static final Pattern FORMAT_KODA = Pattern.compile("^[0-9]{6}$");
     /** Normalizovan indeks koji se uopšte traži u bazi (ASCII; onboarding forma dozvoljava podskup ovoga). */
     static final Pattern BELA_LISTA_INDEKSA = Pattern.compile("^[A-Z0-9/.-]{1,30}$");
-    /** Koliko se najduže čeka MySQL brava indeksa (s); posle toga 429. */
+    /** Podrazumevano čekanje MySQL brave indeksa (s); posle toga 429. Menja se samo u testovima ({@link #cekanjeBrave}). */
     static final int CEKANJE_BRAVE_S = 10;
 
     private final StudentRepository studenti;
@@ -114,6 +114,8 @@ public class KodServis {
     /** Donja granica trajanja odgovora (ns); u testovima 0, osim gde se proverava. */
     private volatile long minimalnoTrajanjeNs;
     private final AtomicInteger spava = new AtomicInteger();
+    /** Koliko se najduže čeka MySQL brava indeksa (s); u testovima spušteno, da ne čekaju zaista 10 s. */
+    private volatile int cekanjeBraveS = CEKANJE_BRAVE_S;
 
     public KodServis(StudentRepository studenti, KodZaPrijavuRepository kodovi, PokusajiServis pokusaji, MejlServis mejl,
                      ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
@@ -288,11 +290,11 @@ public class KodServis {
 
     /**
      * Uzima MySQL bravu {@code prefiks + hmac indeksa} na vezi tekuće transakcije (mora postojati) i otpušta je u
-     * {@code afterCompletion}. {@code false} kad je ne dobije za {@value #CEKANJE_BRAVE_S} s. Svaka funkcija ima svoj
+     * {@code afterCompletion}. {@code false} kad je ne dobije za {@link #CEKANJE_BRAVE_S} s. Svaka funkcija ima svoj
      * prefiks (slanje koda, "Ne stiže mi kod"), a redosled je uvek brava indeksa pa red studenta.
      */
     boolean uzmiBravu(String prefiks, Indeks i) {
-        return uzmiBravu(prefiks + i.hmac().substring(0, 32), CEKANJE_BRAVE_S, trag(i.n()));
+        return uzmiBravu(prefiks + i.hmac().substring(0, 32), cekanjeBraveS, trag(i.n()));
     }
 
     /**
@@ -373,6 +375,11 @@ public class KodServis {
                 Kod važi 10 minuta i može se iskoristiti samo jednom.
                 Ako nisi tražio kod, zanemari ovu poruku.
                 """.formatted(kod);
+    }
+
+    /** Menja čekanje brave indeksa (s, testovi); {@link #CEKANJE_BRAVE_S} je podrazumevano. */
+    void cekanjeBrave(int sekundi) {
+        cekanjeBraveS = sekundi;
     }
 
     /** Menja donju granicu trajanja (testovi). */

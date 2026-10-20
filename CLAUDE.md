@@ -544,6 +544,108 @@ through the plan's "Tačke proširenja za B i A2".
   worktrees each use their own database on the throwaway MySQL (e.g. `gftest_mcp`) and their own `DB_PREFIX`/`APP_PORT` for
   `flyway-provera.sh`, so they never drop each other's data.
 
+## Prijava (teacher login, student account without a password, Moodle LTI)
+
+Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo `Novke/GFS-deploy`. The branch `feature/prijava`
+carries the provisional migration `V15__prijava.sql` (renumbered to the next free version at the merge into `staging`; it only
+creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|entity|repository/prijava/`, `.../lti/`,
+`service/mejl/` and `config/{NastavnikSvojstva,OtvorenEntityManagerConfig}`.
+
+- **Access classes:** `security/PristupMatrica` is the single source of truth: `ANONIMNO`, `STUDENT` and `MCP` are listed,
+  **everything else is ADMIN** (a forgotten endpoint is locked, not open). `SecurityConfig` builds the chain rules from it
+  (STATELESS, no `HttpSession`, no CSRF token: `ProveraPoreklaFilter` checks `Sec-Fetch-Site`/`Origin` against `gfs.front.url`
+  on POST/PUT/PATCH/DELETE; the LTI login and launch are the only exemptions). `PristupMatricaTest` compares every real
+  endpoint (including `RouterFunction` routes and the two WebSockets) with the snapshot `src/test/resources/pristup-matrica.txt`:
+  **a new endpoint must be added to the snapshot** (the test writes the sorted proposal to `target/pristup-matrica.predlog.txt`;
+  rows are sorted by pattern, then method). Nothing teacher-only may live under `/public/**`.
+- **Cookies** (`security/Kolacici`; value = 32 chars from `TokenGenerator`, the DB holds only `TokenHash.od(token)`; `HttpOnly; Path=/`,
+  `Secure` when `request.isSecure()`): `gfs_nastavnik` `Lax` 90 days, `gfs_student` `Lax` 365 days, `gfs_lti` `None` (always `Secure`)
+  600 s, `gfs_lti_par` `Lax` 1800 s. `GfsAutentikacijaFilter` tries **every** value of a cookie name (a sibling `*.trif.rs` host can
+  plant a second one) and the teacher wins over the student. Sessions and devices are extended at most once per 10 minutes.
+- **Teacher:** `AuthRest` (`POST /auth/prijava`, `GET /auth/ja`, `POST /auth/odjava`, `GET /auth/sesije`, `DELETE /auth/sesije/{id}`,
+  `POST /auth/sesije/odjavi-sve`), user and bcrypt hash from `GFS_NASTAVNIK_KORISNIK` / `GFS_NASTAVNIK_LOZINKA_BCRYPT` (empty =
+  login not configured, 503-style message; a non-bcrypt value fails the start), `GFS_NASTAVNIK_MEJL` = address for notification mail.
+  10 failed attempts per 15 minutes per IP lock that IP for 15 minutes (`pokusaji`). IP comes from Tomcat's `RemoteIpValve`, not from headers.
+- **`IdentitetStudenta` seam** (`security/`, signature agreed with the banka phase 2 work): `NalogIdentitet` (`@Primary`) gives the
+  student of a valid `gfs_student` device, `dostupno()` is true; `NemaIdentiteta` (`IdentitetConfig`) is the fallback bean when no
+  other implementation exists, which keeps "Boduje se" off (409). The teacher never counts as a student.
+- **Student account** (`/public/nalog/*`, anonymous or STUDENT): `KodServis` (code = 6 digits from `SecureRandom`, 10 min, single
+  use, 5 wrong entries kill it, a new code voids the old ones; DB keeps `SHA-256(salt + code)`), `StudentskaPrijava` (devices),
+  `MaskaMejla` (real mask, or a deterministic fake mask from an HMAC for unknown index / student without mail),
+  `PokusajiServis` (counters in table `pokusaji`, survive a restart), `KljuceviAplikacije` (HMAC keys in `kljucevi_aplikacije`,
+  created on first use). Limits: send 3/h per student (also per unknown index) and 10/h per IP, wrong code 20/h per IP, "Ne stiže
+  mi kod" 1/h per index and 10/h per IP, card code 20/h in total, teacher mail 1/h per (kind, index) and 20/h in total,
+  `PREVISE_KODOVA` at most 1 per 24 h per student. Over a limit: 429 `Previše pokušaja. Pokušaj ponovo kasnije.`.
+  - **The answer must not reveal whether an account exists:** same body for a student, a student without mail and an unknown
+    index; the index is normalized and must match `^[A-Z0-9/.-]{1,30}$` **before** any lookup, and is then compared byte-exact in
+    Java (the `utf8mb4_0900_ai_ci` collation equates accents and full-width letters, which would give a variant of a real index
+    a real mask and a shared counter). Anything off the whitelist behaves like an unknown index. Counter keys for an index are
+    HMACs (`i:<hmac>`; mail counters `<KIND>:i:<hmac>`), never a bare SHA-256 or the plain index.
+  - **Latency floor** (`gfs.nalog.minimalno-trajanje-ms`, default 200 ms, 0 in tests; monotonic clock): `posalji`, `proveri` and
+    "Ne stiže mi kod" never answer faster, so a few extra writes for a real student do not show in the response time. Exceptions
+    (they say nothing about the index): 503 (mail not configured) and 429 per IP return at once. The wait happens **outside any
+    transaction**, and the services have no `@Transactional`: every DB step is its own short transaction (`READ COMMITTED`).
+  - **OSIV is off for `/public/nalog/**` and `/public/lti/**`** (`OtvorenEntityManagerConfig`, `spring.jpa.open-in-view=false`
+    replaced by an interceptor for all other paths): the floor would otherwise hold a pooled connection (Hikari 10) per anonymous
+    request. Services for these paths return DTOs built inside their own transaction.
+  - **Concurrency:** requests for the same index are serialized by a MySQL named lock on the transaction's own connection
+    (`GET_LOCK('gfs-kod:<hmac>')` for sending, `gfs-pomoc:<hmac>` for "Ne stiže mi kod", released in `afterCompletion`), then the
+    student row (`SELECT ... FOR UPDATE`). **Lock order: index lock (pomoc/kod) -> student row -> mail lock `gfs-mejl-nastavniku`**
+    (the global 20/h mail counter is checked and written under it). Wait times: `KodServis.CEKANJE_BRAVE_S` 10 s and
+    `ObavestenjeServis.CEKANJE_BRAVE_MEJL_S` 5 s (volatile fields with package-private setters for tests, see `PristupBravama`);
+    `previseKodova` holds the student row, so it waits for the mail lock at most 1 s.
+  - **Mail** (`service/mejl/`): `MejlServis` (`SmtpMejlServis`, `LazniMejlServis` in tests) publishes a `MejlPoruka` event; `MejlPosleCommita`
+    sends it **after commit, asynchronously** (`mejlIzvrsilac`, 2 threads, queue 200, drops with a log when full; 3 attempts,
+    pauses `gfs.mail.pauze-ms`). SMTP is configured by `GFS_MAIL_HOST/PORT/USER/PASSWORD/STARTTLS/FROM`; empty host or from =
+    sending off, and `POST /public/nalog/kod` is 503 `Slanje koda trenutno nije moguće. Javi se nastavniku.` for every index.
+    Mail bodies and logs never carry a code, address or name.
+- **Notifications** (`ObavestenjeServis`, `ObavestenjeRest` `/obavestenja`, ADMIN): `NE_STIZE_KOD` (public `POST /public/nalog/pomoc`, 1/h per
+  index, silent when limited; `podaci` = typed normalized index, `imaMejl`, `ip`, `uredjaj` `ZAPAMCEN|NEPOZNAT`) and `PREVISE_KODOVA`.
+  `KodServis.posalji` only publishes `DostignutLimitKodova(studentId, ip)` when the per-index limit is hit for a real student;
+  `ObavestenjeServis.naDostignutLimitKodova` handles it `AFTER_COMMIT` + `@Async("obavestenjaIzvrsilac")` (2 threads, queue 100,
+  drops with a log when full; `ObavestenjaConfig`), so the 429 does no extra DB work for a real student. Teacher mail
+  (`GFS_NASTAVNIK_MEJL`): fixed subjects, no name; **text typed into the public form never goes into the mail**: a known student
+  gets the stored index and the card link `studenti/<id>`, an unknown index gets the fixed sentence `NEPOZNAT_INDEKS_TELO`. The
+  global 20/h cap can be used up by "Ne stiže mi kod" for unknown indexes from two IPs (accepted: the in-app notification stays).
+- **Teacher card "Nalog"** (`StudentNalogRest` `/studenti/{id}/nalog`, `StudentNalogServis`; the student is chosen by id, so the public index
+  whitelist does not apply, and an unknown id is 404 `Ne postoji.`): `GET` (`imaMejl`, valid devices, `moodle {povezan, poslednjiUlaz}`,
+  `poslednjaPrijava` = last use of any device incl. revoked), `POST posalji-kod` (204; `KodServis.posaljiOdNastavnika`: no per-student limit, 20/h
+  in total, 409 `Student nema mejl.`, 503 without SMTP; it **must not run inside an outer transaction** (`Propagation.NEVER`),
+  publishes no `DostignutLimitKodova`, and calls `ObavestenjeServis.resiZaStudenta` **last**, after the send committed, because that bulk
+  update uses `clearAutomatically`; a failure of the resolving is only logged), `POST opozovi-uredjaje` (`{"opozvano": n}`), `DELETE moodle` (deletes the
+  student's `spoljni_identiteti` and revokes their `LTI` devices, so a wrongly linked Moodle account does not stay signed in as them; `KOD`
+  devices stay). A student whose index is off the whitelist cannot sign in with a code at all: the card logs a warning.
+- **Cleanup** (`CiscenjePrijave`, `@Scheduled(cron = "0 7 * * * *")`, batches of 5000): `pokusaji` > 2 days, `kodovi_za_prijavu` > 1 day, `lti_stanja`
+  and `lti_povezivanja` expired (or the pairing used) > 1 hour ago (each `GET /public/lti/prijava` writes a state row and has no app
+  rate limit), expired or revoked `nastavnicke_sesije` / `studentski_uredjaji` > 30 days, resolved `obavestenja` > 180 days (open ones never). The 1/h
+  teacher-mail rule reads `MEJL_NASTAVNIKU*` rows and the 1/24 h `PREVISE_KODOVA` rule reads resolved notifications, both survive far longer than their windows.
+- **Moodle LTI 1.3** (`service/lti/`, `rest/lti/`, `/public/lti/*`; teacher API `GET|POST|PUT|DELETE /lti/registracije`, `GET /lti/registracije/vrednosti`):
+  - `GET|POST /public/lti/prijava` (OIDC login initiation, ANONIMNO) answers **302** to the platform's auth URL (or to `/nalog/moodle?greska=<kod>`);
+    `POST /public/lti/start` (launch, form `id_token` + `state`) answers **303** to `/nalog` (linked student, new `LTI` device), `/nalog/moodle`
+    (pairing needed, cookie `gfs_lti_par`), `/nalog/moodle?uloga=nastavnik` or `/nalog/moodle?greska=<kod>` (`nepoznata-registracija`, `istekla-sesija`,
+    `bez-kolacica`, `neispravan-token`, `nepodrzana-poruka`); never a 500 for a bad request and never a sign-in without a link.
+    `GET /public/lti/povezivanje` (ANONIMNO, read-only, needs `gfs_lti_par`: `{ime}` or 410) and `POST /public/lti/povezi` (STUDENT + `gfs_lti_par`: 204, 409
+    `Ovaj Moodle nalog je već povezan sa drugim studentom. Javi se nastavniku.`, 410, 401). `GET /public/lti/jwks` serves the tool's public key.
+  - **State and cookies:** `state` and `nonce` are two separate random values; the DB keeps `SHA-256(state)`, the plain nonce, `SHA-256(gfs_lti)` and the
+    registration, valid 10 minutes. The launch consumes the state **atomically and first** (conditional `UPDATE`), so it is single-use even when the launch then
+    fails. `gfs_lti` (`SameSite=None; Secure`, 600 s) binds the browser; without it the launch is `bez-kolacica` (a browser that blocks third-party cookies gets a
+    clear message with a link to `/nalog`). `gfs_lti_par` (`Lax`, 1800 s) carries the pairing token (hash in `lti_povezivanja`, the Moodle display name for the screen, control characters removed).
+  - **Token checks** (`LtiProvera`): RS256 only, `iss`, `aud` (+ `azp` rules), `exp` and `iat` required (60 s leeway), `nonce`, `deployment_id`, `sub`, message type
+    `LtiResourceLinkRequest`, version `1.3.0`; roles: Instructor/Administrator -> teacher message (no cookie), Learner -> student flow, anything else `nepodrzana-poruka`.
+  - **JWKS fetch** (`LtiDohvatKljuceva`): https only (http and loopback only with `gfs.lti.dozvoli-http=true`, forbidden with profile `server`), connect 3 s / read 5 s,
+    body <= 64 KB, **no redirects**, every resolved address checked against blocked ranges (loopback, link-local incl. 169.254.169.254, RFC1918, CGNAT/tailnet, ULA,
+    multicast, NAT64 ...), cache 5 minutes per URL, refresh on unknown `kid` rate-limited. The tool's own key is `lti_kljucevi` (`LtiKljucServis`).
+  - **CORS exemption:** a launch is a cross-site `form_post` carrying `Origin: https://moodle...`, which the chain's `CorsFilter` and the MVC CORS mapping
+    (`gfs.front.url` only) would reject with 403. `CorsConfig.bezLti` returns no CORS configuration for `ProveraPoreklaFilter.LTI_IZUZECI` (login and launch only), in the chain
+    and in MVC; every other path is unchanged. The two are protected by `state`, `nonce` and `gfs_lti` instead of an origin check.
+- **Logs:** IP and ids only; never a name, mail address, code, token, password or LTI claim value; an index only as the first 8 hex of its SHA-256 (`KodServis.trag`).
+- **Tests:** database `gftest_prijava` on the throwaway MySQL (3307): `SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3307/gftest_prijava ./mvnw -B package`.
+  Tests of the security chain use `@SpringBootTest @AutoConfigureMockMvc` with the real filters (`PrijavaTestUtil.kaoNastavnik(...)` gives a teacher cookie plus the
+  `Origin` header); **business-logic ITs that are not about access use `@AutoConfigureMockMvc(addFilters = false)`** (the existing service ITs). Helpers in
+  `service/prijava` tests: `LazniMejlServis` (fake mail), `PrijavaSatConfig`/`PomerljivSat` (movable `Clock`), `TestStudenti` (invented students; `obrisi()` deletes
+  `pokusaji` **only by the student-id key**, so tests that create HMAC-keyed rows track and delete their own keys), `PristupBravama` (lock names and wait times).
+  `scripts/flyway-provera.sh` hardcodes `fw_<scenario>` databases: on a shared box run a copy that uses `fw_prijava_<scenario>` and `APP_PORT=18092`.
+
 ## Build & Run
 
 ```bash

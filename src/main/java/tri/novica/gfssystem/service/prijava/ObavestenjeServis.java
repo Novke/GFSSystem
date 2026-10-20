@@ -76,7 +76,10 @@ public class ObavestenjeServis {
     static final String UKUPNO = "ukupno";
     /** MySQL brava za proveru i upis ukupnog brojača mejlova nastavniku. */
     static final String BRAVA_MEJL = "gfs-mejl-nastavniku";
+    /** Podrazumevano čekanje brave ukupnog brojača (s) za "Ne stiže mi kod"; menja se samo u testovima. */
     static final int CEKANJE_BRAVE_MEJL_S = 5;
+    /** Čekanje te brave (s) iz {@link #previseKodova}, koja drži red studenta ({@code FOR UPDATE}): kratko, najviše ovoliko. */
+    static final int CEKANJE_BRAVE_MEJL_PREVISE_S = 1;
     /** Telo mejla kad nema studenta: stalna rečenica, bez ičega što je ukucano u javnu formu. */
     static final String NEPOZNAT_INDEKS_TELO = "Neko je tražio pomoć za indeks koji ne postoji u evidenciji. "
             + "Detalji su u aplikaciji (Obaveštenja).\n";
@@ -93,6 +96,8 @@ public class ObavestenjeServis {
     private final ApplicationEventPublisher dogadjaji;
     private final Clock clock;
     private final TransactionTemplate zakljucano;
+    /** Koliko se najduže čeka brava ukupnog brojača mejlova (s); u testovima spušteno ili podignuto. */
+    private volatile int cekanjeBraveMejlS = CEKANJE_BRAVE_MEJL_S;
 
     public ObavestenjeServis(ObavestenjeRepository obavestenja, StudentRepository studenti,
                              StudentskiUredjajRepository uredjaji, PokusajiServis pokusaji, KodServis kodovi,
@@ -166,7 +171,7 @@ public class ObavestenjeServis {
         Obavestenje o = snimi(VrstaObavestenja.NE_STIZE_KOD, student.orElse(null), podaci);
         log.info("Obaveštenje 'ne stiže kod' napravljeno, obavestenje={}, student={}, indeks={}, ip={}", o.getId(),
                 student.map(Student::getId).orElse(null), KodServis.trag(i.n()), ip);
-        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, KodServis.trag(i.n()), student.orElse(null));
+        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, KodServis.trag(i.n()), student.orElse(null), cekanjeBraveMejlS);
     }
 
     /** Da li bar jedan token pripada uređaju studenta (opozvan i istekao se računaju: pamti se da je uređaj bio njegov). */
@@ -206,8 +211,10 @@ public class ObavestenjeServis {
             Obavestenje o = snimi(VrstaObavestenja.PREVISE_KODOVA, student.get(), podaci);
             log.info("Obaveštenje 'previše kodova' napravljeno, obavestenje={}, student={}, ip={}", o.getId(), studentId, ip);
             String normalizovan = n == null ? "" : n;
+            // red studenta je zaključan: brava mejla se čeka kratko (najviše 1 s), da zastoj na njoj ne drži taj red
             mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, kodovi.kljucIndeksa(normalizovan),
-                    KodServis.trag(normalizovan), student.get());
+                    KodServis.trag(normalizovan), student.get(),
+                    Math.min(CEKANJE_BRAVE_MEJL_PREVISE_S, cekanjeBraveMejlS));
         });
     }
 
@@ -225,6 +232,11 @@ public class ObavestenjeServis {
             // samo klasa izuzetka: poruka može da nosi podatke iz upita
             log.error("Obaveštenje o previše kodova nije upisano, student={}: {}", d.studentId(), e.getClass().getSimpleName());
         }
+    }
+
+    /** Menja čekanje brave ukupnog brojača mejlova (s, testovi); {@link #CEKANJE_BRAVE_MEJL_S} je podrazumevano. */
+    void cekanjeBraveMejla(int sekundi) {
+        cekanjeBraveMejlS = sekundi;
     }
 
     private Obavestenje snimi(VrstaObavestenja vrsta, Student student, Map<String, Object> podaci) {
@@ -245,18 +257,19 @@ public class ObavestenjeServis {
      * rečenicu: ono što je napadač ukucao u javnu formu nikad ne ide u mejl nastavniku (indeks je u aplikaciji, gde ga
      * Angular escape-uje). Najviše 1 mejl po (vrsta, indeks) na sat i 20 na sat ukupno; provera i upis oba brojača idu pod
      * MySQL bravom {@value #BRAVA_MEJL}, inače bi istovremeni zahtevi za različite indekse prešli ukupni limit. Redosled
-     * brava: brava pomoći, red studenta, pa ova (poslednja, kratko čekanje). Ne dobije li se brava, mejl se preskače
+     * brava: brava pomoći, red studenta, pa ova (poslednja; iz {@link #previseKodova}, koja drži red studenta, čeka se najviše 1 s). Ne dobije li se brava, mejl se preskače
      * (obaveštenje u bazi postoji).
      *
      * @param kljucIndeksa HMAC ključ indeksa ({@link KodServis#kljucIndeksa}), kao u ostalim brojačima
      * @param student      pronađen student ili {@code null}
+     * @param cekanjeS     koliko (s) se najduže čeka brava ukupnog brojača
      */
-    private void mejlNastavniku(VrstaObavestenja vrsta, String kljucIndeksa, String trag, Student student) {
+    private void mejlNastavniku(VrstaObavestenja vrsta, String kljucIndeksa, String trag, Student student, int cekanjeS) {
         String adresa = nastavnik.mejl();
         if (adresa.isEmpty() || !mejl.dostupan()) {
             return;
         }
-        if (!kodovi.uzmiBravu(BRAVA_MEJL, CEKANJE_BRAVE_MEJL_S, "mejl-nastavniku")) {
+        if (!kodovi.uzmiBravu(BRAVA_MEJL, cekanjeS, "mejl-nastavniku")) {
             log.warn("Mejl nastavniku preskočen (brava zauzeta), vrsta={}, indeks={}", vrsta, trag);
             return;
         }

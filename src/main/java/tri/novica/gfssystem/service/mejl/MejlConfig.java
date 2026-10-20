@@ -12,8 +12,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * Asinhrono slanje mejla. {@code @EnableAsync} je u aplikaciji nov (do sada nigde nije bilo {@code @Async}); jedini
- * {@code @Async} je {@link MejlPosleCommita} sa imenovanim izvršiocem, pa ništa drugo ne dobija podrazumevani izvršilac.
+ * Asinhrono slanje mejla. {@code @EnableAsync} je u aplikaciji nov (do sada nigde nije bilo {@code @Async}). {@code @Async}
+ * metode imaju svaka svog imenovanog izvršioca, pa nijedna ne dobija podrazumevani: {@link MejlPosleCommita} koristi
+ * {@code mejlIzvrsilac} (ovde), a {@code ObavestenjeServis.naDostignutLimitKodova} {@code obavestenjaIzvrsilac}
+ * ({@code ObavestenjaConfig}, poseban jer su niti za mejl zauzete SMTP-om).
  */
 @Configuration
 @EnableAsync

@@ -64,6 +64,7 @@ class NalogPublicRestIT {
     @Autowired NastavnikSesijaServis nastavnici;
     @Autowired JdbcTemplate jdbc;
     @Autowired tri.novica.gfssystem.service.prijava.KodServis kodServis;
+    @Autowired tri.novica.gfssystem.service.prijava.ObavestenjeServis obavestenjeServis;
     @Autowired javax.sql.DataSource dataSource;
 
     TestStudenti studenti;
@@ -79,6 +80,7 @@ class NalogPublicRestIT {
 
     @AfterEach
     void ocisti() {
+        PristupBravama.vratiCekanja(kodServis, obavestenjeServis);
         mejl.ocisti();
         studenti.obrisi();
         jdbc.update("delete from obavestenja");
@@ -586,9 +588,10 @@ class NalogPublicRestIT {
         assertFalse(nBez.zaglavlja().containsKey(HttpHeaders.SET_COOKIE));
     }
 
-    /** Brava indeksa zauzeta duže od čekanja (10 s): "Ne stiže mi kod" ćutke preskače, odgovor je isti kao uvek. */
+    /** Brava indeksa zauzeta duže od čekanja (ovde spušteno sa 10 s na 1 s): "Ne stiže mi kod" ćutke preskače, odgovor je isti kao uvek. */
     @Test
     void pomocJeIstaKadBravaIndeksaIstekne() throws Exception {
+        PristupBravama.cekanjeBraveIndeksa(kodServis, 1);
         Student normalan = studenti.napravi("ana@example.test");
         Student zakljucan = studenti.napravi("ana@example.test");
         Odgovor uobicajen = odgovor(pomoc(normalan.getIndeks()));

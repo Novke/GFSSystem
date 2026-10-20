@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * studente; tabela {@code obavestenja} se čisti pre i posle (privremena baza testova).
  */
 @SpringBootTest
+@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
 @Import({PrijavaSatConfig.class, LazniMejlServis.class})
 class ObavestenjeServisIT {
 
@@ -480,11 +481,29 @@ class ObavestenjeServisIT {
         assertEquals(s.getId(), sva().getFirst().studentId());
     }
 
+    /**
+     * Obrada u pozadini guta svaki izuzetak (loguje samo klasu): neispravan događaj (bez studenta) i događaj koji ne može da
+     * se upiše ({@code podaci} veći od kolone {@code text}) ne ostavljaju trag u bazi, ne bacaju pozivaocu i ne
+     * zaustavljaju sledeći događaj.
+     */
     @Test
-    void greskaUPozadiniNeMenjaOdgovor() {
-        // student ne postoji: obrada u pozadini ne baca (ćutke ništa), a 429 je ostao isti
-        servis.naDostignutLimitKodova(new DostignutLimitKodova(-77L, "t8-x"));
+    void greskaUPozadiniNeMenjaOdgovor(org.springframework.boot.test.system.CapturedOutput izlaz) {
+        Student s = student("ana@example.test");
+        String preDugackIp = "t8-" + "x".repeat(70_000);
+
+        servis.naDostignutLimitKodova(new DostignutLimitKodova(null, "x"));
+        servis.naDostignutLimitKodova(new DostignutLimitKodova(s.getId(), preDugackIp));
+        pustiPozadinu();
+
         assertTrue(sva().isEmpty());
+        assertTrue(izlaz.getAll().contains("Obaveštenje o previše kodova nije upisano, student=" + s.getId()), "greška se loguje");
+        assertFalse(izlaz.getAll().contains("x".repeat(100)), "ip iz događaja se ne loguje");
+
+        // pozadina radi dalje: sledeći ispravan događaj se upisuje
+        servis.naDostignutLimitKodova(new DostignutLimitKodova(s.getId(), noviIp()));
+        pustiPozadinu();
+        assertEquals(1, sva().size());
+        assertEquals(s.getId(), sva().getFirst().studentId());
     }
 
     /** Čeka (najviše 15 s, uzorak na 20 ms) da uslov postane tačan; inače pada. */
@@ -503,9 +522,13 @@ class ObavestenjeServisIT {
         }
     }
 
-    /** Čeka da izvršilac obavesti pozadinu do kraja (red prazan i nema aktivnih niti). */
+    /** Čeka da izvršilac obavesti pozadinu do kraja (red prazan, nema aktivnih niti, svi zadaci završeni). */
     void pustiPozadinu() {
-        saceka(() -> izvrsilac.getThreadPoolExecutor().getQueue().isEmpty() && izvrsilac.getActiveCount() == 0);
+        saceka(() -> {
+            var e = izvrsilac.getThreadPoolExecutor();
+            // red prazan, nema aktivnih niti i svi zadaci završeni (zadatak uzet iz reda, a još neaktivan, ne prolazi)
+            return e.getQueue().isEmpty() && e.getActiveCount() == 0 && e.getCompletedTaskCount() == e.getTaskCount();
+        });
     }
 
     @Test

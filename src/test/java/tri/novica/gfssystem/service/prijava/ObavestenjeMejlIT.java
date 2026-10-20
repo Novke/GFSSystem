@@ -62,6 +62,7 @@ class ObavestenjeMejlIT {
 
     @AfterEach
     void ocisti() {
+        PristupBravama.vratiCekanja(kodServis, servis);
         mejl.ocisti();
         studenti.obrisi();
         jdbc.update("delete from obavestenja");
@@ -189,6 +190,8 @@ class ObavestenjeMejlIT {
 
     @Test
     void navalaZahtevaNePrelaziUkupniLimitMejla() throws Exception {
+        // 40 niti čeka jednu bravu: čekanje je dovoljno dugo da nijedna ne odustane na opterećenoj mašini
+        PristupBravama.cekanjeBraveMejla(servis, 120);
         int n = 40;
         CountDownLatch kreni = new CountDownLatch(1);
         ExecutorService niti = Executors.newFixedThreadPool(n);
@@ -207,18 +210,21 @@ class ObavestenjeMejlIT {
         } finally {
             niti.shutdownNow();
         }
-        mejl.cekaj(10, Duration.ofSeconds(30));
+        mejl.cekaj(20, Duration.ofSeconds(90));
         Thread.sleep(500);
         int poslato = mejl.poslate().size();
         int brojac = jdbc.queryForObject("select count(*) from pokusaji where vrsta = 'MEJL_NASTAVNIKU_UKUPNO'", Integer.class);
-        assertTrue(poslato <= 20, "poslato " + poslato);
+        assertEquals(20, poslato, "poslato " + poslato);
         assertEquals(poslato, brojac);
+        assertEquals(1, jdbc.queryForObject("select IS_FREE_LOCK(?)", Integer.class, ObavestenjeServis.BRAVA_MEJL),
+                "brava ukupnog brojača mora biti otpuštena");
         assertEquals(n, jdbc.queryForObject("select count(*) from obavestenja", Integer.class));
     }
 
     @Test
     void zauzetaBravaMejlaPreskaceMejlAliNeObavestenje() throws Exception {
-        // drugi pristup drži bravu duže od čekanja (5 s)
+        // drugi pristup drži bravu duže od čekanja (spušteno sa 5 s na 1 s)
+        PristupBravama.cekanjeBraveMejla(servis, 1);
         try (java.sql.Connection veza = dataSource.getConnection()) {
             try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
                 ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
@@ -238,6 +244,33 @@ class ObavestenjeMejlIT {
         // posle otpuštanja radi normalno
         pomoc(nepostojeci());
         mejl.cekaj(1);
+    }
+
+    /**
+     * {@code previseKodova} drži red studenta ({@code FOR UPDATE}) dok traži bravu ukupnog brojača: tu čeka najviše 1 s,
+     * ne 5 s kao zahtev "Ne stiže mi kod" (koji ne drži red studenta).
+     */
+    @Test
+    void previseKodovaNaZauzetojBraviMejlaCekaSamoSekundu() throws Exception {
+        Student s = student("ana@example.test");
+        long trajanje;
+        try (java.sql.Connection veza = dataSource.getConnection()) {
+            try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
+                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                var rs = ps.executeQuery();
+                assertTrue(rs.next() && rs.getInt(1) == 1);
+            }
+            long pocetak = System.nanoTime();
+            servis.previseKodova(s.getId(), noviIp());
+            trajanje = Duration.ofNanos(System.nanoTime() - pocetak).toMillis();
+            try (var ps = veza.prepareStatement("SELECT RELEASE_LOCK(?)")) {
+                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.executeQuery();
+            }
+        }
+        assertTrue(trajanje < 3_500, "red studenta ne sme da se drži do 5 s: " + trajanje + " ms");
+        assertEquals(1, jdbc.queryForObject("select count(*) from obavestenja where vrsta = 'PREVISE_KODOVA'", Integer.class));
+        assertTrue(mejl.poslate().isEmpty(), "mejl se preskače kad se brava ne dobije");
     }
 
     @Test
