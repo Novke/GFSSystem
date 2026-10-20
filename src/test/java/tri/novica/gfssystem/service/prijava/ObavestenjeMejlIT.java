@@ -21,6 +21,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,6 +46,7 @@ class ObavestenjeMejlIT {
     @Autowired PomerljivSat sat;
     @Autowired PokusajiServis pokusaji;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
 
     TestStudenti studenti;
     final List<String> kljucevi = new ArrayList<>();
@@ -106,8 +113,35 @@ class ObavestenjeMejlIT {
         String indeks = nepostojeci();
         pomoc(indeks);
         MejlPoruka m = mejl.cekaj(1).getFirst();
-        assertTrue(m.telo().contains(indeks), m.telo());
+        assertEquals(ObavestenjeServis.NEPOZNAT_INDEKS_TELO, m.telo());
+        assertFalse(m.telo().contains(indeks), m.telo());
         assertFalse(m.telo().contains("studenti/"), m.telo());
+    }
+
+    @Test
+    void ukucanoUPoljeIndeksaNikadNeIdeUMejlNastavniku() {
+        String napad = "GFS-PRIJAVA.COM/NASTAVNIK";
+        // prvi: u beloj listi (slova, tačka, kosa crta) ali nepostojeći; ostali su van bele liste
+        List<String> unosi = List.of(napad, "klikni na https://example.com/hvatac", "<b>Pozdrav</b> nastavniče",
+                "NASTAVNIK@GFS-PRIJAVA.COM");
+        for (String unos : unosi) {
+            pomoc(unos);
+            kljucevi.add(kodServis.kljucIndeksa(tri.novica.gfssystem.utility.IndeksUtil.normalizuj(unos)));
+        }
+        List<MejlPoruka> poruke = mejl.cekaj(unosi.size());
+        assertEquals(unosi.size(), poruke.size());
+        for (MejlPoruka m : poruke) {
+            assertEquals(ObavestenjeServis.NEPOZNAT_INDEKS_TELO, m.telo());
+            assertEquals("GFS: studentu ne stiže kod", m.naslov());
+            for (String unos : unosi) {
+                String n = tri.novica.gfssystem.utility.IndeksUtil.normalizuj(unos);
+                for (String deo : new String[]{unos, n, unos.toUpperCase(), "GFS-PRIJAVA", "NASTAVNIK", "example.com"}) {
+                    assertFalse(m.telo().contains(deo) || m.naslov().contains(deo), "'" + deo + "' u mejlu: " + m.telo());
+                }
+            }
+        }
+        // u aplikaciji ukucani indeks ostaje (Angular ga escape-uje)
+        assertEquals(unosi.size(), jdbc.queryForObject("select count(*) from obavestenja where student_id is null", Integer.class));
     }
 
     @Test
@@ -123,7 +157,7 @@ class ObavestenjeMejlIT {
     @Test
     void limitMejlaPoVrstiIIndeksuPrepustaObavestenjeAliNeMejl() throws Exception {
         Student s = student("ana@example.test");
-        String kljuc = "NE_STIZE_KOD:" + s.getIndeks();
+        String kljuc = "NE_STIZE_KOD:" + kodServis.kljucIndeksa(s.getIndeks());
         kljucevi.add(kljuc);
         pokusaji.zabelezi(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc);
         pomoc(s.getIndeks());
@@ -141,6 +175,69 @@ class ObavestenjeMejlIT {
         Thread.sleep(300);
         assertEquals(1, jdbc.queryForObject("select count(*) from obavestenja", Integer.class));
         assertTrue(mejl.poslate().isEmpty());
+    }
+
+    @Test
+    void kljucBrojacaMejlaJeHmacNeGolIndeks() {
+        Student s = student("ana@example.test");
+        pomoc(s.getIndeks());
+        mejl.cekaj(1);
+        String kljuc = jdbc.queryForObject("select kljuc from pokusaji where vrsta = 'MEJL_NASTAVNIKU'", String.class);
+        assertEquals("NE_STIZE_KOD:" + kodServis.kljucIndeksa(s.getIndeks()), kljuc);
+        assertFalse(kljuc.contains(s.getIndeks()), kljuc);
+    }
+
+    @Test
+    void navalaZahtevaNePrelaziUkupniLimitMejla() throws Exception {
+        int n = 40;
+        CountDownLatch kreni = new CountDownLatch(1);
+        ExecutorService niti = Executors.newFixedThreadPool(n);
+        try {
+            List<Future<?>> f = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                String indeks = nepostojeci();
+                f.add(niti.submit(() -> {
+                    kreni.await();
+                    pomoc(indeks);
+                    return null;
+                }));
+            }
+            kreni.countDown();
+            for (Future<?> x : f) x.get(120, TimeUnit.SECONDS);
+        } finally {
+            niti.shutdownNow();
+        }
+        mejl.cekaj(10, Duration.ofSeconds(30));
+        Thread.sleep(500);
+        int poslato = mejl.poslate().size();
+        int brojac = jdbc.queryForObject("select count(*) from pokusaji where vrsta = 'MEJL_NASTAVNIKU_UKUPNO'", Integer.class);
+        assertTrue(poslato <= 20, "poslato " + poslato);
+        assertEquals(poslato, brojac);
+        assertEquals(n, jdbc.queryForObject("select count(*) from obavestenja", Integer.class));
+    }
+
+    @Test
+    void zauzetaBravaMejlaPreskaceMejlAliNeObavestenje() throws Exception {
+        // drugi pristup drži bravu duže od čekanja (5 s)
+        try (java.sql.Connection veza = dataSource.getConnection()) {
+            try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
+                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                var rs = ps.executeQuery();
+                assertTrue(rs.next() && rs.getInt(1) == 1);
+            }
+            pomoc(nepostojeci());
+            try (var ps = veza.prepareStatement("SELECT RELEASE_LOCK(?)")) {
+                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.executeQuery();
+            }
+        }
+        Thread.sleep(300);
+        assertEquals(1, jdbc.queryForObject("select count(*) from obavestenja", Integer.class));
+        assertTrue(mejl.poslate().isEmpty());
+        assertEquals(0, jdbc.queryForObject("select count(*) from pokusaji where vrsta = 'MEJL_NASTAVNIKU_UKUPNO'", Integer.class));
+        // posle otpuštanja radi normalno
+        pomoc(nepostojeci());
+        mejl.cekaj(1);
     }
 
     @Test

@@ -26,6 +26,7 @@ import tri.novica.gfssystem.service.mejl.LazniMejlServis;
 import tri.novica.gfssystem.service.mejl.MejlPoruka;
 import tri.novica.gfssystem.service.prijava.MaskaMejla;
 import tri.novica.gfssystem.service.prijava.NastavnikSesijaServis;
+import tri.novica.gfssystem.service.prijava.PristupBravama;
 import tri.novica.gfssystem.service.prijava.TestStudenti;
 import tri.novica.gfssystem.utility.TokenGenerator;
 
@@ -62,6 +63,8 @@ class NalogPublicRestIT {
     @Autowired StudentRepository studentRepository;
     @Autowired NastavnikSesijaServis nastavnici;
     @Autowired JdbcTemplate jdbc;
+    @Autowired tri.novica.gfssystem.service.prijava.KodServis kodServis;
+    @Autowired javax.sql.DataSource dataSource;
 
     TestStudenti studenti;
     final List<String> ipovi = new ArrayList<>();
@@ -521,5 +524,120 @@ class NalogPublicRestIT {
             mvc.perform(javniPost("/public/nalog/pomoc", telo)).andExpect(status().isBadRequest());
         }
         assertEquals(0, brojObavestenja());
+    }
+
+    // ---------------------------------------------------------------- isti odgovor bez obzira na uređaj, bravu i limit
+
+    /** Status, telo i sva zaglavlja (sa Set-Cookie), da se odgovori porede bajt po bajt. */
+    record Odgovor(int status, String telo, java.util.Map<String, List<String>> zaglavlja) {}
+
+    static Odgovor odgovor(MvcResult r) throws Exception {
+        MockHttpServletResponse res = r.getResponse();
+        java.util.Map<String, List<String>> z = new java.util.TreeMap<>();
+        for (String ime : res.getHeaderNames()) {
+            z.put(ime, res.getHeaders(ime));
+        }
+        // greške nose vreme nastanka ("time"), jedino polje koje se sme razlikovati
+        String telo = res.getContentAsString().replaceAll("\"time\":\"[^\"]*\"", "\"time\":\"*\"");
+        return new Odgovor(res.getStatus(), telo, z);
+    }
+
+    @Test
+    void pomocJeIstaSaPoznatimUredjajemIBezNjega() throws Exception {
+        Student a = studenti.napravi("ana@example.test");
+        Student b = studenti.napravi("ana@example.test");
+        String tokenB = prijaviSe(b);
+        // postojeći student: bez kolačića (NEPOZNAT) naspram sopstvenog uređaja (ZAPAMCEN)
+        Odgovor nepoznat = odgovor(pomoc(a.getIndeks()));
+        Odgovor zapamcen = odgovor(pomoc(b.getIndeks(), tokenB));
+        assertEquals(200, nepoznat.status());
+        assertEquals(nepoznat, zapamcen);
+        assertFalse(nepoznat.zaglavlja().containsKey(HttpHeaders.SET_COOKIE));
+        // nepostojeći indeks: bez kolačića naspram kolačića nekog pravog uređaja
+        Odgovor nepostojeci1 = odgovor(pomoc(TestStudenti.noviIndeks()));
+        Odgovor nepostojeci2 = odgovor(pomoc(TestStudenti.noviIndeks(), tokenB));
+        assertEquals(nepoznat, nepostojeci1);
+        assertEquals(nepoznat, nepostojeci2);
+        // i da se uređaj stvarno razlikovao u obaveštenjima
+        assertEquals("NEPOZNAT", JSON.readTree(jdbc.queryForObject(
+                "select podaci from obavestenja where student_id = ?", String.class, a.getId())).get("uredjaj").asString());
+        assertEquals("ZAPAMCEN", JSON.readTree(jdbc.queryForObject(
+                "select podaci from obavestenja where student_id = ?", String.class, b.getId())).get("uredjaj").asString());
+    }
+
+    @Test
+    void kodJeIstiSaPoznatimUredjajemIBezNjega() throws Exception {
+        Student s = studenti.napravi("ana@example.test");
+        String token = prijaviSe(s);
+        // isti student i isti nepostojeći indeks dva puta (maska i lažna maska zavise samo od indeksa)
+        Odgovor bez = odgovor(kod(s.getIndeks()));
+        Odgovor sa = odgovor(mvc.perform(javniPost("/public/nalog/kod", "{\"indeks\":\"" + s.getIndeks() + "\"}")
+                .cookie(student(token))).andReturn());
+        assertEquals(200, bez.status());
+        assertEquals(bez, sa);
+        assertFalse(bez.zaglavlja().containsKey(HttpHeaders.SET_COOKIE));
+
+        String nepostojeci = TestStudenti.noviIndeks();
+        Odgovor nBez = odgovor(kod(nepostojeci));
+        Odgovor nSa = odgovor(mvc.perform(javniPost("/public/nalog/kod", "{\"indeks\":\"" + nepostojeci + "\"}")
+                .cookie(student(token))).andReturn());
+        assertEquals(200, nBez.status());
+        assertEquals(nBez, nSa);
+        assertFalse(nBez.zaglavlja().containsKey(HttpHeaders.SET_COOKIE));
+    }
+
+    /** Brava indeksa zauzeta duže od čekanja (10 s): "Ne stiže mi kod" ćutke preskače, odgovor je isti kao uvek. */
+    @Test
+    void pomocJeIstaKadBravaIndeksaIstekne() throws Exception {
+        Student normalan = studenti.napravi("ana@example.test");
+        Student zakljucan = studenti.napravi("ana@example.test");
+        Odgovor uobicajen = odgovor(pomoc(normalan.getIndeks()));
+        assertEquals(200, uobicajen.status());
+
+        String brava = PristupBravama.bravaPomoci(kodServis, zakljucan.getIndeks());
+        Odgovor istekla;
+        try (java.sql.Connection veza = dataSource.getConnection()) {
+            try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
+                ps.setString(1, brava);
+                var rs = ps.executeQuery();
+                assertTrue(rs.next() && rs.getInt(1) == 1);
+            }
+            istekla = odgovor(pomoc(zakljucan.getIndeks()));
+            try (var ps = veza.prepareStatement("SELECT RELEASE_LOCK(?)")) {
+                ps.setString(1, brava);
+                ps.executeQuery();
+            }
+        }
+        assertEquals(uobicajen, istekla);
+        // preskočeno: obaveštenje samo za studenta čija brava nije bila zauzeta
+        assertEquals(1, brojObavestenja());
+        assertEquals(normalan.getId(), jdbc.queryForObject("select student_id from obavestenja", Long.class));
+    }
+
+    /** 429 po indeksu je isti za postojećeg i nepostojećeg, iako se obaveštenje za postojećeg upisuje u pozadini. */
+    @Test
+    void odgovor429JeIstZaPostojecegINepostojecegIndeksa() throws Exception {
+        jdbc.update("delete from obavestenja");
+        Student s = studenti.napravi("ana@example.test");
+        String nepostojeci = TestStudenti.noviIndeks();
+        Odgovor poznat = null;
+        Odgovor nepoznat = null;
+        for (int i = 0; i < 4; i++) {
+            ip = noviIp();
+            poznat = odgovor(kod(s.getIndeks()));
+            nepoznat = odgovor(kod(nepostojeci));
+            if (i < 3) {
+                assertEquals(200, poznat.status());
+            }
+        }
+        assertEquals(429, poznat.status());
+        assertEquals(poznat, nepoznat);
+        assertFalse(poznat.zaglavlja().containsKey(HttpHeaders.SET_COOKIE));
+        // obaveštenje stiže, ali posle odgovora
+        long kraj = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (brojObavestenja() < 1 && System.nanoTime() < kraj) {
+            Thread.sleep(20);
+        }
+        assertEquals(1, brojObavestenja());
     }
 }

@@ -1,7 +1,6 @@
 package tri.novica.gfssystem.service.prijava;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,6 +37,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
@@ -67,7 +67,8 @@ import java.util.regex.Pattern;
  * <p>
  * <b>Donja granica trajanja</b> ({@code gfs.nalog.minimalno-trajanje-ms}, podrazumevano 200 ms, monotono vreme):
  * {@link #posalji} i {@link #proveri} ne odgovaraju ranije ni na 200, ni na 401, ni na 429 po indeksu, pa razlika od
- * nekoliko upisa između postojećeg i nepostojećeg naloga (i {@link #previseKodova}) ne izlazi u vreme odgovora. Izuzetak
+ * nekoliko upisa između postojećeg i nepostojećeg naloga ne izlazi u vreme odgovora ({@code PREVISE_KODOVA} se upisuje
+ * u pozadini, posle odgovora: {@link DostignutLimitKodova}). Izuzetak
  * su 503 (slanje nije podešeno) i 429 po IP-u: oni ne zavise od indeksa, pa vraćaju odmah (inače bi napadač preko
  * limita i dalje držao niti zahteva).
  * <p>
@@ -109,19 +110,16 @@ public class KodServis {
     private final KljuceviAplikacije kljucevi;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate zakljucano;
-    /** Lenjo, jer {@link ObavestenjeServis} koristi pomoćne metode ovog servisa (indeks, brava, donja granica). */
-    private final ObjectProvider<ObavestenjeServis> obavestenja;
     private final SecureRandom random = new SecureRandom();
     /** Donja granica trajanja odgovora (ns); u testovima 0, osim gde se proverava. */
     private volatile long minimalnoTrajanjeNs;
+    private final AtomicInteger spava = new AtomicInteger();
 
     public KodServis(StudentRepository studenti, KodZaPrijavuRepository kodovi, PokusajiServis pokusaji, MejlServis mejl,
                      ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
                      KljuceviAplikacije kljucevi, JdbcTemplate jdbc, PlatformTransactionManager transakcije, Clock clock,
-                     ObjectProvider<ObavestenjeServis> obavestenja,
                      @Value("${gfs.nalog.minimalno-trajanje-ms:200}") long minimalnoTrajanjeMs) {
         this.kljucevi = kljucevi;
-        this.obavestenja = obavestenja;
         this.jdbc = jdbc;
         this.minimalnoTrajanjeNs = TimeUnit.MILLISECONDS.toNanos(minimalnoTrajanjeMs);
         this.studenti = studenti;
@@ -173,7 +171,9 @@ public class KodServis {
                 log.info("Zahtev za kod odbijen (limit po indeksu), indeks={}, student={}, ip={}",
                         trag(i.n()), s.studentId(), ip);
                 if (s.studentId() != null) {
-                    previseKodova(s.studentId(), ip);
+                    // posao u pozadini (ObavestenjeServis, posle ovog zahteva): 429 za postojećeg studenta ne radi
+                    // ništa više u bazi nego za nepostojeći indeks
+                    dogadjaji.publishEvent(new DostignutLimitKodova(s.studentId(), ip));
                 }
                 throw new SystemException(PREVISE, 429);
             }
@@ -201,20 +201,6 @@ public class KodServis {
         novKod(s);
         log.info("Kod poslat, student={}", s.getId());
         return new Slanje(maska.maska(s.getEmail()), false, s.getId());
-    }
-
-    /**
-     * Obaveštenje nastavniku {@code PREVISE_KODOVA} (spec 6): student je dostigao limit od 3 koda na sat; najviše jedno
-     * dnevno po studentu ({@link ObavestenjeServis#previseKodova}). Poziva se van zaključane transakcije i pre donje
-     * granice trajanja (njen posao se krije u njoj), a neuspeh se guta: obaveštenje nikad ne sme da promeni odgovor 429.
-     */
-    void previseKodova(Long studentId, String ip) {
-        try {
-            obavestenja.getObject().previseKodova(studentId, ip);
-        } catch (RuntimeException e) {
-            // samo klasa izuzetka: poruka može da nosi podatke iz upita
-            log.error("Obaveštenje o previše kodova nije upisano, student={}: {}", studentId, e.getClass().getSimpleName());
-        }
     }
 
     /**
@@ -306,10 +292,16 @@ public class KodServis {
      * prefiks (slanje koda, "Ne stiže mi kod"), a redosled je uvek brava indeksa pa red studenta.
      */
     boolean uzmiBravu(String prefiks, Indeks i) {
-        String brava = prefiks + i.hmac().substring(0, 32);
-        Integer dobijena = jdbc.queryForObject("SELECT GET_LOCK(?, ?)", Integer.class, brava, CEKANJE_BRAVE_S);
+        return uzmiBravu(prefiks + i.hmac().substring(0, 32), CEKANJE_BRAVE_S, trag(i.n()));
+    }
+
+    /**
+     * Isto za bravu zadatog imena i čekanja (npr. ukupni brojač mejlova nastavniku); {@code oznaka} je samo za log.
+     */
+    boolean uzmiBravu(String brava, int cekanjeS, String oznaka) {
+        Integer dobijena = jdbc.queryForObject("SELECT GET_LOCK(?, ?)", Integer.class, brava, cekanjeS);
         if (dobijena == null || dobijena != 1) {
-            log.warn("Brava indeksa nije dobijena za {} s, indeks={}", CEKANJE_BRAVE_S, trag(i.n()));
+            log.warn("Brava nije dobijena za {} s, oznaka={}", cekanjeS, oznaka);
             return false;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -318,10 +310,10 @@ public class KodServis {
                 try {
                     Integer otpustena = jdbc.queryForObject("SELECT RELEASE_LOCK(?)", Integer.class, brava);
                     if (otpustena == null || otpustena != 1) {
-                        log.error("Brava indeksa nije otpuštena (rezultat {}), indeks={}", otpustena, trag(i.n()));
+                        log.error("Brava nije otpuštena (rezultat {}), oznaka={}", otpustena, oznaka);
                     }
                 } catch (RuntimeException e) {
-                    log.error("Brava indeksa nije otpuštena: {}", e.getClass().getSimpleName());
+                    log.error("Brava nije otpuštena: {}", e.getClass().getSimpleName());
                 }
             }
         });
@@ -396,12 +388,20 @@ public class KodServis {
     void sacekajDoGranice(long pocetak) {
         long ostalo = minimalnoTrajanjeNs - (System.nanoTime() - pocetak);
         if (ostalo > 0) {
+            spava.incrementAndGet();
             try {
                 TimeUnit.NANOSECONDS.sleep(ostalo);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            } finally {
+                spava.decrementAndGet();
             }
         }
+    }
+
+    /** Koliko niti trenutno spava do donje granice (testovi: uzorkovanje tek kad su svi zahtevi završili posao u bazi). */
+    int uSpavanju() {
+        return spava.get();
     }
 
     /**

@@ -2,6 +2,7 @@ package tri.novica.gfssystem.service.prijava;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.config.NastavnikSvojstva;
@@ -51,7 +54,7 @@ import java.util.Optional;
  * <p>
  * Istovremeni zahtevi za isti indeks idu redom kroz MySQL bravu {@code gfs-pomoc:<hmac>} (kao {@code KodServis}), pa dva
  * paralelna zahteva ne prave dva obaveštenja ni dva mejla. Mejl nastavniku ide posle commit-a, asinhrono
- * ({@code MejlPosleCommita}), uz limite {@code MEJL_NASTAVNIKU} (ključ {@code vrsta:indeks}, 1/h) i
+ * ({@code MejlPosleCommita}), uz limite {@code MEJL_NASTAVNIKU} (ključ {@code vrsta:HMAC indeksa}, 1/h) i
  * {@code MEJL_NASTAVNIKU_UKUPNO} (20/h); bez {@code gfs.nastavnik.mejl} ili bez SMTP-a nema mejla ni brojača.
  * <p>
  * Log: IP i id-jevi, indeks samo kao prvih 8 hex SHA-256; nikad ime, mejl ni token.
@@ -71,6 +74,12 @@ public class ObavestenjeServis {
     static final int LIMIT_MEJL_UKUPNO = 20;
     /** Ključ ukupnog brojača mejlova nastavniku. */
     static final String UKUPNO = "ukupno";
+    /** MySQL brava za proveru i upis ukupnog brojača mejlova nastavniku. */
+    static final String BRAVA_MEJL = "gfs-mejl-nastavniku";
+    static final int CEKANJE_BRAVE_MEJL_S = 5;
+    /** Telo mejla kad nema studenta: stalna rečenica, bez ičega što je ukucano u javnu formu. */
+    static final String NEPOZNAT_INDEKS_TELO = "Neko je tražio pomoć za indeks koji ne postoji u evidenciji. "
+            + "Detalji su u aplikaciji (Obaveštenja).\n";
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -157,7 +166,7 @@ public class ObavestenjeServis {
         Obavestenje o = snimi(VrstaObavestenja.NE_STIZE_KOD, student.orElse(null), podaci);
         log.info("Obaveštenje 'ne stiže kod' napravljeno, obavestenje={}, student={}, indeks={}, ip={}", o.getId(),
                 student.map(Student::getId).orElse(null), KodServis.trag(i.n()), ip);
-        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, i.n(), student.map(Student::getId).orElse(null));
+        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, KodServis.trag(i.n()), student.orElse(null));
     }
 
     /** Da li bar jedan token pripada uređaju studenta (opozvan i istekao se računaju: pamti se da je uređaj bio njegov). */
@@ -175,7 +184,7 @@ public class ObavestenjeServis {
     // ------------------------------------------------------------------ previše kodova
 
     /**
-     * Student je dostigao limit od 3 koda na sat (poziva {@code KodServis.posalji}): obaveštenje {@code PREVISE_KODOVA},
+     * Student je dostigao limit od 3 koda na sat ({@link #naDostignutLimitKodova}, u pozadini): obaveštenje {@code PREVISE_KODOVA},
      * najviše jedno u 24 sata po studentu (rešeno ili ne). Red studenta je zaključan u toj transakciji, pa istovremeni
      * pozivi ne prave dva. Ne baca izuzetak zbog nepostojećeg studenta.
      */
@@ -196,8 +205,26 @@ public class ObavestenjeServis {
             podaci.put("ip", ip);
             Obavestenje o = snimi(VrstaObavestenja.PREVISE_KODOVA, student.get(), podaci);
             log.info("Obaveštenje 'previše kodova' napravljeno, obavestenje={}, student={}, ip={}", o.getId(), studentId, ip);
-            mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, n == null ? "" : n, studentId);
+            String normalizovan = n == null ? "" : n;
+            mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, kodovi.kljucIndeksa(normalizovan),
+                    KodServis.trag(normalizovan), student.get());
         });
+    }
+
+    /**
+     * Obrada {@link DostignutLimitKodova} u pozadini ({@code obavestenjaIzvrsilac}), posle odgovora 429: zahtev ne radi
+     * ništa više u bazi za postojećeg studenta nego za nepostojeći indeks. Neuspeh se samo loguje (klasa izuzetka i id
+     * studenta): obaveštenje nikad ne sme da utiče na pozivaoca.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Async("obavestenjaIzvrsilac")
+    public void naDostignutLimitKodova(DostignutLimitKodova d) {
+        try {
+            previseKodova(d.studentId(), d.ip());
+        } catch (RuntimeException e) {
+            // samo klasa izuzetka: poruka može da nosi podatke iz upita
+            log.error("Obaveštenje o previše kodova nije upisano, student={}: {}", d.studentId(), e.getClass().getSimpleName());
+        }
     }
 
     private Obavestenje snimi(VrstaObavestenja vrsta, Student student, Map<String, Object> podaci) {
@@ -213,41 +240,55 @@ public class ObavestenjeServis {
 
     /**
      * Mejl nastavniku uz obaveštenje, u tekućoj transakciji (šalje se posle commit-a). Bez adrese ({@code
-     * gfs.nastavnik.mejl}) ili bez SMTP-a: ništa, ni brojač. Naslov nema ime studenta, telo ima indeks i relativni link
-     * na karticu ({@code studenti/<id>}); najviše 1 mejl po (vrsta, indeks) na sat i 20 na sat ukupno.
+     * gfs.nastavnik.mejl}) ili bez SMTP-a: ništa, ni brojač. Naslov nema ime studenta; telo za poznatog studenta ima njegov
+     * <b>upisan</b> indeks (iz baze) i relativni link na karticu ({@code studenti/<id>}), a bez studenta samo stalnu
+     * rečenicu: ono što je napadač ukucao u javnu formu nikad ne ide u mejl nastavniku (indeks je u aplikaciji, gde ga
+     * Angular escape-uje). Najviše 1 mejl po (vrsta, indeks) na sat i 20 na sat ukupno; provera i upis oba brojača idu pod
+     * MySQL bravom {@value #BRAVA_MEJL}, inače bi istovremeni zahtevi za različite indekse prešli ukupni limit. Redosled
+     * brava: brava pomoći, red studenta, pa ova (poslednja, kratko čekanje). Ne dobije li se brava, mejl se preskače
+     * (obaveštenje u bazi postoji).
+     *
+     * @param kljucIndeksa HMAC ključ indeksa ({@link KodServis#kljucIndeksa}), kao u ostalim brojačima
+     * @param student      pronađen student ili {@code null}
      */
-    private void mejlNastavniku(VrstaObavestenja vrsta, String indeks, Long studentId) {
+    private void mejlNastavniku(VrstaObavestenja vrsta, String kljucIndeksa, String trag, Student student) {
         String adresa = nastavnik.mejl();
         if (adresa.isEmpty() || !mejl.dostupan()) {
             return;
         }
-        String kljuc = vrsta.name() + ":" + indeks;
+        if (!kodovi.uzmiBravu(BRAVA_MEJL, CEKANJE_BRAVE_MEJL_S, "mejl-nastavniku")) {
+            log.warn("Mejl nastavniku preskočen (brava zauzeta), vrsta={}, indeks={}", vrsta, trag);
+            return;
+        }
+        String kljuc = vrsta.name() + ":" + kljucIndeksa;
         if (pokusaji.dostignut(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc, LIMIT_MEJL_INDEKS, SAT)
                 || pokusaji.dostignut(VrstaPokusaja.MEJL_NASTAVNIKU_UKUPNO, UKUPNO, LIMIT_MEJL_UKUPNO, SAT)) {
-            log.info("Mejl nastavniku preskočen (limit), vrsta={}, indeks={}", vrsta, KodServis.trag(indeks));
+            log.info("Mejl nastavniku preskočen (limit), vrsta={}, indeks={}", vrsta, trag);
             return;
         }
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc);
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU_UKUPNO, UKUPNO);
         dogadjaji.publishEvent(new MejlPoruka(adresa,
-                vrsta == VrstaObavestenja.NE_STIZE_KOD ? NASLOV_POMOC : NASLOV_PREVISE, telo(vrsta, indeks, studentId)));
+                vrsta == VrstaObavestenja.NE_STIZE_KOD ? NASLOV_POMOC : NASLOV_PREVISE,
+                telo(vrsta, student == null ? null : student.getIndeks(), student == null ? null : student.getId())));
     }
 
+    /** {@code indeks} i {@code studentId} su iz baze, ili oba {@code null} kad nema studenta (tada ništa ukucano). */
     static String telo(VrstaObavestenja vrsta, String indeks, Long studentId) {
+        if (studentId == null) {
+            return NEPOZNAT_INDEKS_TELO;
+        }
         String opis = vrsta == VrstaObavestenja.NE_STIZE_KOD
                 ? "Student javlja da mu ne stiže kod za prijavu."
                 : "Studentu je u poslednjih sat vremena poslato 3 koda za prijavu, pa je dostignut limit.";
-        String kartica = studentId == null
-                ? "Za ovaj indeks nema studenta u bazi (možda greška u kucanju pri upisu)."
-                : "Kartica studenta: studenti/" + studentId;
         return """
                 %s
 
                 Indeks: %s
-                %s
+                Kartica studenta: studenti/%d
 
                 Obaveštenja su u aplikaciji, u listi iz gornje trake.
-                """.formatted(opis, indeks, kartica);
+                """.formatted(opis, indeks == null ? "" : indeks, studentId);
     }
 
     // ------------------------------------------------------------------ lista i čitanje (nastavnik)

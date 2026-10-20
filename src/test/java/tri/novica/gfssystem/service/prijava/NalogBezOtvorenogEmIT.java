@@ -108,15 +108,42 @@ class NalogBezOtvorenogEmIT {
         assertTrue(imaOtvorenEm("GET", "/auth/ja"));
     }
 
+    /** Donja granica trajanja u navalama: dovoljno dugo da i spor izvršilac stigne da svi zahtevi završe posao u bazi. */
+    static final Duration GRANICA = Duration.ofSeconds(6);
+
     /**
-     * Navala od 20 zahteva ({@code kod} i {@code prijava}) sa granicom 3 s: dok zahtevi spavaju (prozor 1,5-2,8 s, posao u
+     * Uzorkuje aktivne veze iz pula samo dok <b>svih n</b> zahteva spava do donje granice ({@code KodServis#uSpavanju},
+     * proveren pre i posle očitavanja), pa prozor ne zavisi od brzine runnera: ni od toga kad zahtevi počnu, ni od
+     * toga koliko traje njihov posao u bazi. Vraća {najviše aktivnih veza, broj uzoraka}; petlja se završava kad svi
+     * zahtevi odgovore.
+     */
+    int[] uzorkujDokSviSpavaju(HikariPoolMXBean pul, int n, List<? extends Future<?>> zahtevi, long t0) throws Exception {
+        int najvise = 0;
+        int uzoraka = 0;
+        long rok = t0 + Duration.ofSeconds(90).toNanos();
+        while (zahtevi.stream().anyMatch(x -> !x.isDone())) {
+            assertTrue(System.nanoTime() < rok, "zahtevi nisu završeni za 90 s");
+            if (kodServis.uSpavanju() == n) {
+                int aktivnih = pul.getActiveConnections();
+                if (kodServis.uSpavanju() == n) {
+                    najvise = Math.max(najvise, aktivnih);
+                    uzoraka++;
+                }
+            }
+            Thread.sleep(10);
+        }
+        return new int[]{najvise, uzoraka};
+    }
+
+    /**
+     * Navala od 20 zahteva ({@code kod} i {@code prijava}) sa granicom {@link #GRANICA}: dok svi zahtevi spavaju (posao u
      * bazi traje desetine ms), aktivnih veza je najviše 2 (pre ispravke svih 10 iz pula, ostali čekaju).
      */
     @Test
     void navalaUSpavanjuNeDrziVeze() throws Exception {
         HikariPoolMXBean pul = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
         Student s = studenti.napravi("ana@example.test");
-        kodServis.minimalnoTrajanje(Duration.ofSeconds(3));
+        kodServis.minimalnoTrajanje(GRANICA);
         int n = 20;
         CountDownLatch kreni = new CountDownLatch(1);
         ExecutorService niti = Executors.newFixedThreadPool(n);
@@ -141,17 +168,9 @@ class NalogBezOtvorenogEmIT {
             }
             long t0 = System.nanoTime();
             kreni.countDown();
-            int najvise = 0;
-            int uzoraka = 0;
-            while (true) {
-                long ms = (System.nanoTime() - t0) / 1_000_000;
-                if (ms > 2800) break;
-                if (ms >= 1500) {
-                    najvise = Math.max(najvise, pul.getActiveConnections());
-                    uzoraka++;
-                }
-                Thread.sleep(10);
-            }
+            int[] uzorak = uzorkujDokSviSpavaju(pul, n, f, t0);
+            int najvise = uzorak[0];
+            int uzoraka = uzorak[1];
             List<Integer> statusi = new ArrayList<>();
             for (Future<Integer> x : f) statusi.add(x.get(60, TimeUnit.SECONDS));
             long ukupnoMs = (System.nanoTime() - t0) / 1_000_000;
@@ -159,19 +178,19 @@ class NalogBezOtvorenogEmIT {
                     + " uzoraka), ukupno " + ukupnoMs + " ms, statusi " + statusi);
             assertTrue(uzoraka > 20, "premalo uzoraka: " + uzoraka);
             assertTrue(najvise <= 2, "aktivnih veza dok zahtevi spavaju: " + najvise);
-            assertTrue(ukupnoMs >= 3000, "granica nije važila: " + ukupnoMs + " ms");
+            assertTrue(ukupnoMs >= GRANICA.toMillis(), "granica nije važila: " + ukupnoMs + " ms");
             for (int i = 0; i < n; i++) assertEquals(i % 2 == 0 ? 200 : 401, statusi.get(i), statusi.toString());
         } finally {
             niti.shutdownNow();
         }
     }
 
-    /** Isto za "Ne stiže mi kod" (B8): 20 istovremenih zahteva sa granicom 3 s ne drže vezu iz pula dok spavaju. */
+    /** Isto za "Ne stiže mi kod" (B8): 20 istovremenih zahteva sa granicom 6 s ne drže vezu iz pula dok spavaju. */
     @Test
     void navalaPomociNeDrziVeze() throws Exception {
         HikariPoolMXBean pul = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
         Student s = studenti.napravi("ana@example.test");
-        kodServis.minimalnoTrajanje(Duration.ofSeconds(3));
+        kodServis.minimalnoTrajanje(GRANICA);
         int n = 20;
         CountDownLatch kreni = new CountDownLatch(1);
         ExecutorService niti = Executors.newFixedThreadPool(n);
@@ -192,24 +211,16 @@ class NalogBezOtvorenogEmIT {
             }
             long t0 = System.nanoTime();
             kreni.countDown();
-            int najvise = 0;
-            int uzoraka = 0;
-            while (true) {
-                long ms = (System.nanoTime() - t0) / 1_000_000;
-                if (ms > 2800) break;
-                if (ms >= 1500) {
-                    najvise = Math.max(najvise, pul.getActiveConnections());
-                    uzoraka++;
-                }
-                Thread.sleep(10);
-            }
+            int[] uzorak = uzorkujDokSviSpavaju(pul, n, f, t0);
+            int najvise = uzorak[0];
+            int uzoraka = uzorak[1];
             for (Future<Integer> x : f) assertEquals(200, x.get(60, TimeUnit.SECONDS));
             long ukupnoMs = (System.nanoTime() - t0) / 1_000_000;
             System.out.println("Navala pomoći " + n + " zahteva: najviše aktivnih veza u spavanju " + najvise + " ("
                     + uzoraka + " uzoraka), ukupno " + ukupnoMs + " ms");
             assertTrue(uzoraka > 20, "premalo uzoraka: " + uzoraka);
             assertTrue(najvise <= 2, "aktivnih veza dok zahtevi spavaju: " + najvise);
-            assertTrue(ukupnoMs >= 3000, "granica nije važila: " + ukupnoMs + " ms");
+            assertTrue(ukupnoMs >= GRANICA.toMillis(), "granica nije važila: " + ukupnoMs + " ms");
         } finally {
             niti.shutdownNow();
             jdbc.update("delete from obavestenja");

@@ -51,6 +51,8 @@ class ObavestenjeServisIT {
     @Autowired LazniMejlServis mejl;
     @Autowired PomerljivSat sat;
     @Autowired JdbcTemplate jdbc;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("obavestenjaIzvrsilac")
+    org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor izvrsilac;
 
     TestStudenti studenti;
     final List<String> kljucevi = new ArrayList<>();
@@ -66,6 +68,7 @@ class ObavestenjeServisIT {
 
     @AfterEach
     void ocisti() {
+        pustiPozadinu();
         kodServis.minimalnoTrajanje(Duration.ZERO);
         mejl.ocisti();
         studenti.obrisi();
@@ -433,12 +436,76 @@ class ObavestenjeServisIT {
         SystemException e = greska(() -> kodServis.posalji(s.getIndeks(), ip));
         assertEquals(429, e.getCode());
         assertEquals(PREVISE, e.getMessage());
-        assertEquals(1, sva().size());
+        // obaveštenje se upisuje u pozadini, posle odgovora
+        saceka(() -> sva().size() == 1);
         assertEquals(VrstaObavestenja.PREVISE_KODOVA, sva().getFirst().vrsta());
         assertEquals(s.getId(), sva().getFirst().studentId());
         // peto i šesto: i dalje 429, i dalje jedno obaveštenje (najviše 1 dnevno)
         assertEquals(429, greska(() -> kodServis.posalji(s.getIndeks(), ip)).getCode());
+        assertEquals(429, greska(() -> kodServis.posalji(s.getIndeks(), ip)).getCode());
+        pustiPozadinu();
         assertEquals(1, sva().size());
+    }
+
+    /** Odgovor 429 ne čeka obaveštenje: dok su niti izvršioca zauzete, 429 stiže, a obaveštenje tek posle oslobađanja. */
+    @Test
+    void odgovor429NeCekaUpisObavestenja() throws Exception {
+        Student s = student("ana@example.test");
+        String ip = noviIp();
+        for (int i = 0; i < 3; i++) {
+            kodServis.posalji(s.getIndeks(), ip);
+        }
+        CountDownLatch drzi = new CountDownLatch(1);
+        int niti = izvrsilac.getCorePoolSize();
+        CountDownLatch zauzete = new CountDownLatch(niti);
+        for (int i = 0; i < niti; i++) {
+            izvrsilac.execute(() -> {
+                zauzete.countDown();
+                try {
+                    drzi.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        try {
+            assertTrue(zauzete.await(10, TimeUnit.SECONDS));
+            assertEquals(429, greska(() -> kodServis.posalji(s.getIndeks(), ip)).getCode());
+            Thread.sleep(300);
+            assertTrue(sva().isEmpty(), "obaveštenje ne sme da se upiše pre nego što izvršilac stigne do zadatka");
+        } finally {
+            drzi.countDown();
+        }
+        saceka(() -> sva().size() == 1);
+        assertEquals(s.getId(), sva().getFirst().studentId());
+    }
+
+    @Test
+    void greskaUPozadiniNeMenjaOdgovor() {
+        // student ne postoji: obrada u pozadini ne baca (ćutke ništa), a 429 je ostao isti
+        servis.naDostignutLimitKodova(new DostignutLimitKodova(-77L, "t8-x"));
+        assertTrue(sva().isEmpty());
+    }
+
+    /** Čeka (najviše 15 s, uzorak na 20 ms) da uslov postane tačan; inače pada. */
+    static void saceka(java.util.function.BooleanSupplier uslov) {
+        long kraj = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (!uslov.getAsBoolean()) {
+            if (System.nanoTime() > kraj) {
+                fail("uslov nije ispunjen za 15 s");
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("prekinuto");
+            }
+        }
+    }
+
+    /** Čeka da izvršilac obavesti pozadinu do kraja (red prazan i nema aktivnih niti). */
+    void pustiPozadinu() {
+        saceka(() -> izvrsilac.getThreadPoolExecutor().getQueue().isEmpty() && izvrsilac.getActiveCount() == 0);
     }
 
     @Test
@@ -449,6 +516,7 @@ class ObavestenjeServisIT {
             kodServis.posalji(indeks, ip);
         }
         assertEquals(429, greska(() -> kodServis.posalji(indeks, ip)).getCode());
+        pustiPozadinu();
         assertTrue(sva().isEmpty());
     }
 
