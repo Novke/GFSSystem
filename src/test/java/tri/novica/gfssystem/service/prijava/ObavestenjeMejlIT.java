@@ -216,7 +216,7 @@ class ObavestenjeMejlIT {
         int brojac = jdbc.queryForObject("select count(*) from pokusaji where vrsta = 'MEJL_NASTAVNIKU_UKUPNO'", Integer.class);
         assertEquals(20, poslato, "poslato " + poslato);
         assertEquals(poslato, brojac);
-        assertEquals(1, jdbc.queryForObject("select IS_FREE_LOCK(?)", Integer.class, ObavestenjeServis.BRAVA_MEJL),
+        assertEquals(1, jdbc.queryForObject("select IS_FREE_LOCK(?)", Integer.class, PristupBravama.bravaMejla(kodServis)),
                 "brava ukupnog brojača mora biti otpuštena");
         assertEquals(n, jdbc.queryForObject("select count(*) from obavestenja", Integer.class));
     }
@@ -227,13 +227,13 @@ class ObavestenjeMejlIT {
         PristupBravama.cekanjeBraveMejla(servis, 1);
         try (java.sql.Connection veza = dataSource.getConnection()) {
             try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
-                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.setString(1, PristupBravama.bravaMejla(kodServis));
                 var rs = ps.executeQuery();
                 assertTrue(rs.next() && rs.getInt(1) == 1);
             }
             pomoc(nepostojeci());
             try (var ps = veza.prepareStatement("SELECT RELEASE_LOCK(?)")) {
-                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.setString(1, PristupBravama.bravaMejla(kodServis));
                 ps.executeQuery();
             }
         }
@@ -256,7 +256,7 @@ class ObavestenjeMejlIT {
         long trajanje;
         try (java.sql.Connection veza = dataSource.getConnection()) {
             try (var ps = veza.prepareStatement("SELECT GET_LOCK(?, 1)")) {
-                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.setString(1, PristupBravama.bravaMejla(kodServis));
                 var rs = ps.executeQuery();
                 assertTrue(rs.next() && rs.getInt(1) == 1);
             }
@@ -264,7 +264,7 @@ class ObavestenjeMejlIT {
             servis.previseKodova(s.getId(), noviIp());
             trajanje = Duration.ofNanos(System.nanoTime() - pocetak).toMillis();
             try (var ps = veza.prepareStatement("SELECT RELEASE_LOCK(?)")) {
-                ps.setString(1, ObavestenjeServis.BRAVA_MEJL);
+                ps.setString(1, PristupBravama.bravaMejla(kodServis));
                 ps.executeQuery();
             }
         }

@@ -39,6 +39,9 @@ public class AuthRest {
     public void prijava(@Valid @RequestBody PrijavaNastavnikaCmd cmd, HttpServletRequest req, HttpServletResponse res) {
         String token = servis.prijavi(cmd.korisnik(), cmd.lozinka(), KlijentIp.iz(req),
                 req.getHeader(HttpHeaders.USER_AGENT));
+        // ponovna prijava iz istog pregledača zamenjuje njegovu staru sesiju (ne ostaje siroče još 90 dana); tek posle
+        // uspešne prijave, da pogrešna lozinka ne odjavi nikoga
+        NastavnikAutentikacija.trenutna().ifPresent(stara -> servis.opozovi(stara.sesijaId()));
         Kolacici.postavi(req, res, Kolacici.NASTAVNIK, token, NastavnikSesijaServis.TRAJANJE, "Lax");
     }
 

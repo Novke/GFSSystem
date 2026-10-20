@@ -20,7 +20,7 @@ import tri.novica.gfssystem.service.lti.LtiTokServis;
  * Moodle LTI 1.3 (spec 8.3), javno na internetu ({@code /api/public/lti/*}). {@code prijava} (OIDC login initiation) i
  * {@code start} (launch) su ANONIMNO i izuzeti iz provere porekla i CORS-a (stižu sa Moodle-a; štite ih {@code state},
  * {@code nonce} i kolačić {@code __Host-gfs_lti}); {@code povezivanje} je ANONIMNO (samo čita ime uz kolačić
- * {@code gfs_lti_par}), {@code povezi} je STUDENT (uz važeći {@code gfs_lti_par}). Odgovori se ne keširaju.
+ * {@code __Host-gfs_lti_par}), {@code povezi} je STUDENT (uz važeći {@code __Host-gfs_lti_par}). Odgovori se ne keširaju.
  */
 @RestController
 @RequestMapping("/public/lti")
@@ -54,7 +54,7 @@ public class LtiPublicRest {
         return preusmeri(HttpStatus.SEE_OTHER, tok.start(idToken, state, req, res));
     }
 
-    /** Ime Moodle naloga za ekran povezivanja (R17); ne troši povezivanje. 410 bez važećeg {@code gfs_lti_par}. */
+    /** Ime Moodle naloga za ekran povezivanja (R17); ne troši povezivanje. 410 bez važećeg {@code __Host-gfs_lti_par}. */
     @GetMapping("povezivanje")
     @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<LtiPovezivanjeInfo> povezivanje(HttpServletRequest req) {
@@ -62,7 +62,7 @@ public class LtiPublicRest {
                 .body(povezivanja.povezivanje(Kolacici.procitajSve(req, Kolacici.LTI_PAR)));
     }
 
-    /** Upisuje vezu prijavljenog studenta sa Moodle nalogom iz {@code gfs_lti_par}: 204, 409 ili 410. */
+    /** Upisuje vezu prijavljenog studenta sa Moodle nalogom iz {@code __Host-gfs_lti_par}: 204, 409 ili 410. */
     @PostMapping("povezi")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void povezi(HttpServletRequest req, HttpServletResponse res) {

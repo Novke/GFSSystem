@@ -13,7 +13,7 @@ import java.util.Optional;
 @Repository
 public interface LtiPovezivanjeRepository extends JpaRepository<LtiPovezivanje, Long> {
 
-    /** Povezivanje po SHA-256 tokena iz kolačića {@code gfs_lti_par} (UNIQUE ključ). */
+    /** Povezivanje po SHA-256 tokena iz kolačića {@code __Host-gfs_lti_par} (UNIQUE ključ). */
     Optional<LtiPovezivanje> findByTokenHes(String tokenHes);
 
     /** Isto, zaključan red ({@code PESSIMISTIC_WRITE}) sa registracijom: dva istovremena {@code povezi} ne troše ga dvaput. */

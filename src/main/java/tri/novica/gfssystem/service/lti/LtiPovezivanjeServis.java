@@ -33,7 +33,7 @@ import java.util.function.Function;
 
 /**
  * Veza Moodle naloga ({@code iss}, {@code sub}) sa studentom (spec 8.3, 8.4): posle launch-a studenta bez veze nastaje
- * jednokratno povezivanje (30 min, kolačić {@code gfs_lti_par}); student se prijavi kodom kao na {@code /nalog}, pa
+ * jednokratno povezivanje (30 min, kolačić {@code __Host-gfs_lti_par}); student se prijavi kodom kao na {@code /nalog}, pa
  * {@code POST /public/lti/povezi} upisuje red u {@code spoljni_identiteti}. Svaki sledeći ulaz iz Moodle-a je prijava
  * jednim klikom ({@link #prijaviPovezanog}). Ime iz Moodle-a služi samo za prikaz na ekranu povezivanja i nikad ne ide u
  * log; servis vraća samo DTO-ove (open-in-view je isključen za {@code /public/lti/**}).
@@ -43,7 +43,7 @@ import java.util.function.Function;
 @Slf4j
 public class LtiPovezivanjeServis {
 
-    /** Trajanje povezivanja; isto je Max-Age kolačića {@code gfs_lti_par}. */
+    /** Trajanje povezivanja; isto je Max-Age kolačića {@code __Host-gfs_lti_par}. */
     public static final Duration TRAJANJE = Duration.ofMinutes(30);
     public static final String VEC_POVEZAN = "Ovaj Moodle nalog je već povezan sa drugim studentom. Javi se nastavniku.";
     public static final String ISTEKLO = "Povezivanje je isteklo. Otvori GFS ponovo iz Moodle-a.";
@@ -75,7 +75,7 @@ public class LtiPovezivanjeServis {
         return Optional.of(studentId);
     }
 
-    /** Learner bez veze: jednokratno povezivanje (30 min) i kolačić {@code gfs_lti_par} ({@code SameSite=Lax}). */
+    /** Learner bez veze: jednokratno povezivanje (30 min) i kolačić {@code __Host-gfs_lti_par} ({@code SameSite=Lax}). */
     @Transactional
     public void zapocni(Long registracijaId, String sub, String ime, HttpServletRequest req, HttpServletResponse res) {
         String token = tokenGenerator.novi();
@@ -103,7 +103,7 @@ public class LtiPovezivanjeServis {
     }
 
     /**
-     * Upisuje vezu jednom: prva važeća vrednost kolačića {@code gfs_lti_par} (red je zaključan, pa se ne troši dvaput).
+     * Upisuje vezu jednom: prva važeća vrednost kolačića {@code __Host-gfs_lti_par} (red je zaključan, pa se ne troši dvaput).
      * {@code sub} već vezan za drugog studenta: 409 i povezivanje ostaje (pravi student može da ga završi); za istog:
      * ništa se ne menja, povezivanje se troši. Nijedna vrednost ne važi: 410.
      */

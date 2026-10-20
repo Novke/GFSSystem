@@ -48,7 +48,8 @@ public class SecurityConfig {
     /**
      * MCP (spec 3 i 13.2): sopstveni lanac pre glavnog za tačno {@code /mcp}, {@code /mcp/prilozi} i {@code /mcp/slike},
      * {@code permitAll}, bez nastavničke sesije ({@link GfsAutentikacijaFilter} ovde ne radi, pa ni 401 "Potrebna je
-     * prijava."), bez provere porekla (Claude Code nije pregledač), bez CORS-a i CSRF-a, stateless. Jedini autoritet je
+     * prijava."), bez provere porekla (Claude Code nije pregledač), bez CORS-a (izričito isključen, da ga kasnija promena izvora CORS-a ne uključi i ovde), bez anonimnog korisnika i CSRF-a,
+     * stateless. Jedini autoritet je
      * {@code mcp.McpKljucFilter}: servlet filter reda {@code HIGHEST_PRECEDENCE + 10}, pre Spring Security filtera (red
      * {@code -100}), koji bez ključeva odgovara 404, a bez ispravnog {@code Authorization: Bearer} 401 sa
      * {@code WWW-Authenticate: Bearer}. Putanje ispod {@code /mcp} van ove tri idu glavnim lancem (ADMIN).
@@ -65,6 +66,8 @@ public class SecurityConfig {
         }
         http.securityMatcher(PristupMatrica.matcher(PristupMatrica.mcp()))
                 .authorizeHttpRequests(a -> a.anyRequest().permitAll())
+                .cors(AbstractHttpConfigurer::disable)
+                .anonymous(AbstractHttpConfigurer::disable)
                 .csrf(AbstractHttpConfigurer::disable)
                 .headers(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

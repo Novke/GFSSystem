@@ -121,6 +121,34 @@ class AuthRestIT {
         assertEquals(1, sesija);
     }
 
+    /** Ponovna prijava iz istog pregledača zamenjuje njegovu staru sesiju: ne ostaje siroče sa važenjem od 90 dana. */
+    @Test
+    void ponovnaPrijavaIzIstogPregledacaOpozivaStaruSesiju() throws Exception {
+        String ip = noviIp();
+        String prvi = prijaviSe(ip);
+        MockHttpServletResponse r = mvc.perform(prijava(PrijavaTestUtil.KORISNIK, PrijavaTestUtil.LOZINKA, ip)
+                        .with(PrijavaTestUtil.kaoNastavnik(prvi)))
+                .andExpect(status().isNoContent()).andReturn().getResponse();
+        String drugi = r.getHeader(HttpHeaders.SET_COOKIE).split(";", 2)[0];
+        assertNotEquals(prvi, drugi);
+
+        assertEquals(2, jdbc.queryForObject("select count(*) from nastavnicke_sesije where ip = ?", Integer.class, ip));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from nastavnicke_sesije where ip = ? and opozvana is null", Integer.class, ip),
+                "posle dve prijave ostaje jedna aktivna sesija");
+        mvc.perform(get("/auth/ja").with(PrijavaTestUtil.kaoNastavnik(prvi))).andExpect(status().isUnauthorized());
+        mvc.perform(get("/auth/ja").with(PrijavaTestUtil.kaoNastavnik(drugi))).andExpect(status().isOk());
+    }
+
+    @Test
+    void pogresnaLozinkaSaKolacicemNeOpozivaPostojecuSesiju() throws Exception {
+        String ip = noviIp();
+        String prvi = prijaviSe(ip);
+        mvc.perform(prijava(PrijavaTestUtil.KORISNIK, "pogresna-lozinka", ip).with(PrijavaTestUtil.kaoNastavnik(prvi)))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/auth/ja").with(PrijavaTestUtil.kaoNastavnik(prvi))).andExpect(status().isOk());
+    }
+
     @Test
     void pogresnaLozinkaIImeSu401() throws Exception {
         String ip = noviIp();

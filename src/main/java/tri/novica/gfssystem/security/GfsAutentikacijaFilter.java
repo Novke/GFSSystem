@@ -75,7 +75,7 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
             if (sesija.isPresent()) {
                 NastavnickaSesija s = sesija.get();
                 // potvrdi je upravo pomerio poslednji ulaz (produženje): i kolačić dobija pun Max-Age
-                if (!s.getPoslednjiUlaz().isBefore(pre)) {
+                if (!s.getPoslednjiUlaz().isBefore(pre) && smeDaPostaviKolacic(req)) {
                     Kolacici.postavi(req, res, Kolacici.NASTAVNIK, token, NastavnikSesijaServis.TRAJANJE, "Lax");
                 }
                 return new NastavnikAutentikacija(s.getId());
@@ -92,8 +92,8 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
             Optional<StudentskiUredjaj> uredjaj = studenti.potvrdi(token);
             if (uredjaj.isPresent()) {
                 StudentskiUredjaj u = uredjaj.get();
-                if (!u.getPoslednjiUlaz().isBefore(pre)) {
-                    Kolacici.postavi(req, res, Kolacici.STUDENT, token, StudentskaPrijava.TRAJANJE, "Lax");
+                if (!u.getPoslednjiUlaz().isBefore(pre) && smeDaPostaviKolacic(req)) {
+                    Kolacici.postavi(req, res, Kolacici.STUDENT, token, studenti.trajanje(u.getNacin()), "Lax");
                 }
                 return new StudentAutentikacija(u.getStudent().getId(), u.getId());
             }
@@ -103,13 +103,24 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
     }
 
     /**
+     * Obnova i brisanje kolačića ne idu na {@code GET /public/mediji/**}: ti odgovori su javno keširani
+     * ({@code Cache-Control: public, max-age=31536000, immutable}), pa bi deljeni keš (proxy, CDN) mogao da ponovi
+     * {@code Set-Cookie} sa sesijom drugima. Kolačić se obnavlja ili briše na sledećem običnom zahtevu.
+     */
+    static boolean smeDaPostaviKolacic(HttpServletRequest req) {
+        String m = req.getMethod();
+        boolean citanje = "GET".equals(m) || "HEAD".equals(m);
+        return !(citanje && req.getRequestURI().startsWith("/public/mediji/"));
+    }
+
+    /**
      * Nijedna probana vrednost ne važi: host-only kolačić se briše. Ali ne kad je vrednosti bilo više nego što se proba
      * ({@link Kolacici#MAX_ISTOIMENIH}): pravi kolačić je možda bio među neprobanim, a brisanje bi odjavilo korisnika zbog
      * podmetnutih vrednosti.
      */
     private static void obrisiAkoNijedanNeVazi(HttpServletRequest req, HttpServletResponse res, String ime,
                                                List<String> probani) {
-        if (probani.isEmpty()) {
+        if (probani.isEmpty() || !smeDaPostaviKolacic(req)) {
             return;
         }
         if (Kolacici.brojVrednosti(req, ime) > probani.size()) {

@@ -150,4 +150,29 @@ class McpLanacIT {
             assertEquals("Potrebna je prijava.", razlog(r), z[0] + " " + z[1]);
         }
     }
+
+    /**
+     * MCP lanac izričito nema CORS (Spring Security ne dodaje {@code Access-Control-*}): tuđ {@code Origin} ne dobija nijedno
+     * CORS zaglavlje, ni na stvarnom zahtevu ni na preflight-u. (Spring MVC-ov globalni CORS za front iz
+     * {@code gfs.front.url} je odvojen i van lanca; tuđ origin tamo odbija sa 403 {@code Invalid CORS request}.)
+     */
+    @Test
+    void mcpLanacNemaCors() throws Exception {
+        String tudji = "https://tudji.example.test";
+        HttpResponse<String> r = posalji("POST", "/mcp", TEST_KLJUC, null, tudji);
+        assertTrue(r.statusCode() == 200 || r.statusCode() == 403, r.statusCode() + " " + r.body());
+        assertTrue(r.headers().map().keySet().stream().noneMatch(k -> k.toLowerCase().startsWith("access-control-")),
+                r.headers().map().toString());
+
+        HttpRequest preflight = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/mcp"))
+                .header("Origin", tudji)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,content-type")
+                .header("Authorization", "Bearer " + TEST_KLJUC)
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build();
+        HttpResponse<String> p = http.send(preflight, HttpResponse.BodyHandlers.ofString());
+        assertTrue(p.headers().map().keySet().stream().noneMatch(k -> k.toLowerCase().startsWith("access-control-")),
+                "preflight tuđeg origina nije CORS odgovor: " + p.statusCode() + " " + p.headers().map());
+        assertNotEquals(200, p.statusCode(), "preflight tuđeg origina nije uspešan CORS odgovor");
+    }
 }

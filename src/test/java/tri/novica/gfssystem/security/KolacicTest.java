@@ -18,7 +18,7 @@ class KolacicTest {
         assertEquals("gfs_nastavnik", Kolacici.NASTAVNIK);
         assertEquals("gfs_student", Kolacici.STUDENT);
         assertEquals("__Host-gfs_lti", Kolacici.LTI);
-        assertEquals("gfs_lti_par", Kolacici.LTI_PAR);
+        assertEquals("__Host-gfs_lti_par", Kolacici.LTI_PAR);
     }
 
     @Test
@@ -98,6 +98,27 @@ class KolacicTest {
             assertTrue(h.contains("; HttpOnly"), h);
             assertTrue(h.contains("; Path=/"), h);
             assertTrue(h.contains("; SameSite=None"), h);
+            assertFalse(h.toLowerCase().contains("domain"), h);
+        }
+    }
+
+    /**
+     * Kolačić povezivanja nosi {@code __Host-} (cookie tossing sa sestrinskog hosta bi podmetnuo tuđe povezivanje):
+     * i na običnom http zahtevu dobija {@code Secure}, {@code Path=/}, {@code SameSite=Lax} i nema {@code Domain}.
+     */
+    @Test
+    void ltiParKolacicImaPrefiksHostISecureCakIBezHttpsa() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        Kolacici.postavi(req, res, Kolacici.LTI_PAR, "t", Duration.ofSeconds(1800), "Lax");
+        Kolacici.obrisi(req, res, Kolacici.LTI_PAR);
+        assertEquals(2, res.getHeaders("Set-Cookie").size());
+        for (String h : res.getHeaders("Set-Cookie")) {
+            assertTrue(h.startsWith("__Host-gfs_lti_par="), h);
+            assertTrue(h.contains("; Secure"), h);
+            assertTrue(h.contains("; HttpOnly"), h);
+            assertTrue(h.contains("; Path=/"), h);
+            assertTrue(h.contains("; SameSite=Lax"), h);
             assertFalse(h.toLowerCase().contains("domain"), h);
         }
     }

@@ -278,7 +278,7 @@ class LtiTokIT {
         return setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';'));
     }
 
-    /** Pun tok studenta bez veze: login, launch, kolačić {@code gfs_lti_par}. */
+    /** Pun tok studenta bez veze: login, launch, kolačić {@code __Host-gfs_lti_par}. */
     String parZa(String sub) throws Exception {
         Pocetak p = prijava();
         MockHttpServletResponse r = start(p, token(p, sub, b -> {}));
@@ -439,7 +439,7 @@ class LtiTokIT {
         MockHttpServletResponse r = start(p, token(p, sub, b -> {}));
         preusmerava(r, "/nalog");
         String setCookie = postavljen(r, Kolacici.STUDENT);
-        assertTrue(setCookie.contains("SameSite=Lax") && setCookie.contains("Max-Age=31536000"), setCookie);
+        assertTrue(setCookie.contains("SameSite=Lax") && setCookie.contains("Max-Age=43200"), setCookie);
         assertFalse(postavlja(r, Kolacici.LTI_PAR));
         String token = vrednost(setCookie);
         assertEquals("LTI", jdbc.queryForObject("select nacin from studentski_uredjaji where token_hes = ?",

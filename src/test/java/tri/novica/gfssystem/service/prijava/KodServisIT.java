@@ -237,7 +237,7 @@ class KodServisIT {
     int drzaneBrave() {
         return jdbc.queryForObject("""
                 select count(*) from performance_schema.metadata_locks
-                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like 'gfs-kod:%'""", Integer.class);
+                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like '%gfs-kod:%'""", Integer.class);
     }
 
     /** Review B7 #3: posalji i proveri ne odgovaraju pre donje granice trajanja, ni za jedan ishod. */

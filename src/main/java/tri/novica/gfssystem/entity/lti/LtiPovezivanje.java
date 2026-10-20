@@ -10,7 +10,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 /**
- * Započeto povezivanje Moodle naloga ({@code sub}) sa studentom (kolačić {@code gfs_lti_par}, 30 min, jednokratno).
+ * Započeto povezivanje Moodle naloga ({@code sub}) sa studentom (kolačić {@code __Host-gfs_lti_par}, 30 min, jednokratno).
  * {@code ime} je ime iz LTI claim-a kad ga platforma deli (samo za prikaz), nikad u logu.
  */
 @Entity

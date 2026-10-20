@@ -7,12 +7,17 @@ public final class PristupBravama {
 
     /** Ime brave "Ne stiže mi kod" za dati indeks (kao u {@code ObavestenjeServis}). */
     public static String bravaPomoci(KodServis kodovi, String indeks) {
-        return "gfs-pomoc:" + kodovi.indeks(indeks).hmac().substring(0, 32);
+        return kodovi.imeBrave("gfs-pomoc:" + kodovi.indeks(indeks).hmac().substring(0, 32));
     }
 
     /** Ime brave slanja koda za dati indeks (kao u {@code KodServis}). */
     public static String bravaKoda(KodServis kodovi, String indeks) {
-        return "gfs-kod:" + kodovi.indeks(indeks).hmac().substring(0, 32);
+        return kodovi.imeBrave("gfs-kod:" + kodovi.indeks(indeks).hmac().substring(0, 32));
+    }
+
+    /** Ime brave ukupnog brojača mejlova nastavniku (sa prefiksom šeme). */
+    public static String bravaMejla(KodServis kodovi) {
+        return kodovi.imeBrave(ObavestenjeServis.BRAVA_MEJL);
     }
 
     /** Koliko (s) {@code KodServis} čeka bravu indeksa; testovi spuštaju sa 10 s da ne čekaju zaista. */

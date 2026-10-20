@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  *     vrednost kolačića, pa dve kartice (dva ulaza odjednom) ne kvare jedna drugoj launch.</li>
  *     <li><b>Launch:</b> stanje se troši atomski pre svake druge provere (jednokratno i kad provera padne), pa kolačić
  *     ovog pregledača, pa token ({@link LtiProvera}). Ishod po ulozi: nastavnik dobija samo poruku (bez sesije), student
- *     sa vezom {@code gfs_student}, student bez veze povezivanje ({@code gfs_lti_par}).</li>
+ *     sa vezom {@code gfs_student}, student bez veze povezivanje ({@code __Host-gfs_lti_par}).</li>
  * </ul>
  * JWKS se dohvata van transakcije (mreža ne drži vezu iz pula). Preusmerenja na front su relativna; greške su kodovi iz
  * {@link LtiGreska}, detalj samo u logu, bez ijedne vrednosti iz tokena ili zahteva (samo id-jevi, stalne reči, IP).

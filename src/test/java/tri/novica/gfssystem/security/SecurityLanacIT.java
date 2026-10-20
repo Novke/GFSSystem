@@ -31,6 +31,8 @@ class SecurityLanacIT {
     @Autowired MockMvc mvc;
     @Autowired MedijService medijService;
     @Autowired NastavnikSesijaServis nastavnici;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired java.time.Clock clock;
 
     /** Sirov URI (MockMvc inače parsira {@code //x} kao host, a {@code %} kodira još jednom). */
     static RequestPostProcessor uri(String sirov) {
@@ -104,6 +106,39 @@ class SecurityLanacIT {
             assertNull(r.getHeader("X-Frame-Options"));
             assertEquals(1, r.getHeaders(HttpHeaders.CACHE_CONTROL).size());
         } finally {
+            medijService.obrisi(m.id());
+        }
+    }
+
+    /**
+     * Obnova kolačića sesije ne sme na javno keširan odgovor ({@code Cache-Control: public} na {@code /public/mediji}):
+     * deljeni keš bi ga ponovio drugima. Kontrola: isti kolačić na običnom zahtevu obnovu dobija.
+     */
+    @Test
+    void medijaNeNosiSetCookieObnoveSesije() throws Exception {
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D};
+        MedijInfo m = medijService.sacuvaj(new MockMultipartFile("fajl", "obnova.png", "image/png", png));
+        String zaMediju = PrijavaTestUtil.nastavnickiKolacic(nastavnici);
+        String zaKontrolu = PrijavaTestUtil.nastavnickiKolacic(nastavnici);
+        try {
+            for (String k : new String[]{zaMediju, zaKontrolu}) {
+                jdbc.update("update nastavnicke_sesije set poslednji_ulaz = ? where token_hes = ?",
+                        java.sql.Timestamp.valueOf(java.time.LocalDateTime.now(clock).minusMinutes(11)),
+                        tri.novica.gfssystem.service.uzivo.TokenHash.od(k.substring(k.indexOf('=') + 1)));
+            }
+            MockHttpServletResponse kontrola = mvc.perform(get("/auth/ja").with(PrijavaTestUtil.kaoNastavnik(zaKontrolu)))
+                    .andExpect(status().isOk()).andReturn().getResponse();
+            assertNotNull(kontrola.getHeader(HttpHeaders.SET_COOKIE), "obična putanja obnavlja kolačić");
+
+            MockHttpServletResponse r = mvc.perform(get("/public/mediji/{id}", m.id())
+                            .with(PrijavaTestUtil.kaoNastavnik(zaMediju)))
+                    .andExpect(status().isOk()).andReturn().getResponse();
+            assertEquals("public, max-age=31536000, immutable", r.getHeader(HttpHeaders.CACHE_CONTROL));
+            assertNull(r.getHeader(HttpHeaders.SET_COOKIE), "medija ne nosi Set-Cookie");
+        } finally {
+            jdbc.update("delete from nastavnicke_sesije where token_hes in (?, ?)",
+                    tri.novica.gfssystem.service.uzivo.TokenHash.od(zaMediju.substring(zaMediju.indexOf('=') + 1)),
+                    tri.novica.gfssystem.service.uzivo.TokenHash.od(zaKontrolu.substring(zaKontrolu.indexOf('=') + 1)));
             medijService.obrisi(m.id());
         }
     }

@@ -156,6 +156,51 @@ class StudentskaPrijavaIT {
         assertTrue(prijava.potvrdi(token).isPresent());
     }
 
+    /**
+     * LTI uređaj (zajednički računari u učionici) traje {@code gfs.nalog.lti-trajanje} (podrazumevano 12 h) od poslednjeg
+     * korišćenja, KOD uređaj (studentov telefon) 365 dana.
+     */
+    @Test
+    void ltiUredjajTrajeDvanaestSatiAKodGodinuDana() {
+        Student s = studenti.napravi("pera@example.test");
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        prijava.prijavi(s.getId(), NacinPrijave.LTI, req, res);
+        String h = res.getHeader("Set-Cookie");
+        assertTrue(h.contains("Max-Age=43200"), h);
+        String lti = h.substring("gfs_student=".length(), h.indexOf(';'));
+        long razlika = Duration.between(LocalDateTime.now(clock).plusHours(12), uredjaj(lti).getIstice()).abs().toMillis();
+        assertTrue(razlika < 1000, "istice odstupa " + razlika + " ms");
+
+        String kod = prijavi(s, NacinPrijave.KOD, false);
+        sat.pomeri(Duration.ofHours(13));
+        assertTrue(prijava.potvrdi(lti).isEmpty(), "LTI uređaj posle 13 h bez korišćenja ne važi");
+        assertTrue(prijava.potvrdi(kod).isPresent(), "KOD uređaj posle 13 h važi");
+        assertEquals(Duration.ofHours(12), prijava.trajanje(NacinPrijave.LTI));
+        assertEquals(Duration.ofDays(365), prijava.trajanje(NacinPrijave.KOD));
+    }
+
+    /** Klizno: korišćenje pomera {@code istice} na 12 h od tog trenutka, nikad na 365 dana. */
+    @Test
+    void produzenjeLtiUredjajaJeKliznihDvanaestSati() {
+        Student s = studenti.napravi("pera@example.test");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        prijava.prijavi(s.getId(), NacinPrijave.LTI, new MockHttpServletRequest(), res);
+        String token = res.getHeader("Set-Cookie").substring("gfs_student=".length(),
+                res.getHeader("Set-Cookie").indexOf(';'));
+
+        sat.pomeri(Duration.ofHours(11));
+        assertTrue(prijava.potvrdi(token).isPresent());
+        LocalDateTime istice = uredjaj(token).getIstice();
+        long razlika = Duration.between(LocalDateTime.now(clock).plusHours(12), istice).abs().toMillis();
+        assertTrue(razlika < 1000, "posle produženja istice odstupa " + razlika + " ms od 12 h");
+
+        sat.pomeri(Duration.ofHours(11));   // 22 h od prijave, ali 11 h od poslednjeg korišćenja
+        assertTrue(prijava.potvrdi(token).isPresent());
+        sat.pomeri(Duration.ofHours(13));
+        assertTrue(prijava.potvrdi(token).isEmpty());
+    }
+
     @Test
     void odjaviSveOpozivaSveUredjajeStudenta() {
         Student s = studenti.napravi("pera@example.test");

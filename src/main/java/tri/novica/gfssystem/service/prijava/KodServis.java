@@ -96,8 +96,10 @@ public class KodServis {
     private static final Pattern FORMAT_KODA = Pattern.compile("^[0-9]{6}$");
     /** Normalizovan indeks koji se uopšte traži u bazi (ASCII; onboarding forma dozvoljava podskup ovoga). */
     static final Pattern BELA_LISTA_INDEKSA = Pattern.compile("^[A-Z0-9/.-]{1,30}$");
-    /** Podrazumevano čekanje MySQL brave indeksa (s); posle toga 429. Menja se samo u testovima ({@link #cekanjeBrave}). */
-    static final int CEKANJE_BRAVE_S = 10;
+    /**
+     * Podrazumevano čekanje MySQL brave indeksa (s); posle toga 429. Kratko, jer čekanje drži vezu iz pula (podrazumevano
+     * 10): navala zahteva za isti indeks ne sme da zaustavi ostale pozive. Menja se samo u testovima ({@link #cekanjeBrave}). */
+    static final int CEKANJE_BRAVE_S = 2;
 
     private final StudentRepository studenti;
     private final KodZaPrijavuRepository kodovi;
@@ -110,17 +112,22 @@ public class KodServis {
     private final KljuceviAplikacije kljucevi;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate zakljucano;
+    /** Prefiks imena brava iz {@code gfs.prijava.brava-prefiks}; prazno = šema baze ({@code SELECT DATABASE()}). */
+    private final String bravaPrefiks;
+    private volatile String sema;
     private final SecureRandom random = new SecureRandom();
     /** Donja granica trajanja odgovora (ns); u testovima 0, osim gde se proverava. */
     private volatile long minimalnoTrajanjeNs;
     private final AtomicInteger spava = new AtomicInteger();
-    /** Koliko se najduže čeka MySQL brava indeksa (s); u testovima spušteno, da ne čekaju zaista 10 s. */
+    /** Koliko se najduže čeka MySQL brava indeksa (s); u testovima dodatno spušteno. */
     private volatile int cekanjeBraveS = CEKANJE_BRAVE_S;
 
     public KodServis(StudentRepository studenti, KodZaPrijavuRepository kodovi, PokusajiServis pokusaji, MejlServis mejl,
                      ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
                      KljuceviAplikacije kljucevi, JdbcTemplate jdbc, PlatformTransactionManager transakcije, Clock clock,
-                     @Value("${gfs.nalog.minimalno-trajanje-ms:200}") long minimalnoTrajanjeMs) {
+                     @Value("${gfs.nalog.minimalno-trajanje-ms:200}") long minimalnoTrajanjeMs,
+                     @Value("${gfs.prijava.brava-prefiks:}") String bravaPrefiks) {
+        this.bravaPrefiks = bravaPrefiks == null ? "" : bravaPrefiks.trim();
         this.kljucevi = kljucevi;
         this.jdbc = jdbc;
         this.minimalnoTrajanjeNs = TimeUnit.MILLISECONDS.toNanos(minimalnoTrajanjeMs);
@@ -280,7 +287,7 @@ public class KodServis {
     /**
      * Prva naredba zaključane transakcije: MySQL brava za indeks na vezi te transakcije ({@code JdbcTemplate} u JPA
      * transakciji koristi istu vezu). Otpušta se u {@code afterCompletion} (posle commit-a ili rollback-a, veza je još
-     * vezana za nit), da sledeći zahtev za isti indeks vidi upisan brojač. Ne dobije li je za 10 s: 429.
+     * vezana za nit), da sledeći zahtev za isti indeks vidi upisan brojač. Ne dobije li je za {@link #CEKANJE_BRAVE_S} s: 429.
      */
     private void zakljucajIndeks(Indeks i) {
         if (!uzmiBravu("gfs-kod:", i)) {
@@ -298,9 +305,24 @@ public class KodServis {
     }
 
     /**
-     * Isto za bravu zadatog imena i čekanja (npr. ukupni brojač mejlova nastavniku); {@code oznaka} je samo za log.
+     * Ime brave na serveru: logičko ime sa prefiksom šeme ({@link ImenaBrava}), jer su korisničke brave MySQL-a
+     * zajedničke za sve šeme servera (produkcija i staging dele {@code shared-mysql}). Šema se čita jednom.
      */
-    boolean uzmiBravu(String brava, int cekanjeS, String oznaka) {
+    String imeBrave(String logickoIme) {
+        String s = sema;
+        if (s == null) {
+            s = !bravaPrefiks.isEmpty() ? bravaPrefiks : jdbc.queryForObject("SELECT DATABASE()", String.class);
+            sema = s == null ? "" : s;
+            s = sema;
+        }
+        return ImenaBrava.ime(s, logickoIme);
+    }
+
+    /**
+     * Isto za bravu zadatog (logičkog) imena i čekanja (npr. ukupni brojač mejlova nastavniku); {@code oznaka} je samo za log.
+     */
+    boolean uzmiBravu(String logickoIme, int cekanjeS, String oznaka) {
+        String brava = imeBrave(logickoIme);
         Integer dobijena = jdbc.queryForObject("SELECT GET_LOCK(?, ?)", Integer.class, brava, cekanjeS);
         if (dobijena == null || dobijena != 1) {
             log.warn("Brava nije dobijena za {} s, oznaka={}", cekanjeS, oznaka);

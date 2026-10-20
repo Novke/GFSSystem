@@ -29,10 +29,10 @@ class MaskaMejlaTest {
 
     @Test
     void pravaMaska() {
-        assertEquals("p***@gmail.com", maska.maska("pera.peric@gmail.com"));
+        assertEquals("p***@example.test", maska.maska("pera.peric@example.test"));
         assertEquals("a***@example.test", maska.maska("ana@example.test"));
         // isti oblik kao lažna: mala slova, bez razmaka
-        assertEquals("p***@gmail.com", maska.maska("  Pera@Gmail.COM "));
+        assertEquals("p***@example.test", maska.maska("  Pera@Example.TEST "));
     }
 
     @Test
@@ -40,7 +40,7 @@ class MaskaMejlaTest {
         assertNull(maska.maska(null));
         assertNull(maska.maska("  "));
         assertEquals("p***", maska.maska("pera"));
-        assertEquals("***@gmail.com", maska.maska("@gmail.com"));
+        assertEquals("***@example.test", maska.maska("@example.test"));
     }
 
     @Test
@@ -52,10 +52,10 @@ class MaskaMejlaTest {
         for (int i = 0; i < 200; i++) {
             String m = maska.lazna("GD" + i + "/2024");
             assertTrue(OBLIK.matcher(m).matches(), m);
-            assertTrue(m.endsWith("@gmail.com") || m.endsWith("@yahoo.com") || m.endsWith("@hotmail.com"), m);
+            assertTrue(MaskaMejla.DOMENI.stream().anyMatch(d -> m.endsWith("@" + d)), m);
             razlicite.add(m);
         }
-        // 26 slova x 3 domena: različiti indeksi najčešće daju različite maske
+        // 26 slova x nekoliko domena: različiti indeksi najčešće daju različite maske
         assertTrue(razlicite.size() > 40, "samo " + razlicite.size() + " različitih maski");
         assertNotEquals(maska.lazna("GD12/2024"), maska.lazna("GD13/2024"));
     }

@@ -66,6 +66,8 @@ class NalogPublicRestIT {
     @Autowired tri.novica.gfssystem.service.prijava.KodServis kodServis;
     @Autowired tri.novica.gfssystem.service.prijava.ObavestenjeServis obavestenjeServis;
     @Autowired javax.sql.DataSource dataSource;
+    @Autowired tri.novica.gfssystem.service.prijava.StudentskaPrijava studentskaPrijava;
+    @Autowired java.time.Clock clock;
 
     TestStudenti studenti;
     final List<String> ipovi = new ArrayList<>();
@@ -203,6 +205,56 @@ class NalogPublicRestIT {
                 .andExpect(jsonPath("$.prijavljen").value(false));
     }
 
+    /** Kolačić koji filter obnavlja nosi pravilo trajanja uređaja: LTI 12 h, KOD 365 dana (sa uređajem koji je korišćen pre >10 min). */
+    @Test
+    void obnovaKolacicaPostujeTrajanjePoNacinuPrijave() throws Exception {
+        Student s = studenti.napravi("pera@example.test");
+        for (var primer : List.of(
+                java.util.Map.entry(tri.novica.gfssystem.entity.prijava.NacinPrijave.LTI, "Max-Age=43200"),
+                java.util.Map.entry(tri.novica.gfssystem.entity.prijava.NacinPrijave.KOD, "Max-Age=31536000"))) {
+            org.springframework.mock.web.MockHttpServletResponse prijava = new org.springframework.mock.web.MockHttpServletResponse();
+            studentskaPrijava.prijavi(s.getId(), primer.getKey(),
+                    new org.springframework.mock.web.MockHttpServletRequest(), prijava);
+            String token = vrednost(postavljen(prijava, Kolacici.STUDENT));
+            jdbc.update("update studentski_uredjaji set poslednji_ulaz = ? where token_hes = ?",
+                    java.sql.Timestamp.valueOf(java.time.LocalDateTime.now(clock).minusMinutes(11)),
+                    tri.novica.gfssystem.service.uzivo.TokenHash.od(token));
+
+            MockHttpServletResponse r = mvc.perform(get("/public/nalog/stanje").cookie(student(token)))
+                    .andExpect(status().isOk()).andReturn().getResponse();
+            String obnova = postavljen(r, Kolacici.STUDENT);
+            assertTrue(obnova.contains(primer.getValue()), primer.getKey() + ": " + obnova);
+        }
+    }
+
+    /**
+     * Zahtev sa važećom nastavničkom sesijom (nastavnikov telefon sa daljinskim) ne može da se prijavi kao student:
+     * nastavnik ima prednost, pa bi {@code /ja} odmah bio 403. 409 pre bilo kog troška: nema mejla ni pokušaja.
+     */
+    @Test
+    void kodIPrijavaSaNastavnickomSesijomSu409() throws Exception {
+        Student s = studenti.napravi("ana@example.test");
+        String nastavnickiKolacic = PrijavaTestUtil.nastavnickiKolacic(nastavnici);
+        Cookie nastavnik = new Cookie(Kolacici.NASTAVNIK, nastavnickiKolacic.substring(nastavnickiKolacic.indexOf('=') + 1));
+        try {
+            mvc.perform(javniPost("/public/nalog/kod", "{\"indeks\":\"" + s.getIndeks() + "\"}").cookie(nastavnik))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.reason").value("Odjavi se kao nastavnik."))
+                    .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            mvc.perform(javniPost("/public/nalog/prijava",
+                            "{\"indeks\":\"" + s.getIndeks() + "\",\"kod\":\"123456\"}").cookie(nastavnik))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.reason").value("Odjavi se kao nastavnik."))
+                    .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+            assertTrue(mejl.poslate().isEmpty(), "kod se ne šalje");
+            assertEquals(0, jdbc.queryForObject("select count(*) from kodovi_za_prijavu", Integer.class));
+            // bez nastavničke sesije radi kao i pre
+            assertEquals(200, kod(s.getIndeks()).getResponse().getStatus());
+        } finally {
+            jdbc.update("delete from nastavnicke_sesije where ip = ?", PrijavaTestUtil.IP);
+        }
+    }
+
     static Set<String> polja(JsonNode o) {
         return o.propertyNames().stream().collect(Collectors.toSet());
     }
@@ -215,7 +267,7 @@ class NalogPublicRestIT {
         assertEquals(200, kod(TestStudenti.noviIndeks()).getResponse().getStatus());
         assertEquals(0, jdbc.queryForObject("""
                 select count(*) from performance_schema.metadata_locks
-                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like 'gfs-kod:%'""", Integer.class));
+                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like '%gfs-kod:%'""", Integer.class));
     }
 
     @Test

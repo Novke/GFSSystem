@@ -341,7 +341,7 @@ class ObavestenjeServisIT {
         // brava indeksa je otpuštena
         assertEquals(0, jdbc.queryForObject("""
                 select count(*) from performance_schema.metadata_locks
-                where object_type = 'USER LEVEL LOCK' and object_name like 'gfs-pomoc:%'""", Integer.class));
+                where object_type = 'USER LEVEL LOCK' and object_name like '%gfs-pomoc:%'""", Integer.class));
     }
 
     // ---------------------------------------------------------------- donja granica trajanja

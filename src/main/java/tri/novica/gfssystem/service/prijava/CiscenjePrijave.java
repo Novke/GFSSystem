@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  *   <li>{@code lti_stanja}: istekla (rok 10 minuta) pre više od sat vremena. Svaki {@code GET /public/lti/prijava} upisuje
  *       jedno, bez ograničenja u aplikaciji, pa se ne čeka dan; red posle isteka ne služi ničemu (jednokratnost proverava
  *       samo važeće stanje);</li>
- *   <li>{@code lti_povezivanja} ({@code gfs_lti_par}, rok 30 minuta): istekla ili iskorišćena pre više od sat vremena;</li>
+ *   <li>{@code lti_povezivanja} ({@code __Host-gfs_lti_par}, rok 30 minuta): istekla ili iskorišćena pre više od sat vremena;</li>
  *   <li>{@code nastavnicke_sesije} i {@code studentski_uredjaji}: istekli ili opozvani pre više od 30 dana;</li>
  *   <li>{@code obavestenja}: rešena pre više od 180 dana (otvorena se ne brišu). Pravilo "najviše jedno
  *       {@code PREVISE_KODOVA} na 24 sata" čita i rešena obaveštenja, a ona se ovde čiste tek posle 180 dana.</li>

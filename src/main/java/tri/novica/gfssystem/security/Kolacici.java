@@ -14,15 +14,17 @@ import java.util.Set;
 
 /**
  * Kolačići prijave (spec 2.2): uvek {@code HttpOnly; Path=/}, {@code Secure} kad je spoljni zahtev HTTPS
- * ({@code request.isSecure()}, Tomcat čita {@code X-Forwarded-Proto}) ili kad je {@code SameSite=None} (pregledač ga
- * bez {@code Secure} odbija). Vrednost je token iz {@code TokenGenerator}, u bazi je samo njegov SHA-256.
+ * ({@code request.isSecure()}, Tomcat čita {@code X-Forwarded-Proto}), kad je {@code SameSite=None} (pregledač ga
+ * bez {@code Secure} odbija) ili kad ime ima prefiks {@code __Host-} ({@link #LTI}, {@link #LTI_PAR}: prefiks traži
+ * {@code Secure}, {@code Path=/} i nijedan {@code Domain}, pa sestrinski {@code *.trif.rs} host ne može da podmetne
+ * kolačić istog imena). Vrednost je token iz {@code TokenGenerator}, u bazi je samo njegov SHA-256.
  */
 public final class Kolacici {
 
     public static final String NASTAVNIK = "gfs_nastavnik";
     public static final String STUDENT = "gfs_student";
     public static final String LTI = "__Host-gfs_lti";
-    public static final String LTI_PAR = "gfs_lti_par";
+    public static final String LTI_PAR = "__Host-gfs_lti_par";
 
     /** Najviše toliko istoimenih vrednosti čita {@link #procitajSve} (svaka košta jedan upit u bazu). */
     public static final int MAX_ISTOIMENIH = 5;
@@ -38,7 +40,8 @@ public final class Kolacici {
 
     /**
      * Briše kolačić ({@code Max-Age=0}) sa istim atributima kao pri postavljanju. {@code SameSite} se zna po imenu:
-     * {@code __Host-gfs_lti} je {@code None}, svi ostali {@code Lax}.
+     * {@code __Host-gfs_lti} je {@code None}, svi ostali (i {@code __Host-gfs_lti_par}) {@code Lax}; {@code __Host-}
+     * imena se brišu sa {@code Secure} i {@code Path=/} kao i pri postavljanju (inače pregledač brisanje odbija).
      */
     public static void obrisi(HttpServletRequest req, HttpServletResponse res, String ime) {
         dodaj(req, res, ime, "", Duration.ZERO, LTI.equals(ime) ? "None" : "Lax");
@@ -102,7 +105,7 @@ public final class Kolacici {
         }
         ResponseCookie kolacic = ResponseCookie.from(ime, vrednost)
                 .httpOnly(true)
-                .secure(req.isSecure() || "None".equals(sameSite))
+                .secure(req.isSecure() || "None".equals(sameSite) || ime.startsWith("__Host-"))
                 .path("/")
                 .maxAge(trajanje)
                 .sameSite(sameSite)

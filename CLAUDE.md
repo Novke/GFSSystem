@@ -445,7 +445,7 @@ through the plan's "Tačke proširenja za B i A2".
   **never under `/public/**`**.
 - **With the login (Spring Security, `security/`):** MCP is its own access class (`PristupMatrica.mcp()`: exactly those three
   paths, any method, no prefix) with its own chain `SecurityConfig.mcpLanac` (`@Order(1)`: `permitAll`, no teacher session, no
-  origin check, no CORS/CSRF, stateless; the start fails unless the endpoint property is `/mcp`). `McpKljucFilter` (order
+  origin check, CORS and the anonymous filter explicitly disabled (so a later CORS bean never opens `/mcp` to browsers), no CSRF, stateless; the start fails unless the endpoint property is `/mcp`). `McpKljucFilter` (order
   `HIGHEST_PRECEDENCE + 10`) runs before the Spring Security filter (`-100`) and stays the only authority there; any other path
   under `/mcp` goes through the main chain as ADMIN, so the key opens nothing else and a teacher cookie alone never opens MCP
   (`security/McpLanacIT`, `McpLanacIskljucenIT`, real Tomcat).
@@ -608,13 +608,19 @@ creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|en
   **a new endpoint must be added to the snapshot** (the test writes the sorted proposal to `target/pristup-matrica.predlog.txt`;
   rows are sorted by pattern, then method). Nothing teacher-only may live under `/public/**`.
 - **Cookies** (`security/Kolacici`; value = 32 chars from `TokenGenerator`, the DB holds only `TokenHash.od(token)`; `HttpOnly; Path=/`,
-  `Secure` when `request.isSecure()`): `gfs_nastavnik` `Lax` 90 days, `gfs_student` `Lax` 365 days, `__Host-gfs_lti` `None` (always `Secure`)
-  600 s, `gfs_lti_par` `Lax` 1800 s. `GfsAutentikacijaFilter` tries **every** value of a cookie name (a sibling `*.trif.rs` host can
-  plant a second one) and the teacher wins over the student. Sessions and devices are extended at most once per 10 minutes.
+  `Secure` when `request.isSecure()`): `gfs_nastavnik` `Lax` 90 days, `gfs_student` `Lax` 365 days for a code (`KOD`) device and
+  `gfs.nalog.lti-trajanje` (default `PT12H`) for an `LTI` device, `__Host-gfs_lti` `None` (always `Secure`) 600 s, `__Host-gfs_lti_par`
+  `Lax` 1800 s (`__Host-` names are always `Secure; Path=/` without `Domain`, also on delete, so a sibling `*.trif.rs` host cannot
+  plant a pairing token; the `Secure` rule is in `Kolacici.dodaj`). `GfsAutentikacijaFilter` tries **every** value of a cookie name (a sibling `*.trif.rs` host can
+  plant a second one) and the teacher wins over the student. Sessions and devices are extended at most once per 10 minutes; the renewed `gfs_student` cookie gets the lifetime of the device's
+  own `nacin` (`StudentskaPrijava.trajanje`, **sliding**: LTI = 12 h from the last use, so a school day of activity keeps it alive and a
+  lab PC left overnight is logged out; the Moodle launch is one click away; KOD = 365 days, the student's own phone). The filter does
+  not write or delete cookies on `GET|HEAD /public/mediji/**` (publicly cacheable responses must not carry `Set-Cookie`; the cookie is
+  renewed or deleted on the next ordinary request).
 - **Teacher:** `AuthRest` (`POST /auth/prijava`, `GET /auth/ja`, `POST /auth/odjava`, `GET /auth/sesije`, `DELETE /auth/sesije/{id}`,
   `POST /auth/sesije/odjavi-sve`), user and bcrypt hash from `GFS_NASTAVNIK_KORISNIK` / `GFS_NASTAVNIK_LOZINKA_BCRYPT` (empty =
   login not configured, 503-style message; a non-bcrypt value fails the start), `GFS_NASTAVNIK_MEJL` = address for notification mail.
-  10 failed attempts per 15 minutes per IP lock that IP for 15 minutes (`pokusaji`). IP comes from Tomcat's `RemoteIpValve`, not from headers.
+  10 failed attempts per 15 minutes per IP lock that IP for 15 minutes (`pokusaji`). A login from a browser that already holds a valid teacher session revokes that old session after the new one is created (no orphan sessions; a failed login revokes nothing). IP comes from Tomcat's `RemoteIpValve`, not from headers.
 - **`IdentitetStudenta` seam is live** (`security/`; interface, `NemaIdentiteta` and `IdentitetAutoKonfig` come from the Zadatak slide,
   see "Zadatak slide"): `NalogIdentitet` (`@Component`, `@Primary`) replaces `NemaIdentiteta`, which the auto-configuration
   (`@ConditionalOnMissingBean`) then never creates, so the context has exactly one `IdentitetStudenta` (`NalogIdentitetIT`). It gives
@@ -623,7 +629,8 @@ creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|en
   same participant, and without a valid cookie a scored run is 403 `Potrebna je prijava studenta.` (unscored runs need no login;
   `BodovanoUzivoIT`). The teacher never counts as a student (403 there even with a student cookie). **BE-8 is still not in the
   code:** a scored run records no attendance or task activities on the lecture.
-- **Student account** (`/public/nalog/*`, anonymous or STUDENT): `KodServis` (code = 6 digits from `SecureRandom`, 10 min, single
+- **Student account** (`/public/nalog/*`, anonymous or STUDENT; `kod` and `prijava` answer 409 `Odjavi se kao nastavnik.` when the request carries a valid
+  teacher session, because the teacher wins in `GfsAutentikacijaFilter` and a student login would end in a 403 loop; checked before any cost): `KodServis` (code = 6 digits from `SecureRandom`, 10 min, single
   use, 5 wrong entries kill it, a new code voids the old ones; DB keeps `SHA-256(salt + code)`), `StudentskaPrijava` (devices),
   `MaskaMejla` (real mask, or a deterministic fake mask from an HMAC for unknown index / student without mail),
   `PokusajiServis` (counters in table `pokusaji`, survive a restart), `KljuceviAplikacije` (HMAC keys in `kljucevi_aplikacije`,
@@ -643,9 +650,12 @@ creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|en
     replaced by an interceptor for all other paths): the floor would otherwise hold a pooled connection (Hikari 10) per anonymous
     request. Services for these paths return DTOs built inside their own transaction.
   - **Concurrency:** requests for the same index are serialized by a MySQL named lock on the transaction's own connection
-    (`GET_LOCK('gfs-kod:<hmac>')` for sending, `gfs-pomoc:<hmac>` for "Ne stiže mi kod", released in `afterCompletion`), then the
+    (`GET_LOCK('gfs-kod:<hmac>')` for sending, `gfs-pomoc:<hmac>` for "Ne stiže mi kod", released in `afterCompletion`; the real lock name is
+    prefixed with the schema, `gf:gfs-kod:...`, because MySQL user locks are server-global and prod `gf` and `gf_staging` share
+    `shared-mysql`: `KodServis.imeBrave` / `ImenaBrava`, schema from `SELECT DATABASE()` or `gfs.prijava.brava-prefiks`, shortened
+    to fit MySQL's 64 characters), then the
     student row (`SELECT ... FOR UPDATE`). **Lock order: index lock (pomoc/kod) -> student row -> mail lock `gfs-mejl-nastavniku`**
-    (the global 20/h mail counter is checked and written under it). Wait times: `KodServis.CEKANJE_BRAVE_S` 10 s and
+    (the global 20/h mail counter is checked and written under it). Wait times: `KodServis.CEKANJE_BRAVE_S` 2 s (the wait holds a pooled connection, Hikari default 10; both index locks use it, a timeout is the existing 429 / silent skip) and
     `ObavestenjeServis.CEKANJE_BRAVE_MEJL_S` 5 s (volatile fields with package-private setters for tests, see `PristupBravama`);
     `previseKodova` holds the student row, so it waits for the mail lock at most 1 s; if the lock is not obtained in that time the teacher mail for that `PREVISE_KODOVA` is skipped (the notice stays) and, because of the 24 h rule, it is not retried.
   - **Mail** (`service/mejl/`): `MejlServis` (`SmtpMejlServis`, `LazniMejlServis` in tests) publishes a `MejlPoruka` event; `MejlPosleCommita`
@@ -676,14 +686,14 @@ creates tables, all idempotent). Code lives in `security/`, `service|rest|dto|en
 - **Moodle LTI 1.3** (`service/lti/`, `rest/lti/`, `/public/lti/*`; teacher API `GET|POST|PUT|DELETE /lti/registracije`, `GET /lti/registracije/vrednosti`):
   - `GET|POST /public/lti/prijava` (OIDC login initiation, ANONIMNO) answers **302** to the platform's auth URL (or to `/nalog/moodle?greska=<kod>`);
     `POST /public/lti/start` (launch, form `id_token` + `state`) answers **303** to `/nalog` (linked student, new `LTI` device), `/nalog/moodle`
-    (pairing needed, cookie `gfs_lti_par`), `/nalog/moodle?uloga=nastavnik` or `/nalog/moodle?greska=<kod>` (`nepoznata-registracija`, `istekla-sesija`,
+    (pairing needed, cookie `__Host-gfs_lti_par`), `/nalog/moodle?uloga=nastavnik` or `/nalog/moodle?greska=<kod>` (`nepoznata-registracija`, `istekla-sesija`,
     `bez-kolacica`, `neispravan-token`, `nepodrzana-poruka`); never a 500 for a bad request and never a sign-in without a link.
-    `GET /public/lti/povezivanje` (ANONIMNO, read-only, needs `gfs_lti_par`: `{ime}` or 410) and `POST /public/lti/povezi` (STUDENT + `gfs_lti_par`: 204, 409
+    `GET /public/lti/povezivanje` (ANONIMNO, read-only, needs `__Host-gfs_lti_par`: `{ime}` or 410) and `POST /public/lti/povezi` (STUDENT + `__Host-gfs_lti_par`: 204, 409
     `Ovaj Moodle nalog je već povezan sa drugim studentom. Javi se nastavniku.`, 410, 401). `GET /public/lti/jwks` serves the tool's public key.
   - **State and cookies:** `state` and `nonce` are two separate random values; the DB keeps `SHA-256(state)`, the plain nonce, `SHA-256(__Host-gfs_lti)` and the
     registration, valid 10 minutes. The launch consumes the state **atomically and first** (conditional `UPDATE`), so it is single-use even when the launch then
     fails. `__Host-gfs_lti` (`SameSite=None; Secure; HttpOnly; Path=/`, no `Domain`, as the `__Host-` prefix requires; 600 s) binds the browser; without it the launch is `bez-kolacica` (a browser that blocks third-party cookies gets a
-    clear message with a link to `/nalog`). `gfs_lti_par` (`Lax`, 1800 s) carries the pairing token (hash in `lti_povezivanja`, the Moodle display name for the screen, with control, format/bidi, separator, private-use and unassigned characters removed and whitespace collapsed).
+    clear message with a link to `/nalog`). `__Host-gfs_lti_par` (`Lax`, 1800 s, `Secure` always) carries the pairing token (hash in `lti_povezivanja`, the Moodle display name for the screen, with control, format/bidi, separator, private-use and unassigned characters removed and whitespace collapsed).
   - **Token checks** (`LtiProvera`): RS256 only, `iss`, `aud` (+ `azp` rules), `exp` and `iat` required (60 s leeway), `nonce`, `deployment_id`, `sub` (must be a JSON string, 1-255 chars; checked on the raw claims too), message type
     `LtiResourceLinkRequest`, version `1.3.0`; roles: Instructor/Administrator -> teacher message (no cookie), Learner -> student flow, anything else `nepodrzana-poruka`.
   - **JWKS fetch** (`LtiDohvatKljuceva`): https only (http and loopback only with `gfs.lti.dozvoli-http=true`, forbidden with profile `server`), connect 3 s / read 5 s,

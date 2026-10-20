@@ -15,6 +15,7 @@ import tri.novica.gfssystem.dto.prijava.StudentJaInfo;
 import tri.novica.gfssystem.entity.prijava.NacinPrijave;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.security.Kolacici;
+import tri.novica.gfssystem.security.NastavnikAutentikacija;
 import tri.novica.gfssystem.security.StudentAutentikacija;
 import tri.novica.gfssystem.service.prijava.KodServis;
 import tri.novica.gfssystem.service.prijava.ObavestenjeServis;
@@ -37,17 +38,25 @@ public class NalogPublicRest {
     private final StudentskaPrijava prijava;
     private final ObavestenjeServis obavestenja;
 
-    /** Uvek isti odgovor, i za indeks koji ne postoji (429 i 503 su isti za sve indekse). */
+    static final String ODJAVI_SE_KAO_NASTAVNIK = "Odjavi se kao nastavnik.";
+
+    /**
+     * Uvek isti odgovor, i za indeks koji ne postoji (429 i 503 su isti za sve indekse). 409 {@value #ODJAVI_SE_KAO_NASTAVNIK}
+     * kad zahtev nosi važeću nastavničku sesiju.
+     */
     @PostMapping("kod")
     @ResponseStatus(HttpStatus.OK)
     public KodOdgovor kod(@Valid @RequestBody KodCmd cmd, HttpServletRequest req) {
+        nijeNastavnik();
         return kodovi.posalji(cmd.indeks(), KlijentIp.iz(req));
     }
 
-    /** Tačan kod: nov uređaj i kolačić {@code gfs_student}; uređaj kojim je ovaj pregledač već bio prijavljen se odjavljuje. */
+    /** Tačan kod: nov uređaj i kolačić {@code gfs_student}; uređaj kojim je ovaj pregledač već bio prijavljen se odjavljuje.
+     * 409 {@value #ODJAVI_SE_KAO_NASTAVNIK} kad zahtev nosi važeću nastavničku sesiju. */
     @PostMapping("prijava")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void prijava(@Valid @RequestBody PrijavaKodomCmd cmd, HttpServletRequest req, HttpServletResponse res) {
+        nijeNastavnik();
         Long studentId = kodovi.proveri(cmd.indeks(), cmd.kod(), KlijentIp.iz(req));
         StudentAutentikacija.trenutna().ifPresent(s -> prijava.odjaviUredjaj(s.uredjajId()));
         prijava.prijavi(studentId, NacinPrijave.KOD, req, res);
@@ -91,6 +100,17 @@ public class NalogPublicRest {
         int n = prijava.odjaviSve(trenutni().studentId());
         Kolacici.obrisi(req, res, Kolacici.STUDENT);
         return Map.of("odjavljeno", n);
+    }
+
+    /**
+     * Zahtev sa važećom nastavničkom sesijom ne može da postane studentski: nastavnik ima prednost u
+     * {@code GfsAutentikacijaFilter}, pa bi prijava vratila 204 a {@code /ja} odmah 403 (ekran bi se vrteo u krug).
+     * Odbija se pre bilo kog troška (kod se ne šalje, pokušaj se ne broji).
+     */
+    private static void nijeNastavnik() {
+        if (NastavnikAutentikacija.trenutna().isPresent()) {
+            throw new SystemException(ODJAVI_SE_KAO_NASTAVNIK, 409);
+        }
     }
 
     /** STUDENT putanje: lanac je već tražio uređaj, pa je ovo uvek prisutno. */
