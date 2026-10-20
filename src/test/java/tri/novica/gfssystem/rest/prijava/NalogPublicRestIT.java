@@ -78,6 +78,8 @@ class NalogPublicRestIT {
     void ocisti() {
         mejl.ocisti();
         studenti.obrisi();
+        jdbc.update("delete from obavestenja");
+        jdbc.update("delete from pokusaji where vrsta = 'POMOC_INDEKS'");
         for (String i : ipovi) {
             jdbc.update("delete from pokusaji where kljuc = ?", i);
         }
@@ -429,5 +431,95 @@ class NalogPublicRestIT {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.reason").value("Nemaš pristup."));
         mvc.perform(get("/auth/ja").cookie(student(st))).andExpect(status().isUnauthorized());
+    }
+
+    // ---------------------------------------------------------------- POST /public/nalog/pomoc (B8)
+
+    MvcResult pomoc(String indeks) throws Exception {
+        return pomoc(indeks, null);
+    }
+
+    MvcResult pomoc(String indeks, String studentToken) throws Exception {
+        MockHttpServletRequestBuilder b = javniPost("/public/nalog/pomoc", "{\"indeks\":\"" + indeks + "\"}");
+        if (studentToken != null) {
+            b.cookie(student(studentToken));
+        }
+        return mvc.perform(b).andReturn();
+    }
+
+    int brojObavestenja() {
+        return jdbc.queryForObject("select count(*) from obavestenja", Integer.class);
+    }
+
+    @Test
+    void pomocDajeIstoTeloZaPostojecegBezMejlaINepostojeceg() throws Exception {
+        jdbc.update("delete from obavestenja");
+        Student sa = studenti.napravi("ana@example.test");
+        Student bez = studenti.napravi(null);
+        for (String indeks : List.of(sa.getIndeks(), bez.getIndeks(), TestStudenti.noviIndeks())) {
+            MvcResult r = pomoc(indeks);
+            assertEquals(200, r.getResponse().getStatus(), indeks);
+            JsonNode o = JSON.readTree(r.getResponse().getContentAsString());
+            assertEquals(Set.of("poruka"), polja(o));
+            assertEquals("Javili smo nastavniku.", o.get("poruka").asString());
+            assertTrue(r.getResponse().getHeaders(HttpHeaders.SET_COOKIE).isEmpty());
+        }
+        assertEquals(3, brojObavestenja());
+    }
+
+    @Test
+    void pomocTihiLimitPoIndeksuDajeIstiOdgovorBezNovogObavestenja() throws Exception {
+        jdbc.update("delete from obavestenja");
+        Student s = studenti.napravi("ana@example.test");
+        String prvi = pomoc(s.getIndeks()).getResponse().getContentAsString();
+        String drugi = pomoc(s.getIndeks()).getResponse().getContentAsString();
+        String treci = pomoc(s.getIndeks().toLowerCase()).getResponse().getContentAsString();
+        assertEquals(prvi, drugi);
+        assertEquals(prvi, treci);
+        assertEquals(1, brojObavestenja());
+    }
+
+    @Test
+    void pomocJedanaestiZahtevSaIstogIpaJe429() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            assertEquals(200, pomoc(TestStudenti.noviIndeks()).getResponse().getStatus());
+        }
+        mvc.perform(javniPost("/public/nalog/pomoc", "{\"indeks\":\"" + TestStudenti.noviIndeks() + "\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.reason").value("Previše pokušaja. Pokušaj ponovo kasnije."));
+        // drugi IP prolazi
+        ip = noviIp();
+        assertEquals(200, pomoc(TestStudenti.noviIndeks()).getResponse().getStatus());
+    }
+
+    @Test
+    void pomocPrepoznajeZapamcenUredjajIzKolacica() throws Exception {
+        jdbc.update("delete from obavestenja");
+        Student s = studenti.napravi("ana@example.test");
+        String token = prijaviSe(s);
+        assertEquals(200, pomoc(s.getIndeks(), token).getResponse().getStatus());
+        String podaci = jdbc.queryForObject("select podaci from obavestenja where student_id = ?", String.class, s.getId());
+        assertEquals("ZAPAMCEN", JSON.readTree(podaci).get("uredjaj").asString());
+        assertFalse(podaci.contains(token));
+    }
+
+    @Test
+    void pomocUredjajBezKolacicaIliSTudjimJeNepoznat() throws Exception {
+        jdbc.update("delete from obavestenja");
+        Student s = studenti.napravi("ana@example.test");
+        Student drugi = studenti.napravi("pera@example.test");
+        String tudj = prijaviSe(drugi);
+        pomoc(s.getIndeks(), tudj);
+        String podaci = jdbc.queryForObject("select podaci from obavestenja where student_id = ?", String.class, s.getId());
+        assertEquals("NEPOZNAT", JSON.readTree(podaci).get("uredjaj").asString());
+    }
+
+    @Test
+    void pomocValidacija() throws Exception {
+        for (String telo : List.of("{}", "{\"indeks\":\"\"}", "{\"indeks\":\"   \"}",
+                "{\"indeks\":\"" + "1".repeat(31) + "\"}", "nije json")) {
+            mvc.perform(javniPost("/public/nalog/pomoc", telo)).andExpect(status().isBadRequest());
+        }
+        assertEquals(0, brojObavestenja());
     }
 }

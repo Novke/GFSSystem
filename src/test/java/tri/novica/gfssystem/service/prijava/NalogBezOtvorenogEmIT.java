@@ -98,9 +98,11 @@ class NalogBezOtvorenogEmIT {
     void otvorenEmSamoVanNalogaILti() throws Exception {
         assertFalse(imaOtvorenEm("POST", "/public/nalog/kod"));
         assertFalse(imaOtvorenEm("POST", "/public/nalog/prijava"));
+        assertFalse(imaOtvorenEm("POST", "/public/nalog/pomoc"));
         assertFalse(imaOtvorenEm("GET", "/public/nalog/ja"));
         // nastavničke i ostale javne putanje zadržavaju open-in-view (lenjo učitavanje u kontrolerima)
         assertTrue(imaOtvorenEm("GET", "/studenti"));
+        assertTrue(imaOtvorenEm("GET", "/obavestenja"));
         assertTrue(imaOtvorenEm("GET", "/grupe/1/pregled"));
         assertTrue(imaOtvorenEm("GET", "/public/upis/x"));
         assertTrue(imaOtvorenEm("GET", "/auth/ja"));
@@ -124,6 +126,8 @@ class NalogBezOtvorenogEmIT {
                 String ip = "2001:db8:b7::" + UUID.randomUUID().toString().substring(0, 4);
                 kljucevi.add(ip);
                 String indeks = i == 0 ? s.getIndeks() : TestStudenti.noviIndeks();
+                // nepostojeći indeks ostavlja red KOD_SLANJE_STUDENT pod HMAC ključem (kao u bezGraniceZa503I429PoIpu)
+                kljucevi.add(kodServis.kljucIndeksa(indeks));
                 boolean kod = i % 2 == 0;
                 String telo = kod ? "{\"indeks\":\"" + indeks + "\"}" : "{\"indeks\":\"" + indeks + "\",\"kod\":\"123456\"}";
                 String putanja = kod ? "/public/nalog/kod" : "/public/nalog/prijava";
@@ -159,6 +163,57 @@ class NalogBezOtvorenogEmIT {
             for (int i = 0; i < n; i++) assertEquals(i % 2 == 0 ? 200 : 401, statusi.get(i), statusi.toString());
         } finally {
             niti.shutdownNow();
+        }
+    }
+
+    /** Isto za "Ne stiže mi kod" (B8): 20 istovremenih zahteva sa granicom 3 s ne drže vezu iz pula dok spavaju. */
+    @Test
+    void navalaPomociNeDrziVeze() throws Exception {
+        HikariPoolMXBean pul = dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean();
+        Student s = studenti.napravi("ana@example.test");
+        kodServis.minimalnoTrajanje(Duration.ofSeconds(3));
+        int n = 20;
+        CountDownLatch kreni = new CountDownLatch(1);
+        ExecutorService niti = Executors.newFixedThreadPool(n);
+        try {
+            List<Future<Integer>> f = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                String ip = "2001:db8:b8::" + UUID.randomUUID().toString().substring(0, 4);
+                kljucevi.add(ip);
+                String indeks = i % 2 == 0 ? s.getIndeks() : TestStudenti.noviIndeks();
+                String telo = "{\"indeks\":\"" + indeks + "\"}";
+                f.add(niti.submit(() -> {
+                    kreni.await();
+                    return mvc.perform(post("/public/nalog/pomoc").with(r -> { r.setRemoteAddr(ip); return r; })
+                                    .header(HttpHeaders.ORIGIN, PrijavaTestUtil.ORIGIN)
+                                    .contentType(MediaType.APPLICATION_JSON).content(telo))
+                            .andReturn().getResponse().getStatus();
+                }));
+            }
+            long t0 = System.nanoTime();
+            kreni.countDown();
+            int najvise = 0;
+            int uzoraka = 0;
+            while (true) {
+                long ms = (System.nanoTime() - t0) / 1_000_000;
+                if (ms > 2800) break;
+                if (ms >= 1500) {
+                    najvise = Math.max(najvise, pul.getActiveConnections());
+                    uzoraka++;
+                }
+                Thread.sleep(10);
+            }
+            for (Future<Integer> x : f) assertEquals(200, x.get(60, TimeUnit.SECONDS));
+            long ukupnoMs = (System.nanoTime() - t0) / 1_000_000;
+            System.out.println("Navala pomoći " + n + " zahteva: najviše aktivnih veza u spavanju " + najvise + " ("
+                    + uzoraka + " uzoraka), ukupno " + ukupnoMs + " ms");
+            assertTrue(uzoraka > 20, "premalo uzoraka: " + uzoraka);
+            assertTrue(najvise <= 2, "aktivnih veza dok zahtevi spavaju: " + najvise);
+            assertTrue(ukupnoMs >= 3000, "granica nije važila: " + ukupnoMs + " ms");
+        } finally {
+            niti.shutdownNow();
+            jdbc.update("delete from obavestenja");
+            jdbc.update("delete from pokusaji where vrsta = 'POMOC_INDEKS'");
         }
     }
 

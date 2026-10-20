@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.service.prijava;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -65,8 +66,10 @@ import java.util.regex.Pattern;
  * indeksa, pa red studenta; niko ne uzima red studenta pa bravu, pa zastoja nema.
  * <p>
  * <b>Donja granica trajanja</b> ({@code gfs.nalog.minimalno-trajanje-ms}, podrazumevano 200 ms, monotono vreme):
- * {@link #posalji} i {@link #proveri} ne odgovaraju ranije, ni na 200, ni na 401/429, pa razlika od nekoliko upisa
- * između postojećeg i nepostojećeg naloga (i šav {@link #previseKodova}) ne izlazi u vreme odgovora.
+ * {@link #posalji} i {@link #proveri} ne odgovaraju ranije ni na 200, ni na 401, ni na 429 po indeksu, pa razlika od
+ * nekoliko upisa između postojećeg i nepostojećeg naloga (i {@link #previseKodova}) ne izlazi u vreme odgovora. Izuzetak
+ * su 503 (slanje nije podešeno) i 429 po IP-u: oni ne zavise od indeksa, pa vraćaju odmah (inače bi napadač preko
+ * limita i dalje držao niti zahteva).
  * <p>
  * Log: IP i id-jevi, indeks samo kao prvih 8 hex SHA-256; nikad kod, mejl ni ime.
  */
@@ -106,6 +109,8 @@ public class KodServis {
     private final KljuceviAplikacije kljucevi;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate zakljucano;
+    /** Lenjo, jer {@link ObavestenjeServis} koristi pomoćne metode ovog servisa (indeks, brava, donja granica). */
+    private final ObjectProvider<ObavestenjeServis> obavestenja;
     private final SecureRandom random = new SecureRandom();
     /** Donja granica trajanja odgovora (ns); u testovima 0, osim gde se proverava. */
     private volatile long minimalnoTrajanjeNs;
@@ -113,8 +118,10 @@ public class KodServis {
     public KodServis(StudentRepository studenti, KodZaPrijavuRepository kodovi, PokusajiServis pokusaji, MejlServis mejl,
                      ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
                      KljuceviAplikacije kljucevi, JdbcTemplate jdbc, PlatformTransactionManager transakcije, Clock clock,
+                     ObjectProvider<ObavestenjeServis> obavestenja,
                      @Value("${gfs.nalog.minimalno-trajanje-ms:200}") long minimalnoTrajanjeMs) {
         this.kljucevi = kljucevi;
+        this.obavestenja = obavestenja;
         this.jdbc = jdbc;
         this.minimalnoTrajanjeNs = TimeUnit.MILLISECONDS.toNanos(minimalnoTrajanjeMs);
         this.studenti = studenti;
@@ -133,9 +140,9 @@ public class KodServis {
     private record Slanje(String maska, boolean limit, Long studentId) {}
 
     /** Indeks zahteva: normalizovan, HMAC (ključ brojača i ime brave) i da li sme u bazu. */
-    private record Indeks(String n, String hmac, boolean trazi) {}
+    record Indeks(String n, String hmac, boolean trazi) {}
 
-    private Indeks indeks(String indeks) {
+    Indeks indeks(String indeks) {
         String n = normalizuj(indeks);
         return new Indeks(n, hmacIndeksa(n), BELA_LISTA_INDEKSA.matcher(n).matches());
     }
@@ -197,12 +204,17 @@ public class KodServis {
     }
 
     /**
-     * Šav za obaveštenje nastavniku (spec 6, {@code PREVISE_KODOVA}): student je dostigao limit od 3 koda na sat. Task B8
-     * ovde poziva {@code ObavestenjeServis.previseKodova(studentId, ip)}; do tada ništa. Poziva se van zaključane
-     * transakcije, posle njenog kraja, pa sopstveni upis obaveštenja ne zavisi od 429 koji sledi.
+     * Obaveštenje nastavniku {@code PREVISE_KODOVA} (spec 6): student je dostigao limit od 3 koda na sat; najviše jedno
+     * dnevno po studentu ({@link ObavestenjeServis#previseKodova}). Poziva se van zaključane transakcije i pre donje
+     * granice trajanja (njen posao se krije u njoj), a neuspeh se guta: obaveštenje nikad ne sme da promeni odgovor 429.
      */
     void previseKodova(Long studentId, String ip) {
-        // B8: obavestenja.previseKodova(studentId, ip)
+        try {
+            obavestenja.getObject().previseKodova(studentId, ip);
+        } catch (RuntimeException e) {
+            // samo klasa izuzetka: poruka može da nosi podatke iz upita
+            log.error("Obaveštenje o previše kodova nije upisano, student={}: {}", studentId, e.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -264,13 +276,17 @@ public class KodServis {
      * upit u bazi poredi pod {@code ai_ci} (akcenti, širina), pa se kandidati ovde porede binarno.
      */
     private Optional<Student> zakljucajStudenta(Indeks i) {
+        return nadjiStudenta(i).flatMap(s -> studenti.findByIdForUpdate(s.getId()));
+    }
+
+    /** Isto bez zaključavanja reda (bela lista i binarno poređenje kao gore): {@link ObavestenjeServis#neStizeKod}. */
+    Optional<Student> nadjiStudenta(Indeks i) {
         if (!i.trazi()) {
             return Optional.empty();
         }
         return studenti.findAllPoNormalizovanomIndeksu(i.n()).stream()
                 .filter(s -> i.n().equals(IndeksUtil.normalizuj(s.getIndeks())))
-                .findFirst()
-                .flatMap(s -> studenti.findByIdForUpdate(s.getId()));
+                .findFirst();
     }
 
     /**
@@ -279,11 +295,22 @@ public class KodServis {
      * vezana za nit), da sledeći zahtev za isti indeks vidi upisan brojač. Ne dobije li je za 10 s: 429.
      */
     private void zakljucajIndeks(Indeks i) {
-        String brava = "gfs-kod:" + i.hmac().substring(0, 32);
+        if (!uzmiBravu("gfs-kod:", i)) {
+            throw new SystemException(PREVISE, 429);
+        }
+    }
+
+    /**
+     * Uzima MySQL bravu {@code prefiks + hmac indeksa} na vezi tekuće transakcije (mora postojati) i otpušta je u
+     * {@code afterCompletion}. {@code false} kad je ne dobije za {@value #CEKANJE_BRAVE_S} s. Svaka funkcija ima svoj
+     * prefiks (slanje koda, "Ne stiže mi kod"), a redosled je uvek brava indeksa pa red studenta.
+     */
+    boolean uzmiBravu(String prefiks, Indeks i) {
+        String brava = prefiks + i.hmac().substring(0, 32);
         Integer dobijena = jdbc.queryForObject("SELECT GET_LOCK(?, ?)", Integer.class, brava, CEKANJE_BRAVE_S);
         if (dobijena == null || dobijena != 1) {
             log.warn("Brava indeksa nije dobijena za {} s, indeks={}", CEKANJE_BRAVE_S, trag(i.n()));
-            throw new SystemException(PREVISE, 429);
+            return false;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -298,6 +325,7 @@ public class KodServis {
                 }
             }
         });
+        return true;
     }
 
     /**
@@ -365,7 +393,7 @@ public class KodServis {
      * nit ne drži vezu iz pula: {@code KodServis} nema {@code @Transactional}, a open-in-view je isključen za
      * {@code /public/nalog/**} ({@code OtvorenEntityManagerConfig}); inače bi navala zahteva zauzela ceo pul.
      */
-    private void sacekajDoGranice(long pocetak) {
+    void sacekajDoGranice(long pocetak) {
         long ostalo = minimalnoTrajanjeNs - (System.nanoTime() - pocetak);
         if (ostalo > 0) {
             try {
@@ -385,7 +413,7 @@ public class KodServis {
         return kljucIndeksaIzHmac(hmacIndeksa(normalizovanIndeks));
     }
 
-    private static String kljucIndeksaIzHmac(String hmac) {
+    static String kljucIndeksaIzHmac(String hmac) {
         return "i:" + hmac;
     }
 

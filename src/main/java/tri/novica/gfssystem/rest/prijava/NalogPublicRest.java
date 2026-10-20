@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.prijava.KodCmd;
 import tri.novica.gfssystem.dto.prijava.KodOdgovor;
 import tri.novica.gfssystem.dto.prijava.NalogStanjeInfo;
+import tri.novica.gfssystem.dto.prijava.PomocCmd;
 import tri.novica.gfssystem.dto.prijava.PrijavaKodomCmd;
 import tri.novica.gfssystem.dto.prijava.StudentJaInfo;
 import tri.novica.gfssystem.entity.prijava.NacinPrijave;
@@ -16,6 +17,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.security.Kolacici;
 import tri.novica.gfssystem.security.StudentAutentikacija;
 import tri.novica.gfssystem.service.prijava.KodServis;
+import tri.novica.gfssystem.service.prijava.ObavestenjeServis;
 import tri.novica.gfssystem.service.prijava.StudentskaPrijava;
 import tri.novica.gfssystem.utility.KlijentIp;
 
@@ -33,6 +35,7 @@ public class NalogPublicRest {
 
     private final KodServis kodovi;
     private final StudentskaPrijava prijava;
+    private final ObavestenjeServis obavestenja;
 
     /** Uvek isti odgovor, i za indeks koji ne postoji (429 i 503 su isti za sve indekse). */
     @PostMapping("kod")
@@ -48,6 +51,17 @@ public class NalogPublicRest {
         Long studentId = kodovi.proveri(cmd.indeks(), cmd.kod(), KlijentIp.iz(req));
         StudentAutentikacija.trenutna().ifPresent(s -> prijava.odjaviUredjaj(s.uredjajId()));
         prijava.prijavi(studentId, NacinPrijave.KOD, req, res);
+    }
+
+    /**
+     * "Ne stiže mi kod": uvek isti odgovor, i za indeks koji ne postoji i za studenta bez mejla (429 samo preko 10/h po
+     * IP-u). Kolačić {@code gfs_student} (svi istoimeni, najviše 5) služi samo nastavniku da vidi da li je uređaj poznat.
+     */
+    @PostMapping("pomoc")
+    @ResponseStatus(HttpStatus.OK)
+    public Map<String, String> pomoc(@Valid @RequestBody PomocCmd cmd, HttpServletRequest req) {
+        obavestenja.neStizeKod(cmd.indeks(), KlijentIp.iz(req), Kolacici.procitajSve(req, Kolacici.STUDENT));
+        return Map.of("poruka", "Javili smo nastavniku.");
     }
 
     @GetMapping("stanje")

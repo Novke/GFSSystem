@@ -76,6 +76,11 @@ GET /lti/registracije/vrednosti ADMIN
 DELETE /lti/registracije/{id} ADMIN
 PUT /lti/registracije/{id} ADMIN
 POST /mediji ADMIN
+GET /obavestenja ADMIN
+GET /obavestenja/broj ADMIN
+POST /obavestenja/procitaj-sve ADMIN
+POST /obavestenja/{id}/procitano ADMIN
+POST /obavestenja/{id}/reseno ADMIN
 GET /ocenjivanje/predmet/{predmetId}/koeficijenti ADMIN
 POST /ocenjivanje/predmet/{predmetId}/koeficijenti ADMIN
 POST /ocenjivanje/predmet/{predmetId}/rezultati ADMIN
@@ -126,6 +131,7 @@ GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 POST /public/nalog/odjava STUDENT
 POST /public/nalog/odjava-svuda STUDENT
+POST /public/nalog/pomoc ANONIMNO
 POST /public/nalog/prijava ANONIMNO
 GET /public/nalog/stanje ANONIMNO
 GET /public/upis/{token} ANONIMNO
