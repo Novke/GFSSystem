@@ -72,6 +72,31 @@ class ZadatakRezultatBuilderTest {
     }
 
     @Test
+    void tekstSaVelicinomSlovaNeSpajaRazliciteOcene() {
+        Polje velika = new Polje("b", "b)", TipPolja.TEKST, null, null, null, false, true, null);
+        VarijantaSnimak v = new VarijantaSnimak(1L, "A", 3L, "svg-A", null, List.of(velika),
+                Map.of("b", new OdgovorPolja(null, List.of("ABC"), null, null)));
+        ZadatakSnimak s = new ZadatakSnimak(7L, 3L, "K", List.of(), null, List.of(v));
+        List<OdgovorZadatka> odgovori = new ArrayList<>();
+        for (long u = 1; u <= 5; u++) {
+            String t = u <= 2 ? "ABC" : "abc";
+            odgovori.add(new OdgovorZadatka(u, 1L, Map.of("b", new PoljeOdgovora(t, u <= 2)), u <= 2));
+        }
+        Map<Long, Long> dodele = new HashMap<>();
+        for (long u = 1; u <= 5; u++) dodele.put(u, 1L);
+        RezultatVarijante r = ZadatakRezultatBuilder.izgradi(s, dodele, odgovori, true, true, false).varijante().getFirst();
+        List<RezultatTekst> grupe = r.polja().getFirst().vrednosti();
+        assertEquals(2, grupe.size(), "ABC i abc su dve grupe kad polje razlikuje veličinu slova");
+        assertEquals("abc", grupe.getFirst().tekst());
+        assertEquals(3, grupe.getFirst().broj());
+        assertEquals(Boolean.FALSE, grupe.getFirst().tacan());
+        assertEquals("ABC", grupe.get(1).tekst());
+        assertEquals(2, grupe.get(1).broj());
+        assertEquals(Boolean.TRUE, grupe.get(1).tacan());
+        assertEquals(2, r.tacnih());
+    }
+
+    @Test
     void nevidljivo() {
         ZadatakRezultat r = ZadatakRezultatBuilder.izgradi(S, DODELE, ODGOVORI, true, false, false);
         RezultatVarijante va = r.varijante().getFirst();

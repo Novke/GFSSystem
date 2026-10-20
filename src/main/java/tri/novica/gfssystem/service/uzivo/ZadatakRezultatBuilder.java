@@ -82,7 +82,7 @@ public final class ZadatakRezultatBuilder {
                 tacanVidljiv ? tacno : null);
     }
 
-    /** BROJ i TEKST: grupe istih vrednosti (broj po vrednosti, tekst po normalizovanom ključu), najčešće prve, najviše 10. */
+    /** BROJ i TEKST: grupe istih vrednosti (broj po vrednosti, tekst po ključu ocene, {@link OcenaPolja#kljucOcene}), najčešće prve, najviše 10. */
     private static List<RezultatTekst> grupe(Polje p, OdgovorPolja tacno, List<Object> vrednosti, boolean tacanVidljiv) {
         Map<String, Map<String, Integer>> oblici = new LinkedHashMap<>();
         for (Object o : vrednosti) {
@@ -109,7 +109,7 @@ public final class ZadatakRezultatBuilder {
             Double broj = Normalizacija.broj(s);
             return broj == null || !Double.isFinite(broj) ? null : Double.toString(broj);
         }
-        String k = OcenaPolja.kljucTeksta(p, s);
+        String k = OcenaPolja.kljucOcene(p, s);
         return k.isEmpty() ? null : k;
     }
 
