@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.repository.lti.LtiKljucRepository;
 import tri.novica.gfssystem.utility.TokenGenerator;
 
@@ -17,6 +18,9 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -101,6 +105,56 @@ class LtiKljucServisIT {
         RSAKey novi = servis.aktivni();
         assertNotEquals(stari.getKeyID(), novi.getKeyID());
         assertEquals(List.of(novi.getKeyID()), servis.javni().getKeys().stream().map(JWK::getKeyID).toList());
+    }
+
+    @Test
+    void dvaAktivnaKljucaJwksImaObaAktivniJeNajnoviPaVeciId() {
+        RSAKey stari = servis.aktivni();
+        jdbc.update("update lti_kljucevi set aktivan = 0 where kid = ?", stari.getKeyID());
+        RSAKey novi = servis.aktivni();
+        // isti kreirano, stari ponovo aktivan: veći id (novi) mora pobediti
+        jdbc.update("update lti_kljucevi set kreirano = (select k.kreirano from (select kreirano from lti_kljucevi "
+                + "where kid = ?) k)", novi.getKeyID());
+        jdbc.update("update lti_kljucevi set aktivan = 1 where kid = ?", stari.getKeyID());
+        for (int i = 0; i < 5; i++) {
+            assertEquals(novi.getKeyID(), servis.aktivni().getKeyID());
+        }
+        List<String> kidovi = servis.javni().getKeys().stream().map(JWK::getKeyID).toList();
+        assertEquals(2, kidovi.size());
+        assertTrue(kidovi.containsAll(List.of(stari.getKeyID(), novi.getKeyID())));
+        assertEquals(novi.getKeyID(), kidovi.get(0));
+        servis.javni().getKeys().forEach(k -> assertFalse(k.isPrivate()));
+    }
+
+    @Test
+    void javniNeCitaPrivatniKljuc() {
+        servis.aktivni();
+        jdbc.update("update lti_kljucevi set privatni = 'nije-base64!!'");
+        assertEquals(1, servis.javni().getKeys().size());
+    }
+
+    @Test
+    void istovremenoPrvoPravljenjeDajeJedanRedCakIUnutarSpoljneTransakcije() throws Exception {
+        int n = 8;
+        ExecutorService izvrsilac = Executors.newFixedThreadPool(n);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            TransactionTemplate spoljna = new TransactionTemplate(tm);
+            List<Future<String>> f = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                f.add(izvrsilac.submit(() -> {
+                    start.await();
+                    return spoljna.execute(st -> servis.aktivni().getKeyID());
+                }));
+            }
+            start.countDown();
+            Set<String> kidovi = new HashSet<>();
+            for (Future<String> x : f) kidovi.add(x.get(120, TimeUnit.SECONDS));
+            assertEquals(1, kidovi.size());
+            assertEquals(1, repo.count());
+        } finally {
+            izvrsilac.shutdownNow();
+        }
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.entity.lti.LtiKljuc;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -56,11 +57,13 @@ public class LtiKljucServis {
         this.tokeni = tokeni;
         this.clock = clock;
         this.transakcija = new TransactionTemplate(tm);
+        // nova transakcija: commit je pre otpuštanja brave i kad pozivalac već ima spoljnu transakciju (drugi tok ne pravi drugi ključ)
+        this.transakcija.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /** Najnoviji aktivni ključ sa privatnim delom; pravi ga ako ga nema. */
     public RSAKey aktivni() {
-        List<LtiKljuc> aktivni = repo.findAllByAktivanTrueOrderByKreiranoDesc();
+        List<LtiKljuc> aktivni = repo.findAllByAktivanTrueOrderByKreiranoDescIdDesc();
         if (aktivni.isEmpty()) {
             aktivni = List.of(napraviAkoNema());
         }
@@ -69,19 +72,18 @@ public class LtiKljucServis {
 
     /** Javni JWKS (svi aktivni ključevi, samo javni delovi); pravi prvi ključ ako ga nema. */
     public JWKSet javni() {
-        List<LtiKljuc> aktivni = repo.findAllByAktivanTrueOrderByKreiranoDesc();
+        List<LtiKljuc> aktivni = repo.findAllByAktivanTrueOrderByKreiranoDescIdDesc();
         if (aktivni.isEmpty()) {
             aktivni = List.of(napraviAkoNema());
         }
-        List<JWK> javni = aktivni.stream().map(k -> (JWK) uJwk(k).toPublicJWK()).toList();
-        return new JWKSet(javni);
+        return new JWKSet(aktivni.stream().map(this::uJavni).toList());
     }
 
     private LtiKljuc napraviAkoNema() {
         pravljenje.lock();
         try {
             return transakcija.execute(status -> {
-                List<LtiKljuc> postoji = repo.findAllByAktivanTrueOrderByKreiranoDesc();
+                List<LtiKljuc> postoji = repo.findAllByAktivanTrueOrderByKreiranoDescIdDesc();
                 if (!postoji.isEmpty()) return postoji.get(0);
                 LtiKljuc novi = napravi();
                 log.info("LTI: napravljen ključ alata, kid={}", novi.getKid());
@@ -109,6 +111,15 @@ public class LtiKljucServis {
             return k;
         } catch (GeneralSecurityException e) {
             throw new SystemException("Ključ alata nije moguće napraviti.", e, 500);
+        }
+    }
+
+    /** Samo javni JWK iz baze; privatni ključ se ne dira (anonimni JWKS zahtev). */
+    private JWK uJavni(LtiKljuc k) {
+        try {
+            return RSAKey.parse(k.getJavni()).toPublicJWK();
+        } catch (ParseException e) {
+            throw new SystemException("Ključ alata je oštećen (kid=" + k.getKid() + ").", 500);
         }
     }
 

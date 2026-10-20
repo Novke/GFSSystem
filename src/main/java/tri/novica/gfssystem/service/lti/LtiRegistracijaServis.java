@@ -2,7 +2,10 @@ package tri.novica.gfssystem.service.lti;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tri.novica.gfssystem.dto.lti.LtiRegistracijaCmd;
@@ -38,7 +41,15 @@ public class LtiRegistracijaServis {
 
     public LtiRegistracijaServis(LtiRegistracijaRepository repo, Clock clock,
                                  @Value("${gfs.front.url}") String frontUrl,
-                                 @Value("${gfs.lti.dozvoli-http:false}") boolean dozvoliHttp) {
+                                 @Value("${gfs.lti.dozvoli-http:false}") boolean dozvoliHttp,
+                                 Environment okruzenje) {
+        if (dozvoliHttp) {
+            if (okruzenje.acceptsProfiles(Profiles.of("server"))) {
+                throw new IllegalStateException(
+                        "gfs.lti.dozvoli-http=true nije dozvoljeno uz profil server: LTI adrese moraju biti https://.");
+            }
+            log.warn("LTI: gfs.lti.dozvoli-http=true, http:// adrese su dozvoljene (samo za razvoj i testove)");
+        }
         this.repo = repo;
         this.clock = clock;
         this.frontUrl = frontUrl;
@@ -47,7 +58,7 @@ public class LtiRegistracijaServis {
 
     @Transactional(readOnly = true)
     public List<LtiRegistracijaInfo> lista() {
-        return repo.findAll().stream().map(LtiRegistracijaServis::uInfo).toList();
+        return repo.findAll(Sort.by("id")).stream().map(LtiRegistracijaServis::uInfo).toList();
     }
 
     @Transactional
@@ -96,18 +107,25 @@ public class LtiRegistracijaServis {
         LtiRegistracija r = new LtiRegistracija();
         String izdavac = LtiUrl.proveri(cmd.izdavac(), dozvoliHttp, "Izdavač (issuer)");
         r.setNaziv(cmd.naziv().trim());
-        r.setIzdavac(izdavac);
+        // Moodle šalje iss bez završne kose crte (wwwroot); L2 poredi tačno, pa se čuva bez nje
+        r.setIzdavac(bezZavrsneKose(izdavac));
         r.setClientId(cmd.clientId().trim());
         r.setDeploymentId(cmd.deploymentId().trim());
         r.setAuthUrl(LtiUrl.proveri(prazno(cmd.authUrl()) ? LtiUrl.izvedi(izdavac, AUTH_PUTANJA) : cmd.authUrl(),
                 dozvoliHttp, "Auth URL"));
         r.setJwksUrl(LtiUrl.proveri(prazno(cmd.jwksUrl()) ? LtiUrl.izvedi(izdavac, CERTS_PUTANJA) : cmd.jwksUrl(),
                 dozvoliHttp, "JWKS URL"));
-        r.setAktivna(cmd.aktivna());
+        r.setAktivna(cmd.aktivna() == null || cmd.aktivna());
         if (r.getAuthUrl().length() > 500 || r.getJwksUrl().length() > 500) {
             throw new SystemException("Izvedena adresa je predugačka.", 400);
         }
         return r;
+    }
+
+    private static String bezZavrsneKose(String url) {
+        String u = url;
+        while (u.endsWith("/")) u = u.substring(0, u.length() - 1);
+        return u;
     }
 
     private static boolean prazno(String s) {

@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 /**
  * Registracija alata na LTI 1.3 platformi (Moodle), {@code POST|PUT /lti/registracije}. Sve adrese su {@code https://}.
  * Prazni {@code authUrl} i {@code jwksUrl} se izvode iz {@code izdavac}: {@code /mod/lti/auth.php} i
- * {@code /mod/lti/certs.php}. Ništa od ovoga nije tajna.
+ * {@code /mod/lti/certs.php}. {@code aktivna} bez vrednosti znači aktivna. Ništa od ovoga nije tajna.
  */
 public record LtiRegistracijaCmd(
         @NotBlank(message = "Naziv je obavezan.")
@@ -25,5 +25,5 @@ public record LtiRegistracijaCmd(
         String authUrl,
         @Size(max = 500, message = "JWKS URL je predugačak.")
         String jwksUrl,
-        boolean aktivna) {
+        Boolean aktivna) {
 }

@@ -23,7 +23,7 @@ public class LtiJwksRest {
 
     private final LtiKljucServis kljucevi;
 
-    @GetMapping(path = "/jwks", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping("/jwks")
     public ResponseEntity<Map<String, Object>> jwks() {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(Duration.ofSeconds(300)).cachePublic())

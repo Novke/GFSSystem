@@ -497,7 +497,7 @@ class PrijavaSemaIT {
 
         LtiKljuc k = ltiKljucRepository.findByKid(kljuc.getKid()).orElseThrow();
         assertTrue(k.isAktivan());
-        assertTrue(ltiKljucRepository.findAllByAktivanTrueOrderByKreiranoDesc().stream()
+        assertTrue(ltiKljucRepository.findAllByAktivanTrueOrderByKreiranoDescIdDesc().stream()
                 .anyMatch(x -> x.getId().equals(kljuc.getId())));
 
         LtiStanje s = stanjeRepository.findByStanjeHes(stanjeHes).orElseThrow();

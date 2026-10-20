@@ -12,6 +12,6 @@ public interface LtiKljucRepository extends JpaRepository<LtiKljuc, Long> {
 
     Optional<LtiKljuc> findByKid(String kid);
 
-    /** Aktivni ključevi alata (JWKS), najnoviji prvi. */
-    List<LtiKljuc> findAllByAktivanTrueOrderByKreiranoDesc();
+    /** Aktivni ključevi alata (JWKS), najnoviji prvi; isti {@code kreirano} razrešava veći id (deterministično). */
+    List<LtiKljuc> findAllByAktivanTrueOrderByKreiranoDescIdDesc();
 }

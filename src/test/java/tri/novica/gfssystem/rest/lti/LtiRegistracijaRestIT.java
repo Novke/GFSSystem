@@ -101,8 +101,41 @@ class LtiRegistracijaRestIT {
         MvcResult m = upisi("/lti/registracije", false, telo("S", moodle + "/", "k", "1", "", "", true))
                 .andExpect(status().isCreated()).andReturn();
         JsonNode r = JSON.readTree(m.getResponse().getContentAsString());
+        assertEquals(moodle, r.get("izdavac").asText(), "iss se čuva bez završne kose crte");
+        assertEquals(moodle, jdbc.queryForObject("select izdavac from lti_registracije where id = ?", String.class,
+                r.get("id").asLong()));
         assertEquals(moodle + "/mod/lti/auth.php", r.get("authUrl").asText());
         assertEquals(moodle + "/mod/lti/certs.php", r.get("jwksUrl").asText());
+        // ista registracija ukucana bez kose crte je duplikat
+        upisi("/lti/registracije", false, telo("S", moodle, "k", "1", "", "", true)).andExpect(status().isConflict());
+    }
+
+    @Test
+    void aktivnaBezVrednostiJeAktivna() throws Exception {
+        MvcResult m = upisi("/lti/registracije", false, "{\"naziv\":\"S\",\"izdavac\":\"" + moodle
+                + "\",\"clientId\":\"k\",\"deploymentId\":\"1\"}").andExpect(status().isCreated()).andReturn();
+        assertTrue(JSON.readTree(m.getResponse().getContentAsString()).get("aktivna").asBoolean());
+    }
+
+    @Test
+    void listaJeUredjenaPoId() throws Exception {
+        napravi("k-a", "1");
+        napravi("k-b", "1");
+        napravi("k-c", "1");
+        MvcResult r = mvc.perform(get("/lti/registracije").with(nastavnik)).andExpect(status().isOk()).andReturn();
+        long prethodni = 0;
+        for (JsonNode n : JSON.readTree(r.getResponse().getContentAsString())) {
+            assertTrue(n.get("id").asLong() > prethodni);
+            prethodni = n.get("id").asLong();
+        }
+    }
+
+    @Test
+    void jwksOdgovaNaAcceptTextHtmlKaoJson() throws Exception {
+        mvc.perform(get("/public/lti/jwks").accept(MediaType.TEXT_HTML))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("max-age=300")));
     }
 
     @Test
