@@ -146,18 +146,20 @@ public class KodServis {
      */
     public KodOdgovor posalji(String indeks, String ip) {
         long pocetak = System.nanoTime();
+        // 503 i 429 po IP-u ne zavise od indeksa (ništa ne otkrivaju), pa idu bez donje granice: inače bi napadač
+        // preko limita i dalje držao niti zahteva
+        if (!mejl.dostupan()) {
+            throw new SystemException(BEZ_SMTP, 503);
+        }
+        if (pokusaji.dostignut(VrstaPokusaja.KOD_SLANJE_IP, ip, LIMIT_SLANJA_IP, SAT)) {
+            log.info("Zahtev za kod odbijen (limit po IP-u), ip={}", ip);
+            throw new SystemException(PREVISE, 429);
+        }
         try {
-            if (!mejl.dostupan()) {
-                throw new SystemException(BEZ_SMTP, 503);
-            }
+            pokusaji.zabelezi(VrstaPokusaja.KOD_SLANJE_IP, ip);
             // HMAC-ovi i lažna maska se računaju uvek (isti posao), a prvi poziv pravi ključeve van zaključane transakcije
             Indeks i = indeks(indeks);
             String lazna = maska.lazna(i.n());
-            if (pokusaji.dostignut(VrstaPokusaja.KOD_SLANJE_IP, ip, LIMIT_SLANJA_IP, SAT)) {
-                log.info("Zahtev za kod odbijen (limit po IP-u), ip={}", ip);
-                throw new SystemException(PREVISE, 429);
-            }
-            pokusaji.zabelezi(VrstaPokusaja.KOD_SLANJE_IP, ip);
 
             Slanje s = zakljucano.execute(tx -> posaljiZakljucano(i, lazna));
             if (s.limit()) {
@@ -209,11 +211,12 @@ public class KodServis {
      */
     public Long proveri(String indeks, String kod, String ip) {
         long pocetak = System.nanoTime();
+        // 429 po IP-u ne zavisi od indeksa ni koda, pa ide bez donje granice (kao u posalji)
+        if (pokusaji.dostignut(VrstaPokusaja.KOD_GRESKA_IP, ip, LIMIT_GRESAKA_IP, SAT)) {
+            log.info("Provera koda odbijena (limit po IP-u), ip={}", ip);
+            throw new SystemException(PREVISE, 429);
+        }
         try {
-            if (pokusaji.dostignut(VrstaPokusaja.KOD_GRESKA_IP, ip, LIMIT_GRESAKA_IP, SAT)) {
-                log.info("Provera koda odbijena (limit po IP-u), ip={}", ip);
-                throw new SystemException(PREVISE, 429);
-            }
             Indeks i = indeks(indeks);
             Long studentId = zakljucano.execute(tx -> proveriZakljucano(i, kod));
             if (studentId == null) {
@@ -357,7 +360,11 @@ public class KodServis {
         minimalnoTrajanjeNs = d.toNanos();
     }
 
-    /** Spava do donje granice trajanja, mereno monotonim satom od {@code pocetak} ({@code System.nanoTime}). */
+    /**
+     * Spava do donje granice trajanja, mereno monotonim satom od {@code pocetak} ({@code System.nanoTime}). Sme samo kad
+     * nit ne drži vezu iz pula: {@code KodServis} nema {@code @Transactional}, a open-in-view je isključen za
+     * {@code /public/nalog/**} ({@code OtvorenEntityManagerConfig}); inače bi navala zahteva zauzela ceo pul.
+     */
     private void sacekajDoGranice(long pocetak) {
         long ostalo = minimalnoTrajanjeNs - (System.nanoTime() - pocetak);
         if (ostalo > 0) {
