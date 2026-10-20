@@ -19,6 +19,7 @@ import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 import tri.novica.gfssystem.service.prijava.NastavnikSesijaServis;
+import tri.novica.gfssystem.service.prijava.StudentskaPrijava;
 import tri.novica.gfssystem.utility.KlijentIp;
 
 import java.time.Clock;
@@ -64,7 +65,8 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    SecurityFilterChain glavniLanac(HttpSecurity http, NastavnikSesijaServis nastavnici, Clock clock,
+    SecurityFilterChain glavniLanac(HttpSecurity http, NastavnikSesijaServis nastavnici, StudentskaPrijava studenti,
+                                    Clock clock,
                                     @Qualifier("corsConfigurationSource") CorsConfigurationSource cors,
                                     @Value("${gfs.front.url}") String frontUrl)
             throws Exception {
@@ -81,7 +83,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(zabranjeno()))
                 .addFilterAfter(new ProveraPoreklaFilter(CorsConfig.origini(frontUrl),
                         ProveraPoreklaFilter.LTI_IZUZECI), CorsFilter.class)
-                .addFilterBefore(new GfsAutentikacijaFilter(nastavnici, clock), AnonymousAuthenticationFilter.class)
+                .addFilterBefore(new GfsAutentikacijaFilter(nastavnici, studenti, clock), AnonymousAuthenticationFilter.class)
                 .authorizeHttpRequests(a -> a
                         // greška iz već puštenog zahteva (npr. Tomcat sendError) ne sme postati 401
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()

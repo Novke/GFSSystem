@@ -10,33 +10,42 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tri.novica.gfssystem.entity.prijava.NastavnickaSesija;
+import tri.novica.gfssystem.entity.prijava.StudentskiUredjaj;
 import tri.novica.gfssystem.service.prijava.NastavnikSesijaServis;
+import tri.novica.gfssystem.service.prijava.StudentskaPrijava;
 import tri.novica.gfssystem.utility.KlijentIp;
 
 import java.io.IOException;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
  * Identitet zahteva iz naših kolačića (spec 2.2), pre pravila pristupa: važeći {@code gfs_nastavnik} daje
- * {@link NastavnikAutentikacija} ({@code ROLE_ADMIN}). Nevažeći, istekao ili opozvan token: zahtev ide dalje anoniman, a
- * kolačić se briše u odgovoru. Kad se sesija produži (najviše jednom na 10 min, {@link NastavnikSesijaServis#potvrdi}),
- * kolačić dobija nov {@code Max-Age}.
+ * {@link NastavnikAutentikacija} ({@code ROLE_ADMIN}); inače važeći {@code gfs_student} daje {@link StudentAutentikacija}
+ * ({@code ROLE_STUDENT}, id studenta i uređaja). Nevažeći, istekao ili opozvan token: zahtev ide dalje anoniman, a
+ * kolačić se briše u odgovoru. Kad se sesija ili uređaj produži (najviše jednom na 10 min), kolačić dobija nov
+ * {@code Max-Age}.
  * <p>
- * Grane su redom ({@link #autentikuj}): prva koja vrati identitet odlučuje. Studentska ({@code gfs_student} ->
- * {@code StudentAutentikacija}) se dodaje kao druga grana. Nije Spring bean (lanac ga pravi sam, da ga Boot ne registruje
- * još jednom kao servlet filter).
+ * <b>Cookie tossing:</b> sestrinski poddomen ({@code *.trif.rs}) može da podmetne kolačić istog imena za
+ * {@code Domain=.trif.rs}, pa pregledač šalje dva. Zato se proba svaka vrednost ({@link Kolacici#procitajSve}) i važi prva
+ * ispravna; kolačić (host-only, jedini koji ovde možemo da obrišemo) se briše samo kad nijedna vrednost ne važi.
+ * <p>
+ * Grane su redom ({@link #autentikuj}): prva koja vrati identitet odlučuje. Nije Spring bean (lanac ga pravi sam, da ga
+ * Boot ne registruje još jednom kao servlet filter).
  */
 @Slf4j
 public class GfsAutentikacijaFilter extends OncePerRequestFilter {
 
     private final NastavnikSesijaServis nastavnici;
+    private final StudentskaPrijava studenti;
     private final Clock clock;
 
-    public GfsAutentikacijaFilter(NastavnikSesijaServis nastavnici, Clock clock) {
+    public GfsAutentikacijaFilter(NastavnikSesijaServis nastavnici, StudentskaPrijava studenti, Clock clock) {
         this.nastavnici = Objects.requireNonNull(nastavnici);
+        this.studenti = Objects.requireNonNull(studenti);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -54,26 +63,48 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
 
     /** Prva grana koja prepozna kolačić; {@code null} = anoniman zahtev. */
     private Authentication autentikuj(HttpServletRequest req, HttpServletResponse res) {
-        return nastavnik(req, res);
+        Authentication nastavnik = nastavnik(req, res);
+        return nastavnik != null ? nastavnik : student(req, res);
     }
 
     private Authentication nastavnik(HttpServletRequest req, HttpServletResponse res) {
-        Optional<String> token = Kolacici.procitaj(req, Kolacici.NASTAVNIK);
-        if (token.isEmpty()) {
-            return null;
-        }
+        List<String> tokeni = Kolacici.procitajSve(req, Kolacici.NASTAVNIK);
         LocalDateTime pre = LocalDateTime.now(clock);
-        Optional<NastavnickaSesija> sesija = nastavnici.potvrdi(token.get());
-        if (sesija.isEmpty()) {
+        for (String token : tokeni) {
+            Optional<NastavnickaSesija> sesija = nastavnici.potvrdi(token);
+            if (sesija.isPresent()) {
+                NastavnickaSesija s = sesija.get();
+                // potvrdi je upravo pomerio poslednji ulaz (produženje): i kolačić dobija pun Max-Age
+                if (!s.getPoslednjiUlaz().isBefore(pre)) {
+                    Kolacici.postavi(req, res, Kolacici.NASTAVNIK, token, NastavnikSesijaServis.TRAJANJE, "Lax");
+                }
+                return new NastavnikAutentikacija(s.getId());
+            }
+        }
+        if (!tokeni.isEmpty()) {
             log.debug("Nevažeći nastavnički kolačić, briše se, ip={}", KlijentIp.iz(req));
             Kolacici.obrisi(req, res, Kolacici.NASTAVNIK);
-            return null;
         }
-        NastavnickaSesija s = sesija.get();
-        // potvrdi je upravo pomerio poslednji ulaz (produženje): i kolačić dobija pun Max-Age
-        if (!s.getPoslednjiUlaz().isBefore(pre)) {
-            Kolacici.postavi(req, res, Kolacici.NASTAVNIK, token.get(), NastavnikSesijaServis.TRAJANJE, "Lax");
+        return null;
+    }
+
+    private Authentication student(HttpServletRequest req, HttpServletResponse res) {
+        List<String> tokeni = Kolacici.procitajSve(req, Kolacici.STUDENT);
+        LocalDateTime pre = LocalDateTime.now(clock);
+        for (String token : tokeni) {
+            Optional<StudentskiUredjaj> uredjaj = studenti.potvrdi(token);
+            if (uredjaj.isPresent()) {
+                StudentskiUredjaj u = uredjaj.get();
+                if (!u.getPoslednjiUlaz().isBefore(pre)) {
+                    Kolacici.postavi(req, res, Kolacici.STUDENT, token, StudentskaPrijava.TRAJANJE, "Lax");
+                }
+                return new StudentAutentikacija(u.getStudent().getId(), u.getId());
+            }
         }
-        return new NastavnikAutentikacija(s.getId());
+        if (!tokeni.isEmpty()) {
+            log.debug("Nevažeći studentski kolačić, briše se, ip={}", KlijentIp.iz(req));
+            Kolacici.obrisi(req, res, Kolacici.STUDENT);
+        }
+        return null;
     }
 }

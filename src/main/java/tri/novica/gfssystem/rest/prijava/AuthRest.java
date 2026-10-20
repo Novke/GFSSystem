@@ -49,10 +49,11 @@ public class AuthRest {
         return new NastavnikJaInfo("NASTAVNIK", svojstva.korisnik());
     }
 
+    /** Opoziva sesiju ovog zahteva (po id-ju: podmetnut istoimeni kolačić ne može da zameni pravi) i briše kolačić. */
     @PostMapping("odjava")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void odjava(HttpServletRequest req, HttpServletResponse res) {
-        Kolacici.procitaj(req, Kolacici.NASTAVNIK).ifPresent(servis::odjavi);
+        servis.opozovi(trenutna().sesijaId());
         Kolacici.obrisi(req, res, Kolacici.NASTAVNIK);
     }
 

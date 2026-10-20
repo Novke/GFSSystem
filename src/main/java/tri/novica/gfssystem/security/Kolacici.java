@@ -7,6 +7,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -21,6 +23,9 @@ public final class Kolacici {
     public static final String STUDENT = "gfs_student";
     public static final String LTI = "gfs_lti";
     public static final String LTI_PAR = "gfs_lti_par";
+
+    /** Najviše toliko istoimenih vrednosti čita {@link #procitajSve} (svaka košta jedan upit u bazu). */
+    public static final int MAX_ISTOIMENIH = 5;
 
     private static final Set<String> SAME_SITE = Set.of("Lax", "Strict", "None");
 
@@ -51,6 +56,28 @@ public final class Kolacici {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Sve neprazne vrednosti kolačića {@code ime}, redom kojim ih je pregledač poslao (najviše {@link #MAX_ISTOIMENIH}).
+     * Sestrinski poddomen ({@code *.trif.rs}) može da podmetne kolačić istog imena za {@code Domain=.trif.rs} (cookie
+     * tossing), a pregledač šalje oba; zato se za prijavu proba svaka vrednost, a ne samo prva.
+     */
+    public static List<String> procitajSve(HttpServletRequest req, String ime) {
+        List<String> vrednosti = new ArrayList<>();
+        Cookie[] kolacici = req.getCookies();
+        if (kolacici == null) {
+            return vrednosti;
+        }
+        for (Cookie k : kolacici) {
+            if (ime.equals(k.getName()) && k.getValue() != null && !k.getValue().isEmpty()) {
+                vrednosti.add(k.getValue());
+                if (vrednosti.size() == MAX_ISTOIMENIH) {
+                    break;
+                }
+            }
+        }
+        return vrednosti;
     }
 
     private static void dodaj(HttpServletRequest req, HttpServletResponse res, String ime, String vrednost,

@@ -35,6 +35,20 @@ public class PokusajiServis {
         repository.save(p);
     }
 
+    /**
+     * Upis u <b>pozivaočevoj</b> transakciji ({@code MANDATORY}): za brojač koji mora ići zajedno sa ostalim upisima pod
+     * zaključanim redom (npr. kodovi studenta, {@code KodServis}). {@code REQUIRES_NEW} bi tamo uzeo drugu vezu iz pula
+     * dok prva drži zaključan red, a pokušaj bi bio vidljiv pre nego što je kod upisan.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void zabeleziUTransakciji(VrstaPokusaja vrsta, String kljuc) {
+        Pokusaj p = new Pokusaj();
+        p.setVrsta(vrsta);
+        p.setKljuc(kljuc(kljuc));
+        p.setVreme(LocalDateTime.now(clock));
+        repository.save(p);
+    }
+
     @Transactional(readOnly = true)
     public long broj(VrstaPokusaja vrsta, String kljuc, Duration prozor) {
         return repository.countByVrstaAndKljucAndVremeAfter(vrsta, kljuc(kljuc), LocalDateTime.now(clock).minus(prozor));

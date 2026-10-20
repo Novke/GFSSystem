@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.security;
 
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -8,6 +9,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -26,6 +30,11 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping;
 import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 import org.springframework.web.socket.server.support.WebSocketHandlerMapping;
+import tri.novica.gfssystem.entity.Student;
+import tri.novica.gfssystem.entity.prijava.NacinPrijave;
+import tri.novica.gfssystem.repository.StudentRepository;
+import tri.novica.gfssystem.service.prijava.StudentskaPrijava;
+import tri.novica.gfssystem.service.prijava.TestStudenti;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,7 +55,6 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
 /**
@@ -90,6 +98,18 @@ class PristupMatricaTest {
 
     @Autowired MockMvc mvc;
     @Autowired ApplicationContext ctx;
+    @Autowired StudentskaPrijava studentskaPrijava;
+    @Autowired StudentRepository studentRepository;
+    @Autowired JdbcTemplate jdbc;
+
+    /** Izmišljen student za probe sa studentskim kolačićem; pravi se pri prvoj probi, briše posle testa (CASCADE uređaji). */
+    TestStudenti testStudenti;
+    Student student;
+
+    @AfterEach
+    void obrisiStudenta() {
+        if (testStudenti != null) testStudenti.obrisi();
+    }
 
     /** Jedan endpoint: metoda, uzorak, {@code Content-Type} za probni zahtev ({@code null} = bez tela) i odakle je. */
     record Endpoint(HttpMethod metod, String uzorak, MediaType tip, String izvor) {
@@ -441,24 +461,24 @@ class PristupMatricaTest {
      * svakom metodom. Prihvatljivo: nema handlera (endpoint još ne postoji), statički resursi, Springov ugrađeni OPTIONS
      * odgovor (samo {@code Allow}), ili handler čiji
      * {@code BEST_MATCHING_PATTERN} ima istu klasu (za {@code /public/ws} to je WebSocket handler).
-     * STUDENT pravila su bez studentskog kolačića (do B7) zatvorena lancem; sa njim ({@link #studentskiKolacic()}) se
-     * proveravaju isto.
+     * STUDENT pravila se probaju sa studentskim kolačićem ({@link #studentskiKolacic()}, nov uređaj po probi), da stignu
+     * do handlera i da se i njihov uzorak proveri.
      */
     @Test
     void otvorenaPravilaVodeSamoNaHandlereSvojeKlase() throws Exception {
         List<String> greske = new ArrayList<>();
-        Optional<Cookie> student = studentskiKolacic();
         Map<KlasaPristupa, List<PristupMatrica.Pravilo>> otvorena = new LinkedHashMap<>();
         otvorena.put(KlasaPristupa.ANONIMNO, PristupMatrica.anonimno());
         otvorena.put(KlasaPristupa.STUDENT, PristupMatrica.student());
         int proba = 0;
         for (Map.Entry<KlasaPristupa, List<PristupMatrica.Pravilo>> grupa : otvorena.entrySet()) {
             KlasaPristupa ocekivana = grupa.getKey();
-            Cookie kolacic = ocekivana == KlasaPristupa.STUDENT ? student.orElse(null) : null;
             for (PristupMatrica.Pravilo p : grupa.getValue()) {
                 List<HttpMethod> metode = p.metod() == null ? List.of(HttpMethod.values()) : List.of(p.metod());
                 for (HttpMethod m : metode) {
                     proba++;
+                    // nov uređaj po probi: proba odjave (/public/nalog/odjava*) opoziva kolačić
+                    Cookie kolacic = ocekivana == KlasaPristupa.STUDENT ? studentskiKolacic().orElseThrow() : null;
                     Endpoint e = new Endpoint(m, p.uzorak(), MediaType.APPLICATION_JSON, "pravilo " + ocekivana);
                     MvcResult r = posalji(e, greske, kolacic);
                     if (r == null || r.getHandler() == null) continue;
@@ -492,17 +512,16 @@ class PristupMatricaTest {
     }
 
     /**
-     * Sa studentskim kolačićem: ADMIN je 403 i ne stiže do kontrolera; STUDENT i ANONIMNO stižu. Studentski kolačić stiže u
-     * B7: tada {@link #studentskiKolacic()} pravi uređaj studenta i vraća {@code gfs_student}.
+     * Sa studentskim kolačićem: ADMIN je 403 i ne stiže do kontrolera; STUDENT i ANONIMNO stižu. Svaka proba dobija nov
+     * uređaj ({@link #studentskiKolacic()}), jer proba {@code POST /public/nalog/odjava-svuda} opoziva sve uređaje studenta.
      */
     @Test
     void saStudentskimKolacicemAdminJe403() throws Exception {
-        Optional<Cookie> student = studentskiKolacic();
-        assumeTrue(student.isPresent(), "studentski kolačić stiže u B7");
         List<String> greske = new ArrayList<>();
         for (Endpoint e : endpointi()) {
             KlasaPristupa k = e.klasa();
-            MvcResult r = posalji(e, greske, student.get());
+            // nov uređaj po probi: proba odjave (/public/nalog/odjava*) opoziva kolačić
+            MvcResult r = posalji(e, greske, studentskiKolacic().orElseThrow());
             if (r == null) continue;
             int st = r.getResponse().getStatus();
             if (k == KlasaPristupa.ADMIN && (st != 403 || r.getHandler() != null)) {
@@ -516,9 +535,17 @@ class PristupMatricaTest {
         assertTrue(greske.isEmpty(), String.join("\n", greske));
     }
 
-    /** Do B7 nema studentske sesije; B7 ovde pravi uređaj studenta i vraća {@code gfs_student=<token>}. */
+    /** Nov uređaj izmišljenog studenta (kao posle prijave kodom) i njegov kolačić {@code gfs_student}. */
     Optional<Cookie> studentskiKolacic() {
-        return Optional.empty();
+        if (student == null) {
+            testStudenti = new TestStudenti(studentRepository, jdbc);
+            student = testStudenti.napravi("matrica@example.test");
+        }
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        studentskaPrijava.prijavi(student.getId(), NacinPrijave.KOD, new MockHttpServletRequest(), res);
+        String h = res.getHeader("Set-Cookie");
+        assertNotNull(h, "prijava studenta nije postavila kolačić");
+        return Optional.of(new Cookie(Kolacici.STUDENT, h.substring(h.indexOf('=') + 1, h.indexOf(';'))));
     }
 
     /** Zahtev po endpointu: parametri putanje {@code 1}, telo {@code {}} (JSON, ili tip iz {@code consumes}), same-origin. */

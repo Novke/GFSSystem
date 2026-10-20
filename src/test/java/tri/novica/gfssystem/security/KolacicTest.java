@@ -6,6 +6,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -98,5 +99,27 @@ class KolacicTest {
         assertEquals(Optional.of("vred"), Kolacici.procitaj(req, Kolacici.NASTAVNIK));
         assertEquals(Optional.empty(), Kolacici.procitaj(req, "prazan"));
         assertEquals(Optional.empty(), Kolacici.procitaj(req, Kolacici.STUDENT));
+    }
+
+    /** Podmetnuti kolačić sa sestrinskog poddomena ({@code Domain=.trif.rs}) nosi isto ime: čitaju se sve vrednosti. */
+    @Test
+    void procitajSveVracaSveNeprazneVrednostiRedom() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        assertEquals(List.of(), Kolacici.procitajSve(req, Kolacici.STUDENT));
+        req.setCookies(new Cookie(Kolacici.STUDENT, "podmetnut"), new Cookie("drugi", "1"),
+                new Cookie(Kolacici.STUDENT, ""), new Cookie(Kolacici.STUDENT, "pravi"));
+        assertEquals(List.of("podmetnut", "pravi"), Kolacici.procitajSve(req, Kolacici.STUDENT));
+        assertEquals(List.of(), Kolacici.procitajSve(req, Kolacici.NASTAVNIK));
+    }
+
+    @Test
+    void procitajSveImaGornjuGranicu() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        Cookie[] mnogo = new Cookie[50];
+        for (int i = 0; i < mnogo.length; i++) mnogo[i] = new Cookie(Kolacici.NASTAVNIK, "v" + i);
+        req.setCookies(mnogo);
+        List<String> v = Kolacici.procitajSve(req, Kolacici.NASTAVNIK);
+        assertEquals(Kolacici.MAX_ISTOIMENIH, v.size());
+        assertEquals("v0", v.getFirst());
     }
 }
