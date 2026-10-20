@@ -70,6 +70,11 @@ PUT /izvodjenja/{id}/runde/{rundaId}/sakrij ADMIN
 GET /izvodjenja/{id}/stanje ADMIN
 DELETE /izvodjenja/{id}/ucesnici/{ucesnikId} ADMIN
 PUT /izvodjenja/{id}/ucesnici/{ucesnikId} ADMIN
+GET /lti/registracije ADMIN
+POST /lti/registracije ADMIN
+GET /lti/registracije/vrednosti ADMIN
+DELETE /lti/registracije/{id} ADMIN
+PUT /lti/registracije/{id} ADMIN
 POST /mediji ADMIN
 GET /ocenjivanje/predmet/{predmetId}/koeficijenti ADMIN
 POST /ocenjivanje/predmet/{predmetId}/koeficijenti ADMIN
@@ -115,6 +120,7 @@ GET /prezentacije/{id}/predavanja ADMIN
 PUT /prezentacije/{id}/redosled ADMIN
 POST /prezentacije/{id}/slajdovi ADMIN
 POST /prezentacije/{id}/slajdovi/uvoz ADMIN
+GET /public/lti/jwks ANONIMNO
 GET /public/mediji/{id} ANONIMNO
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
