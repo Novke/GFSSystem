@@ -18,6 +18,7 @@ import java.util.List;
  * {@code brojStavki}: broj koraka trenutnog slajda (stavke INFO liste ili KLIK animacije PLATNO slajda); ime ostaje zbog starog fronta.
  * {@code pocetakMs}: početak izvođenja u epoch ms (zona {@code Clock}-a, kao {@code rokMs}); štoperica u konzoli i
  * daljinskom meri od njega po serverskom satu (spec graditelja 9), nezavisno od vremenske zone pregledača.
+ * {@code zadatak}: Zadatak slajd ({@link NastavnickiZadatak}), {@code null} van njega.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
@@ -25,5 +26,20 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
                                 TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
                                 Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
-                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema, long pocetakMs) {
+                                List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema, long pocetakMs,
+                                NastavnickiZadatak zadatak) {
+
+    public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
+                             int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
+                             SlajdDetails sledeciSlajd, Faza faza, RundaInfo runda, boolean rezultatiPrikazani,
+                             boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
+                             TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
+                             Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
+                             List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema,
+                             long pocetakMs) {
+        this(izvodjenje, verzija, serverVremeMs, prikaz, korak, brojStavki, indeks, brojSlajdova, trenutniSlajd, sledeciSlajd,
+                faza, runda, rezultatiPrikazani, tacanPrikazan, rangListaPrikazana, ekran, qrPrikazan, telefonPrikaz,
+                detaljiDozvoljeni, takmicenje, rezultat, brojOdgovora, brojPovezanih, ucesnici, rangLista, javniRezultat,
+                javnaRangLista, tema, pocetakMs, null);
+    }
 }

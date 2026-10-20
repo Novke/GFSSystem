@@ -41,6 +41,7 @@ class NastavnickoStanjeTest {
     static final Long IZ = 5L;
 
     @Mock ZadaciSlajdova zadaci;
+    @Mock ZadatakDodelaRepository dodelaRepository;
     @Mock IzvodjenjeRepository izvodjenjeRepository;
     @Mock SlajdRepository slajdRepository;
     @Mock PitanjeRundaRepository rundaRepository;
@@ -119,7 +120,7 @@ class NastavnickoStanjeTest {
         when(odgovorRepository.findAllByRundaIzvodjenjeId(IZ)).thenReturn(odgovori);
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {

@@ -43,8 +43,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * upis polja, odbijanja (bez dodele, već odgovorio, zatvoreno, rad na papiru) i opstanak SVG-ova snimka posle izmene i
  * prisilnog rendera varijante. Fixture: koren K (list, šema {@code a} BROJ) sa A (a=45) i B (a=13), obe AKTIVNE i
  * odobrene, sa SVG-om zadatka i rešenja kroz {@link MedijService} (fajl postoji); koren P bez polja (papir). Prezentacija:
- * ZADATAK nad K (sve varijante), ZADATAK nad P, PITANJE JEDAN_TACAN; nebodovan run sa dva učesnika, runda nad K otvorena:
- * svaki učesnik ima drugu varijantu. Bez {@code @Transactional}; test čisti za sobom.
+ * ZADATAK nad K (sve varijante), ZADATAK nad P, PITANJE JEDAN_TACAN; nebodovan run sa čuvanjem i dva učesnika, runda nad K otvorena:
+ * svaki učesnik ima drugu varijantu. Ovde je i pregled izvođenja posle završetka (BE-7, {@link StanjeService#rezultati}).
+ * Bez {@code @Transactional}; test čisti za sobom.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,13 +67,14 @@ class ZadatakOdgovorDbTest {
     @Autowired JsonMapper jsonMapper;
     @Autowired JdbcTemplate jdbc;
     @Autowired MockMvc mvc;
+    @Autowired StanjeService stanjeService;
     @MockitoBean LatexRender latexRender;
 
     final String oznaka = UUID.randomUUID().toString().substring(0, 8);
     final List<String> mediji = new ArrayList<>();
     Predmet predmet;
     long k, p, varA, varB;
-    Long prezentacijaId, izvodjenjeId, rundaK;
+    Long prezentacijaId, izvodjenjeId, rundaK, slajdK;
     String kod;
     Long naA, naB;
 
@@ -92,14 +94,14 @@ class ZadatakOdgovorDbTest {
 
         prezentacijaId = prezentacijaService.kreiraj(
                 new CreatePrezentacijaCmd(predmet.getId(), "Odgovori " + oznaka, null, null)).id();
-        prezentacijaService.dodajSlajd(prezentacijaId, zadatak(k), null);
+        slajdK = prezentacijaService.dodajSlajd(prezentacijaId, zadatak(k), null).id();
         prezentacijaService.dodajSlajd(prezentacijaId, zadatak(p), null);
         prezentacijaService.dodajSlajd(prezentacijaId, new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
                 new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koliko cifara ima 8 binarno?", null, null,
                         List.of(new OpcijaCmd("4", true), new OpcijaCmd("3", false)),
                         null, null, null, null, null, null, null, null), null, null), null);
 
-        IzvodjenjeInfo info = izvodjenjeService.pokreni(prezentacijaId, new PokreniCmd(false, null, null));
+        IzvodjenjeInfo info = izvodjenjeService.pokreni(prezentacijaId, new PokreniCmd(true, null, null));
         izvodjenjeId = info.id();
         kod = info.kod();
         Long u1 = ucesnikService.prijavi(kod, "Prvi").info().ucesnikId();
@@ -298,5 +300,39 @@ class ZadatakOdgovorDbTest {
         odgovorService.odgovori(izvodjenjeId, naA, new OdgovorCmd(r, List.of(tacna), null, null, null, Map.of("x", "1")));
         assertEquals(Boolean.TRUE, jdbc.queryForObject("select tacno from odgovori where runda_id = ? and ucesnik_id = ?",
                 Boolean.class, r, naA));
+    }
+
+    @Test
+    void pregledPosleZavrsetka() {
+        odgovori(naA, Map.of("a", "45"));
+        odgovori(naB, Map.of("a", "45"));
+        k(TipKomande.OTVORI_ZATVORI, null);
+        k(TipKomande.ZAVRSI, null);
+
+        List<RezultatPitanja> pitanja = stanjeService.rezultati(izvodjenjeId).pitanja();
+        assertEquals(1, pitanja.size());
+        RezultatPitanja rp = pitanja.getFirst();
+        assertNull(rp.pitanje());
+        assertNull(rp.rezultat());
+        assertEquals(50, rp.procenatTacnih());
+        PregledZadatka z = rp.zadatak();
+        assertEquals(slajdK, z.slajdId());
+        assertEquals("K", z.grupaNaziv());
+        assertEquals(2, z.ucesnici().size());
+        UcesnikZadatka ua = z.ucesnici().stream().filter(u -> u.ucesnikId().equals(naA)).findFirst().orElseThrow();
+        assertEquals(varA, ua.varijantaId());
+        assertEquals("A", ua.varijantaNaziv());
+        assertEquals(Boolean.TRUE, ua.tacno());
+        assertEquals(Map.of("a", true), ua.polja());
+        UcesnikZadatka ub = z.ucesnici().stream().filter(u -> u.ucesnikId().equals(naB)).findFirst().orElseThrow();
+        assertEquals(Boolean.FALSE, ub.tacno());
+        assertEquals(2, z.rezultat().varijante().size());
+        z.rezultat().varijante().forEach(v -> assertNotNull(v.resenjeSvgId()));
+        assertEquals(2, z.rezultat().ukupno());
+
+        prezentacijaService.obrisiSlajd(slajdK);
+        RezultatPitanja posle = stanjeService.rezultati(izvodjenjeId).pitanja().getFirst();
+        assertNull(posle.slajdId());
+        assertEquals(slajdK, posle.zadatak().slajdId(), "slajdId iz snimka ostaje");
     }
 }

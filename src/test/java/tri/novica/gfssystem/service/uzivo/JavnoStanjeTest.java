@@ -50,6 +50,7 @@ class JavnoStanjeTest {
     static final String JEDINICA = "m/s²";
 
     @Mock ZadaciSlajdova zadaci;
+    @Mock ZadatakDodelaRepository dodelaRepository;
     @Mock IzvodjenjeRepository izvodjenjeRepository;
     @Mock SlajdRepository slajdRepository;
     @Mock PitanjeRundaRepository rundaRepository;
@@ -115,7 +116,7 @@ class JavnoStanjeTest {
                 .filter(u -> u.getId().equals(i.getArgument(0))).findFirst());
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {
