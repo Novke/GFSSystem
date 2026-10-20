@@ -28,13 +28,13 @@ import static org.mockito.Mockito.verify;
 /**
  * Alati prezentacija kroz pravi {@code /mcp} (spec MCP 4.4): {@code prezentacije}, {@code prezentacija} (sažet pregled),
  * {@code slajd} (pun, PLATNO bez poteza i sa brojem tačaka po crtežu), {@code napravi_prezentaciju} (serija, link, jedno
- * pravljenje) i {@code dodaj_slajd} (samo INFO i PITANJE, serija na slajdu, strogo čitanje {@code slajd}, Markdown slike
+ * pravljenje) i {@code dodaj_slajd} (samo INFO, PITANJE i ZADATAK, serija na slajdu, strogo čitanje {@code slajd}, Markdown slike
  * samo iz GFS-a, prezentacija koja se upravo izvodi se ne menja). Ništa od odbijenog nije upisano.
  */
 class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
 
     static final byte[] PNG = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3};
-    static final String SAMO_INFO_I_PITANJE = "Klod u ovoj verziji dodaje samo INFO i PITANJE slajdove.";
+    static final String SAMO_INFO_I_PITANJE = "Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.";
     static final String IZVODI_SE = "Prezentacija se upravo izvodi; izmene posle časa.";
     static final AtomicInteger KOD = new AtomicInteger((int) (Math.random() * 400_000) + 100_000);
 
@@ -317,5 +317,73 @@ class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
         assertEquals(3, stavke.path(0).path("brojSlajdova").asInt());
         assertEquals(1, stavke.path(0).path("brojPitanja").asInt());
         ocekujGresku("prezentacije", Map.of(), "Predmet je obavezan.");
+    }
+
+    // ---------------------------------------------------------------- ZADATAK
+
+    long grupa(Long roditelj, String naziv, String namena) {
+        jdbc.update("""
+                insert into grupe_zadataka (predmet_id, roditelj_id, namena, naziv, rb, tezina, polja, izvor, kreirano, izmenjeno)
+                values (?, ?, ?, ?, 1, ?, '[]', 'RUCNO', now(6), now(6))""",
+                predmet.getId(), roditelj, namena, naziv, roditelj == null ? null : 3);
+        return jdbc.queryForObject("select max(id) from grupe_zadataka where predmet_id = ?", Long.class, predmet.getId());
+    }
+
+    void aktivna(long grupa, String naziv) {
+        String svg = medijService.sacuvajRender("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes(), "r.svg").id();
+        jdbc.update("""
+                insert into varijante (grupa_id, rb, naziv, tekst, odgovori, status, izvor, ikad_odobrena, render_status,
+                  render_svg_id, kreirano, izmenjeno)
+                values (?, 1, ?, 'Zadatak', '{}', 'AKTIVNA', 'RUCNO', 1, 'OK', ?, now(6), now(6))""", grupa, naziv, svg);
+    }
+
+    static Map<String, Object> zadatak(Object... kv) {
+        return mapa("tip", "ZADATAK", "zadatak", mapa(kv));
+    }
+
+    @Test
+    void dodajSlajdZadatakSaPutanjomIBrojemAktivnih() {
+        long koren = grupa(null, "Konverzije", "PREDAVANJE");
+        long list = grupa(koren, "2 → 10", "PREDAVANJE");
+        for (int i = 1; i <= 3; i++) aktivna(list, "V" + i);
+
+        JsonNode s = uspeh("dodaj_slajd", dodaj(prezentacija, zadatak("grupaId", list, "brojVarijanti", 4))).path("slajd");
+        assertEquals("ZADATAK", s.path("tip").asString());
+        assertEquals(0, s.path("brojKoraka").asInt());
+        JsonNode z = s.path("zadatak");
+        assertEquals(List.of("Konverzije", "2 → 10"), List.of(z.path("putanja").path(0).path("naziv").asString(),
+                z.path("putanja").path(1).path("naziv").asString()));
+        assertEquals(3, z.path("brojAktivnih").asInt());
+        assertEquals(4, z.path("brojVarijanti").asInt());
+        assertFalse(z.has("grupaNaziv"), z.toString());
+        assertEquals(serija, jdbc.queryForObject("select serija from slajdovi where id = ?", String.class, s.path("id").asLong()));
+
+        // pregled nosi isti sažetak, ceo slajd i grupaNaziv; bez SVG-ova
+        JsonNode r = mcp.pozovi("prezentacija", mapa("prezentacijaId", prezentacija));
+        assertFalse(McpTestKlijent.tekst(r).toLowerCase().contains("svg"), McpTestKlijent.tekst(r));
+        JsonNode u = McpTestKlijent.json(r).path("slajdovi").path(0).path("zadatak");
+        assertEquals("2 → 10", u.path("putanja").path(1).path("naziv").asString());
+        assertFalse(u.has("grupaNaziv"));
+        JsonNode ceo = uspeh("slajd", mapa("slajdId", s.path("id").asLong()));
+        assertEquals("2 → 10", ceo.path("slajd").path("zadatak").path("grupaNaziv").asString());
+    }
+
+    @Test
+    void zadatakStrogoNamenaIIskljucenje() {
+        long koren = grupa(null, "Konverzije", "PREDAVANJE");
+        long test = grupa(null, "Kolokvijum", "TEST");
+        ocekujGresku("dodaj_slajd", dodaj(prezentacija, zadatak("grupaId", koren, "x", 1)), "Nepoznato polje 'slajd.zadatak.x'.");
+        ocekujGresku("dodaj_slajd", dodaj(prezentacija, zadatak("grupaId", test)),
+                "Grupa mora biti iz banke ovog predmeta, namena Predavanja.");
+        assertEquals(0, brojSlajdova(prezentacija));
+
+        jdbc.update("insert into iskljucene_teme (predmet_id, opis, grupa_id, kreirano) values (?, 'Ne radi se', ?, now(6))",
+                predmet.getId(), koren);
+        JsonNode z = uspeh("dodaj_slajd", dodaj(prezentacija, zadatak("grupaId", koren))).path("slajd").path("zadatak");
+        assertTrue(z.path("iskljucena").asBoolean());
+        List<String> upozorenja = new ArrayList<>();
+        z.path("upozorenja").forEach(n -> upozorenja.add(n.asString()));
+        assertTrue(upozorenja.contains("Tema je isključena."), upozorenja.toString());
+        assertEquals(1, brojSlajdova(prezentacija), "upozorenje nije blokada");
     }
 }

@@ -3,6 +3,7 @@ package tri.novica.gfssystem.mcp.servis;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
@@ -397,5 +398,25 @@ class PrezentacijaPregledTest {
         assertEquals(List.of(), PlatnoPregled.slojevi(new Platno(1, new Pozadina("#FFFFFF", null), null, null)));
         List<McpSlojSazetak> s = PlatnoPregled.slojevi(platno(1));
         assertThrows(UnsupportedOperationException.class, () -> Collections.addAll(s, s.getFirst()));
+    }
+
+    @Test
+    void zadatakSlajdImaSazetakBezSvg() {
+        ZadatakSlajdaInfo z = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10",
+                List.of(new GrupaPutanja(1L, "Konverzije"), new GrupaPutanja(3L, "2 → 10")), true, 6, List.of(), false,
+                List.of(), List.of("Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa."));
+        SlajdDetails s = new SlajdDetails(9L, 1, TipSlajda.ZADATAK, null, null, null, null, false, null, null, null, z);
+        McpSlajdSazetak m = PrezentacijaPregled.sazetak(s);
+        assertEquals(0, m.brojKoraka());
+        assertEquals(3L, m.zadatak().grupaId());
+        assertEquals(6, m.zadatak().brojAktivnih());
+        assertEquals(4, m.zadatak().brojVarijanti());
+        assertEquals(120, m.zadatak().vremeSekunde());
+        assertEquals("2 → 10", m.zadatak().putanja().getLast().naziv());
+        String json = JSON.writeValueAsString(m);
+        assertFalse(json.toLowerCase().contains("svg"), json);
+        assertFalse(json.contains("grupaNaziv"), json);
+        assertTrue(json.contains("odobri nacrte"), json);
+        assertNull(PrezentacijaPregled.sazetak(platnoSlajd(1L, 1, platno(1))).zadatak());
     }
 }

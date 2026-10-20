@@ -59,13 +59,13 @@ final class PrezentacijaPregled {
         return switch (s.tip()) {
             case INFO -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(),
                     s.postepeno() ? Markdown.brojStavki(s.sadrzaj()) : 0, s.naslov(),
-                    PlatnoPregled.skrati(s.sadrzaj(), MAX_SADRZAJ), null, null);
+                    PlatnoPregled.skrati(s.sadrzaj(), MAX_SADRZAJ), null, null, null);
             case PITANJE -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(), 0, null, null,
-                    pitanje(s.pitanje()), null);
+                    pitanje(s.pitanje()), null, null);
             case PLATNO -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(),
-                    PlatnoPregled.brojKoraka(s.platno()), null, null, null, PlatnoPregled.slojevi(s.platno()));
-            // zasad samo zajednička polja, bez sažetka zadatka (grupa, putanja, broj varijanti)
-            case ZADATAK -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(), 0, null, null, null, null);
+                    PlatnoPregled.brojKoraka(s.platno()), null, null, null, PlatnoPregled.slojevi(s.platno()), null);
+            case ZADATAK -> new McpSlajdSazetak(s.id(), s.rb(), s.tip(), beleske, s.prelaz(), 0, null, null, null, null,
+                    McpZadatakSazetak.od(s.zadatak()));
         };
     }
 
