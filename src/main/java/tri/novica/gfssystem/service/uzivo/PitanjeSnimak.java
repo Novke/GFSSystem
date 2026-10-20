@@ -6,13 +6,14 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Kopija pitanja u trenutku otvaranja runde (čuva se kao JSON u {@code PitanjeRunda.snimak}), pa ocena i rezultati
- * ostaju tačni i kad se slajd kasnije izmeni ili obriše.
+ * Kopija pitanja u trenutku otvaranja runde (čuva se kao JSON u {@code PitanjeRunda.snimak}, {@code "vrsta":"PITANJE"},
+ * vidi {@link SnimakRunde}), pa ocena i rezultati ostaju tačni i kad se slajd kasnije izmeni ili obriše.
  */
 public record PitanjeSnimak(Long pitanjeId, Long slajdId, TipPitanja tip, String tekst, String slikaId,
                             Integer vremeSekunde, List<OpcijaSnimak> opcije, Double brojTacno, Double brojOdstupanje,
                             OdstupanjeTip odstupanjeTip, String jedinica, TekstPrikaz tekstPrikaz,
-                            List<String> prihvatljiviOdgovori, String skalaMinOznaka, String skalaMaxOznaka) {
+                            List<String> prihvatljiviOdgovori, String skalaMinOznaka, String skalaMaxOznaka)
+        implements SnimakRunde {
 
     /** Snimak pitanja sa slajda; opcije po {@code rb}. */
     public static PitanjeSnimak od(Slajd slajd) {
@@ -30,6 +31,7 @@ public record PitanjeSnimak(Long pitanjeId, Long slajdId, TipPitanja tip, String
     }
 
     /** Da li odgovor može biti tačan ili netačan (anketa i skala ne mogu; broj bez tačne vrednosti je procena). */
+    @Override
     public boolean imaTacanOdgovor() {
         return switch (tip) {
             case JEDAN_TACAN, VISE_TACNIH, TACNO_NETACNO -> true;

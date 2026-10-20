@@ -27,6 +27,7 @@
 ## Isključene teme
 - Isključena tema je nešto što se više ne radi. Sa grupom isključuje tu grupu i celo njeno podstablo; bez grupe je samo opis teme koju ne treba praviti.
 - Uvek pitaj šta se isključuje, ali `iskljuci_temu` zovi samo kad Novica to izričito kaže, sa opisom rečima (npr. `Razlomljeni (decimalni) brojevi 10 → 2 i 2 → 10`). Isključenje uklanja `ukljuci_temu`, uz Novicinu potvrdu.
+- Isključena tema nad Zadatak slajdom je upozorenje, ne blokada: slajd ostaje (`Tema je isključena.` u `zadatak.upozorenja`), a isključene podgrupe se samo ne izvlače. Pitaj Novicu šta da radi sa takvim slajdom (da ga zadrži, da izabere drugu grupu ili da ga obriše u editoru); sam ga ne briši.
 
 ## Šta menjaš, a šta dopunjuješ
 - Varijantu menjaš ili brišeš na mestu samo kad je to tvoj neodobren nacrt (`NACRT`, izvor `CLAUDE`, `ikadOdobrena: false`). `izmeni_varijantu` nad bilo kojom drugom (Novicinom, aktivnom, arhiviranom, ikad odobrenom) pravi **kopiju**-nacrt (`radnja: "kopija"`, `zamenjuje` = id originala); original ostaje netaknut i aktivan dok Novica ne odobri kopiju. Svaki takav poziv pravi novu kopiju, zato ga ne ponavljaj.
@@ -36,7 +37,7 @@
 - Odgovor `Varijanta ili preambula je u međuvremenu izmenjena; pokušaj ponovo.` znači da ništa nije upisano: pročitaj `varijanta`, pa tek onda ponovi izmenu.
 
 ## Prezentacije
-- `napravi_prezentaciju` pravi novu prezentaciju, `dodaj_slajd` dodaje INFO i PITANJE slajdove (`vodic pitanja`). Postojeće slajdove ne menjaš i ne brišeš; svoju grešku ispraviš sa `ponisti_seriju` pa ponovo, ili je Novica ispravi u editoru.
+- `napravi_prezentaciju` pravi novu prezentaciju, `dodaj_slajd` dodaje INFO, PITANJE i ZADATAK slajdove (`vodic pitanja`). Postojeće slajdove ne menjaš i ne brišeš; svoju grešku ispraviš sa `ponisti_seriju` pa ponovo, ili je Novica ispravi u editoru.
 - Prezentacija koja se upravo izvodi se ne menja: 409 `Prezentacija se upravo izvodi; izmene posle časa.`
 - Za "Vežbe N – zadaci": pročitaj izvornu prezentaciju (`prezentacija`, `slajd`), izvuci teme, pokaži listu tema i isključenih i pitaj šta se izbacuje; za svaku temu nađi ili napravi grupu namene `PREDAVANJE` sa dovoljno varijanti, a na kraju navedi grupe koje Novica mora da odobri pre časa.
 

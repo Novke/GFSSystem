@@ -17,6 +17,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.uzivo.*;
+import tri.novica.gfssystem.security.IdentitetStudenta;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -55,6 +56,12 @@ public class IzvodjenjeService {
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
     static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
+    static final String BODOVANJE_BEZ_PREDAVANJA = "Bodovanje traži predavanje.";
+    static final String PRIJAVA_NEDOSTUPNA = "Prijava studenata još nije dostupna.";
+    static final String NEMA_ZADATKA = "Na ovom slajdu nema zadatka.";
+    static final String BROJ_PRE_OTVARANJA = "Broj različitih zadataka se menja pre otvaranja.";
+    static final String BROJ_VARIJANTI_GRANICE = "Broj različitih zadataka mora biti od 1 do 50.";
+    static final String NEMA_RESENJA = "Nijedna varijanta nema rešenje.";
     /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V7). */
     static final String UK_AKTIVAN_KOD = "uk_izvodjenja_aktivan_kod";
 
@@ -64,6 +71,8 @@ public class IzvodjenjeService {
     static final long NAJMANJE_PREOSTALO_MS = 5_000;
     static final int PODRAZUMEVANI_TAJMER_S = 30;
     static final Duration NAJDUZE_TRAJANJE = Duration.ofHours(12);
+    /** Najveći broj različitih zadataka iz konzole ({@code BROJ_VARIJANTI}), isto kao na slajdu. */
+    static final int NAJVISE_VARIJANTI = 50;
 
     private final IzvodjenjeRepository izvodjenjeRepository;
     private final PrezentacijaRepository prezentacijaRepository;
@@ -76,7 +85,9 @@ public class IzvodjenjeService {
     private final KodGenerator kodGenerator;
     private final RokPlaner rokPlaner;
     private final StanjeService stanjeService;
+    private final ZadatakDodelaService zadatakDodelaService;
     private final ImenaUcesnika imenaUcesnika;
+    private final IdentitetStudenta identitet;
     private final ApplicationEventPublisher publisher;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -86,9 +97,19 @@ public class IzvodjenjeService {
     /**
      * Novo izvođenje u fazi prijave; 409 dok prezentacija već ima aktivno izvođenje. Prvo zaključa prezentaciju (isti
      * red kao izmene slajdova; brisanje prezentacije i drugo pokretanje ne mogu proći između provere i ovog upisa).
+     * Bodovan run ({@code boduje}) traži predavanje (400) i prijavu studenata u ovom buildu (409), obe provere pre
+     * zaključavanja, i uvek čuva (prisustvo se upisuje i kad prezentacija nema rundi).
      */
     public IzvodjenjeInfo pokreni(Long prezentacijaId, PokreniCmd cmd) {
         PokreniCmd c = cmd == null ? new PokreniCmd(false, null, null) : cmd;
+        if (c.boduje()) {
+            if (c.predavanjeId() == null) {
+                throw new SystemException(BODOVANJE_BEZ_PREDAVANJA, HttpStatus.BAD_REQUEST);
+            }
+            if (!identitet.dostupno()) {
+                throw new SystemException(PRIJAVA_NEDOSTUPNA, HttpStatus.CONFLICT);
+            }
+        }
         Prezentacija p = prezentacijaRepository.findByIdForUpdate(prezentacijaId)
                 .orElseThrow(() -> new SystemException(PrezentacijaService.NIJE_PRONADJENA, HttpStatus.NOT_FOUND));
         // jedno aktivno izvođenje po prezentaciji; pod zaključanom prezentacijom, pa dva pokretanja idu redom
@@ -112,8 +133,11 @@ public class IzvodjenjeService {
             grupa = grupaRepository.findById(c.grupaId())
                     .orElseThrow(() -> new SystemException("Grupa nije pronađena.", HttpStatus.NOT_FOUND));
         }
-        if (slajdRepository.countByPrezentacijaIdAndTip(p.getId(), TipSlajda.PITANJE) == 0) {
-            cuvanje = false;   // bez pitanja nema šta da se čuva
+        if (c.boduje()) {
+            cuvanje = true;   // prisustvo se čuva i bez rundi
+        } else if (slajdRepository.countByPrezentacijaIdAndTipIn(p.getId(),
+                EnumSet.of(TipSlajda.PITANJE, TipSlajda.ZADATAK)) == 0) {
+            cuvanje = false;   // bez pitanja i zadataka nema šta da se čuva
         }
 
         String kod = kodGenerator.novi();
@@ -124,6 +148,7 @@ public class IzvodjenjeService {
         iz.setGrupa(grupa);
         iz.setPredavanje(predavanje);
         iz.setCuvanje(cuvanje);
+        iz.setBoduje(c.boduje());
         iz.setStatus(StatusIzvodjenja.AKTIVNO);
         iz.setPocetak(sada());
         iz.setPrikaz(Prikaz.PRIJAVA);
@@ -144,7 +169,8 @@ public class IzvodjenjeService {
             log.error("Upis izvođenja nije uspeo: prezentacija={}", p.getId(), e);
             throw e;
         }
-        log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}", iz.getId(), p.getId(), cuvanje);
+        log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}, boduje={}", iz.getId(), p.getId(), cuvanje,
+                c.boduje());
         return IzvodjenjeMapper.info(iz, 0, 0);
     }
 
@@ -217,10 +243,15 @@ public class IzvodjenjeService {
             case EKRAN_BEO -> iz.setEkran(iz.getEkran() == Ekran.BEO ? Ekran.NORMALAN : Ekran.BEO);
             case QR -> iz.setQrPrikazan(!iz.isQrPrikazan());
             case ZAVRSI -> zavrsi(iz);
+            case RESENJE -> resenjePrikaz(iz, sl);
+            case BROJ_VARIJANTI -> brojVarijantiKomanda(iz, sl, cmd.vrednost());
         }
     }
 
-    /** → : sledeći korak (stavka INFO-a, KLIK platna), pa otvori/zatvori pitanje, pa sledeći slajd; na kraju ništa. */
+    /**
+     * → : sledeći korak (stavka INFO-a, KLIK platna), pa otvori/zatvori pitanje ili zadatak, pa sledeći slajd; na kraju
+     * ništa.
+     */
     private void sledeci(Izvodjenje iz, List<Slajd> sl) {
         int n = sl.size();
         int i = TokIzvodjenja.indeks(iz, sl);
@@ -233,7 +264,7 @@ public class IzvodjenjeService {
             return;
         }
         Slajd s = sl.get(i);
-        if (s.getTip() != TipSlajda.PITANJE) {
+        if (!TokIzvodjenja.saRundama(s)) {
             if (iz.getKorak() < TokIzvodjenja.brojKoraka(s)) {
                 iz.setKorak(iz.getKorak() + 1);
             } else {
@@ -258,9 +289,9 @@ public class IzvodjenjeService {
             return;
         }
         Slajd s = sl.get(i);
-        if (s.getTip() == TipSlajda.PITANJE && iz.getFaza() == Faza.OTVORENO) {
+        if (TokIzvodjenja.saRundama(s) && iz.getFaza() == Faza.OTVORENO) {
             zatvori(iz);
-        } else if (s.getTip() != TipSlajda.PITANJE && iz.getKorak() > 0) {
+        } else if (!TokIzvodjenja.saRundama(s) && iz.getKorak() > 0) {
             iz.setKorak(iz.getKorak() - 1);
         } else {
             idiNa(iz, sl, i - 1, false);
@@ -280,9 +311,10 @@ public class IzvodjenjeService {
     }
 
     /**
-     * Prelazak na slajd {@code j} (-1 prijava, n kraj). Otvoreno pitanje se zatvara; rezultati, tačan odgovor i
-     * rang-lista se gase (ekran i QR ostaju). INFO sa postepenim i PLATNO počinju od koraka 0 ({@code napred}) ili sa svim
-     * otkrivenim (unazad: sa svim koracima); pitanje sa rundom prikazuje poslednju rundu kao zatvorenu, inače čeka.
+     * Prelazak na slajd {@code j} (-1 prijava, n kraj). Otvoreno pitanje se zatvara; rezultati, tačan odgovor, rešenje i
+     * rang-lista se gase, a izmena broja varijanti iz konzole se briše (ekran i QR ostaju). INFO sa postepenim i PLATNO
+     * počinju od koraka 0 ({@code napred}) ili sa svim otkrivenim (unazad: sa svim koracima); slajd sa rundama (pitanje,
+     * zadatak) prikazuje poslednju rundu kao zatvorenu, inače čeka.
      */
     private void idiNa(Izvodjenje iz, List<Slajd> sl, int j, boolean napred) {
         if (iz.getFaza() == Faza.OTVORENO) {
@@ -290,6 +322,8 @@ public class IzvodjenjeService {
         }
         iz.setRezultatiPrikazani(false);
         iz.setTacanPrikazan(false);
+        iz.setResenjePrikazano(false);
+        iz.setZadatakBrojVarijanti(null);
         iz.setRangListaPrikazana(false);
         iz.setFaza(null);
         iz.setTrenutnaRundaId(null);
@@ -307,22 +341,27 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
-        if (s.getTip() != TipSlajda.PITANJE) {
+        if (!TokIzvodjenja.saRundama(s)) {
             iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
             postaviFazuPitanja(iz, s);
         }
     }
 
+    /**
+     * Faza slajda sa rundama: poslednja runda slajda kao zatvorena, ali samo ako je iste vrste kao slajd
+     * ({@link TokIzvodjenja#odgovaraSlajdu}: slajd je možda u međuvremenu promenio tip), inače čeka.
+     */
     private void postaviFazuPitanja(Izvodjenje iz, Slajd s) {
-        Optional<PitanjeRunda> poslednja =
-                rundaRepository.findFirstByIzvodjenjeIdAndSlajdIdOrderByRedniBrojDesc(iz.getId(), s.getId());
+        Optional<PitanjeRunda> poslednja = rundaRepository
+                .findFirstByIzvodjenjeIdAndSlajdIdOrderByRedniBrojDesc(iz.getId(), s.getId())
+                .filter(r -> TokIzvodjenja.odgovaraSlajdu(snimak(r), s));
         iz.setFaza(poslednja.isPresent() ? Faza.ZATVORENO : Faza.CEKA);
         iz.setTrenutnaRundaId(poslednja.map(PitanjeRunda::getId).orElse(null));
     }
 
     private void otvoriZatvori(Izvodjenje iz, List<Slajd> sl) {
-        Slajd s = pitanjeIliGreska(iz, sl);
+        Slajd s = rundaIliGreska(iz, sl);
         switch (faza(iz)) {
             case CEKA -> otvori(iz, s);
             case OTVORENO -> zatvori(iz);
@@ -333,7 +372,7 @@ public class IzvodjenjeService {
                     return;
                 }
                 // ponovo otvara istu rundu, bez tajmera i bez trajanja (poeni više ne zavise od brzine, ni kad se
-                // posle pokrene T); tačan odgovor se ne sme videti dok se odgovara
+                // posle pokrene T); tačan odgovor i rešenje se ne smeju videti dok se odgovara
                 r.setZatvoreno(null);
                 r.setRok(null);
                 r.setPreostaloMs(null);
@@ -341,21 +380,34 @@ public class IzvodjenjeService {
                 iz.setFaza(Faza.OTVORENO);
                 iz.setRezultatiPrikazani(false);
                 iz.setTacanPrikazan(false);
+                iz.setResenjePrikazano(false);
+                // ko je ušao dok je runda bila zatvorena, dobija zadatak sada
+                if (snimak(r) instanceof ZadatakSnimak zs) {
+                    zadatakDodelaService.dodeliNedostajucima(iz, r, zs);
+                }
             }
         }
     }
 
-    /** Nova runda sa snimkom pitanja; tajmer kreće ako pitanje ima ograničenje. */
+    /**
+     * Nova runda sa snimkom slajda; tajmer kreće ako pitanje ili zadatak ima ograničenje. ZADATAK: prvo izvlačenje
+     * ({@link ZadatakDodelaService#snimak}, 409 bez upotrebljive grupe ili kandidata, pa ništa nije upisano), pa posle
+     * upisa runde dodela svim neizbačenim učesnicima.
+     */
     private void otvori(Izvodjenje iz, Slajd s) {
+        boolean zadatak = s.getTip() == TipSlajda.ZADATAK;
+        SnimakRunde snimak = zadatak
+                ? zadatakDodelaService.snimak(s, TokIzvodjenja.brojVarijanti(iz, s))
+                : PitanjeSnimak.od(s);
+        Integer sekunde = zadatak ? s.getZadatakVremeSekunde() : s.getPitanje().getVremeSekunde();
         LocalDateTime sada = sada();
         PitanjeRunda r = new PitanjeRunda();
         r.setIzvodjenje(iz);
         r.setSlajdId(s.getId());
         r.setRedniBroj(rundaRepository.findFirstByIzvodjenjeIdAndSlajdIdOrderByRedniBrojDesc(iz.getId(), s.getId())
                 .map(p -> p.getRedniBroj() + 1).orElse(1));
-        r.setSnimak(jsonMapper.writeValueAsString(PitanjeSnimak.od(s)));
+        r.setSnimak(jsonMapper.writeValueAsString(snimak));
         r.setOtvoreno(sada);
-        Integer sekunde = s.getPitanje().getVremeSekunde();
         if (sekunde != null) {
             r.setRok(sada.plusSeconds(sekunde));
             r.setTrajanjeMs(sekunde * 1000L);
@@ -365,6 +417,10 @@ public class IzvodjenjeService {
         iz.setFaza(Faza.OTVORENO);
         iz.setRezultatiPrikazani(false);
         iz.setTacanPrikazan(false);
+        iz.setResenjePrikazano(false);
+        if (snimak instanceof ZadatakSnimak zs) {
+            zadatakDodelaService.dodeliNedostajucima(iz, r, zs);
+        }
         if (r.getRok() != null) {
             rokPlaner.zakazi(iz.getId(), r.getId(), r.getRok());
         }
@@ -384,7 +440,7 @@ public class IzvodjenjeService {
     private void rezultatiPrikaz(Izvodjenje iz, List<Slajd> sl) {
         if (!iz.isRezultatiPrikazani()) {
             Slajd s = TokIzvodjenja.trenutni(iz, sl);
-            boolean imaRundu = s != null && s.getTip() == TipSlajda.PITANJE && iz.getTrenutnaRundaId() != null
+            boolean imaRundu = TokIzvodjenja.saRundama(s) && iz.getTrenutnaRundaId() != null
                     && (iz.getFaza() == Faza.OTVORENO || iz.getFaza() == Faza.ZATVORENO);
             if (!imaRundu) {
                 throw new SystemException(NEMA_REZULTATA, HttpStatus.CONFLICT);
@@ -398,8 +454,15 @@ public class IzvodjenjeService {
             iz.setTacanPrikazan(false);
             return;
         }
-        Slajd s = pitanjeIliGreska(iz, sl);
-        PitanjeSnimak snimak = trenutnaRunda(iz).map(this::snimak).orElseGet(() -> PitanjeSnimak.od(s));
+        Slajd s = rundaIliGreska(iz, sl);
+        SnimakRunde snimak = trenutnaRunda(iz).map(this::snimak).orElse(null);
+        if (snimak == null) {
+            // zadatak bez runde još nema ni izvučene varijante, pa ni tačan odgovor
+            if (s.getTip() == TipSlajda.ZADATAK) {
+                throw new SystemException(NIJE_POSTAVLJENO, HttpStatus.CONFLICT);
+            }
+            snimak = PitanjeSnimak.od(s);
+        }
         if (!snimak.imaTacanOdgovor()) {
             throw new SystemException(NEMA_TACNOG, HttpStatus.CONFLICT);
         }
@@ -410,9 +473,54 @@ public class IzvodjenjeService {
         }
     }
 
-    /** Nova runda istog pitanja (stari odgovori ostaju u prethodnoj); otvorena se prvo zatvori. */
+    /**
+     * Rešenje ZADATAK runde na projektoru (prekidač): isključenje uvek, uključenje samo na zatvorenoj rundi Zadatak slajda
+     * u kojoj bar jedna izvučena varijanta ima rešenje. U CEKA/OTVORENO kao TACAN.
+     */
+    private void resenjePrikaz(Izvodjenje iz, List<Slajd> sl) {
+        if (iz.isResenjePrikazano()) {
+            iz.setResenjePrikazano(false);
+            return;
+        }
+        Slajd s = TokIzvodjenja.trenutni(iz, sl);
+        if (s == null || s.getTip() != TipSlajda.ZADATAK) {
+            throw new SystemException(NEMA_ZADATKA, HttpStatus.CONFLICT);
+        }
+        switch (faza(iz)) {
+            case CEKA -> throw new SystemException(NIJE_POSTAVLJENO, HttpStatus.CONFLICT);
+            case OTVORENO -> throw new SystemException(PRVO_ZATVORI, HttpStatus.CONFLICT);
+            case ZATVORENO -> {
+                SnimakRunde snimak = trenutnaRunda(iz).map(this::snimak)
+                        .orElseThrow(() -> new SystemException(NIJE_POSTAVLJENO, HttpStatus.CONFLICT));
+                if (!(snimak instanceof ZadatakSnimak zs) || !zs.imaResenje()) {
+                    throw new SystemException(NEMA_RESENJA, HttpStatus.CONFLICT);
+                }
+                iz.setResenjePrikazano(true);
+            }
+        }
+    }
+
+    /**
+     * Broj različitih zadataka za sledeće otvaranje ZADATAK slajda (i za PONOVI), samo pre otvaranja: {@code null} = kao
+     * na slajdu, 0 = sve aktivne, 1..50 = toliko. Briše se pri prelasku na drugi slajd ({@link #idiNa}).
+     */
+    private void brojVarijantiKomanda(Izvodjenje iz, List<Slajd> sl, Integer vrednost) {
+        if (vrednost != null && (vrednost < 0 || vrednost > NAJVISE_VARIJANTI)) {
+            throw new SystemException(BROJ_VARIJANTI_GRANICE, HttpStatus.BAD_REQUEST);
+        }
+        Slajd s = TokIzvodjenja.trenutni(iz, sl);
+        if (s == null || s.getTip() != TipSlajda.ZADATAK) {
+            throw new SystemException(NEMA_ZADATKA, HttpStatus.CONFLICT);
+        }
+        if (faza(iz) != Faza.CEKA) {
+            throw new SystemException(BROJ_PRE_OTVARANJA, HttpStatus.CONFLICT);
+        }
+        iz.setZadatakBrojVarijanti(vrednost);
+    }
+
+    /** Nova runda istog pitanja ili zadatka (stari odgovori i dodele ostaju u prethodnoj); otvorena se prvo zatvori. */
     private void ponovi(Izvodjenje iz, List<Slajd> sl) {
-        Slajd s = pitanjeIliGreska(iz, sl);
+        Slajd s = rundaIliGreska(iz, sl);
         Faza f = faza(iz);
         if (f == Faza.CEKA) {
             throw new SystemException(NIJE_POSTAVLJENO, HttpStatus.CONFLICT);
@@ -611,13 +719,24 @@ public class IzvodjenjeService {
         }
     }
 
-    /** Trenutni slajd je možda promenio tip ili broj koraka (stavki INFO-a, KLIK animacija platna); sve što nije PITANJE ponaša se kao INFO sa koracima: faza i korak se usklađuju sa slajdom. */
+    /**
+     * Trenutni slajd je možda promenio tip ili broj koraka (stavki INFO-a, KLIK animacija platna); sve što nema runde
+     * ponaša se kao INFO sa koracima: faza i korak se usklađuju sa slajdom. Slajd sa rundama čija trenutna runda nije
+     * njegove vrste (PITANJE postao ZADATAK ili obrnuto) ostaje kao da runde nema: otvorena se zatvara, pa CEKA bez
+     * trenutne runde i bez prikazanih rezultata, tačnog i rešenja; sledeće otvaranje pravi novu rundu. Tako nijedan
+     * graditelj stanja ne dobije snimak druge vrste od tipa slajda.
+     */
     private void uskladi(Izvodjenje iz, List<Slajd> sl) {
         if (iz.getPrikaz() != Prikaz.SLAJD) return;
         int i = TokIzvodjenja.pozicija(sl, iz.getTrenutniSlajdId());
         if (i < 0) return;
         Slajd s = sl.get(i);
-        if (s.getTip() != TipSlajda.PITANJE) {
+        if (s.getTip() != TipSlajda.ZADATAK) {
+            // rešenje i broj varijanti postoje samo na Zadatak slajdu
+            iz.setResenjePrikazano(false);
+            iz.setZadatakBrojVarijanti(null);
+        }
+        if (!TokIzvodjenja.saRundama(s)) {
             if (iz.getFaza() == Faza.OTVORENO) {
                 zatvori(iz);
             }
@@ -630,6 +749,15 @@ public class IzvodjenjeService {
             iz.setKorak(0);
             if (iz.getFaza() == null) {
                 postaviFazuPitanja(iz, s);
+            } else if (trenutnaRunda(iz).map(r -> !TokIzvodjenja.odgovaraSlajdu(snimak(r), s)).orElse(false)) {
+                if (iz.getFaza() == Faza.OTVORENO) {
+                    zatvori(iz);
+                }
+                iz.setFaza(Faza.CEKA);
+                iz.setTrenutnaRundaId(null);
+                iz.setRezultatiPrikazani(false);
+                iz.setTacanPrikazan(false);
+                iz.setResenjePrikazano(false);
             }
         }
     }
@@ -645,9 +773,10 @@ public class IzvodjenjeService {
         return iz.getFaza() == null ? Faza.CEKA : iz.getFaza();
     }
 
-    private Slajd pitanjeIliGreska(Izvodjenje iz, List<Slajd> sl) {
+    /** Trenutni slajd sa rundama (pitanje ili zadatak), inače 409 {@value #NEMA_PITANJA}. */
+    private Slajd rundaIliGreska(Izvodjenje iz, List<Slajd> sl) {
         Slajd s = TokIzvodjenja.trenutni(iz, sl);
-        if (s == null || s.getTip() != TipSlajda.PITANJE || s.getPitanje() == null) {
+        if (!TokIzvodjenja.saRundama(s)) {
             throw new SystemException(NEMA_PITANJA, HttpStatus.CONFLICT);
         }
         return s;
@@ -664,8 +793,8 @@ public class IzvodjenjeService {
         return trenutnaRunda(iz).orElseThrow(() -> new SystemException(TAJMER_VAN_PITANJA, HttpStatus.CONFLICT));
     }
 
-    private PitanjeSnimak snimak(PitanjeRunda r) {
-        return jsonMapper.readValue(r.getSnimak(), PitanjeSnimak.class);
+    private SnimakRunde snimak(PitanjeRunda r) {
+        return jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
     }
 
     private Ucesnik ucesnik(Izvodjenje iz, Long ucesnikId) {

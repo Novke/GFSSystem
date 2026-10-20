@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.service.uzivo;
 
 import org.junit.jupiter.api.Test;
+import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.entity.uzivo.Ucesnik;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
@@ -103,5 +104,39 @@ class ImenaUcesnikaTest {
         String ime = "a".repeat(37) + " bc";
         dodaj(1, ime, false);
         assertEquals("a".repeat(37) + " 2", imena.jedinstvenoIme(5L, ime, null));
+    }
+
+    static Student student(String ime, String prezime, String indeks) {
+        Student s = new Student();
+        s.setIme(ime);
+        s.setPrezime(prezime);
+        s.setIndeks(indeks);
+        return s;
+    }
+
+    @Test
+    void imeStudentaIzImenaIPrezimena() {
+        assertEquals("Ana Petrović", ImenaUcesnika.imeStudenta(student(" Ana ", "Petrović\u200B", "GD 1/2025")));
+        // kolone su nullable: null je prazno
+        assertEquals("Ana", ImenaUcesnika.imeStudenta(student("Ana", null, "GD 1/2025")));
+        assertEquals("Petrović", ImenaUcesnika.imeStudenta(student(null, "Petrović", "GD 1/2025")));
+    }
+
+    @Test
+    void dugoImeStudentaSeSkracujeBezGreske() {
+        // 45 znakova (dvostruko prezime): skraćuje se na 40 kodnih tačaka; nikad 400
+        assertEquals("Aleksandra-Marija Petrović-Šćepanović Vu",
+                ImenaUcesnika.imeStudenta(student("Aleksandra-Marija", "Petrović-Šćepanović Vukotić", "GD 1")));
+        // razmak na granici ne ostaje na kraju
+        assertEquals("x".repeat(39), ImenaUcesnika.imeStudenta(student("x".repeat(39), "Petrović", "GD 1")));
+    }
+
+    @Test
+    void imeStudentaBezVidljivogZnakaJeIndeksPaStudent() {
+        assertEquals("GD 1/2025", ImenaUcesnika.imeStudenta(student(null, null, " GD 1/2025 ")));
+        assertEquals("GD 1/2025", ImenaUcesnika.imeStudenta(student(" ", "\u200B\u3164", "GD 1/2025")));
+        assertEquals("Student", ImenaUcesnika.imeStudenta(student(null, null, null)));
+        assertEquals("Student", ImenaUcesnika.imeStudenta(student("", " ", "\u034F")));
+        assertEquals("x".repeat(40), ImenaUcesnika.imeStudenta(student(null, null, "x".repeat(50))));
     }
 }

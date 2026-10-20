@@ -14,6 +14,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
@@ -23,6 +24,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.uzivo.*;
+import tri.novica.gfssystem.security.IdentitetStudenta;
 
 import java.time.*;
 import java.util.*;
@@ -55,7 +57,9 @@ class IzvodjenjeServiceTest {
     @Mock KodGenerator kodGenerator;
     @Mock RokPlaner rokPlaner;
     @Mock StanjeService stanjeService;
+    @Mock ZadatakDodelaService zadatakDodelaService;
     @Mock ImenaUcesnika imenaUcesnika;
+    @Mock IdentitetStudenta identitet;
     @Mock ApplicationEventPublisher publisher;
 
     final MutableClock clock = new MutableClock(T0.atZone(ZONA).toInstant(), ZONA);
@@ -132,7 +136,7 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, imenaUcesnika, publisher, jsonMapper, clock);
+                stanjeService, zadatakDodelaService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {
@@ -202,10 +206,107 @@ class IzvodjenjeServiceTest {
 
     // ---------------------------------------------------------------- 1. pokretanje
 
+    /** Broj slajdova sa rundama (PITANJE i ZADATAK) u prezentaciji 1. */
+    void saRundama(long broj) {
+        when(slajdRepository.countByPrezentacijaIdAndTipIn(1L, EnumSet.of(TipSlajda.PITANJE, TipSlajda.ZADATAK)))
+                .thenReturn(broj);
+    }
+
+    /** Predavanje 40 iz predmeta prezentacije, u grupi 3. */
+    Predavanje predavanje40() {
+        Grupa g = new Grupa();
+        g.setId(3L);
+        g.setNaziv("GD-2025");
+        Predavanje pr = new Predavanje();
+        pr.setId(40L);
+        pr.setPredmet(predmet);
+        pr.setGrupa(g);
+        pr.setRb(4);
+        pr.setDatum(LocalDate.of(2026, 10, 7));
+        pr.setTema("Sile");
+        when(predavanjeRepository.findById(40L)).thenReturn(Optional.of(pr));
+        return pr;
+    }
+
+    @Test
+    void pokreniBodujeBezPredavanja400() {
+        when(identitet.dostupno()).thenReturn(true);
+        SystemException e = assertThrows(SystemException.class,
+                () -> service.pokreni(1L, new PokreniCmd(true, 3L, null, true)));
+        assertEquals(400, e.getCode());
+        assertEquals("Bodovanje traži predavanje.", e.getMessage());
+        // pre zaključavanja prezentacije
+        verify(prezentacijaRepository, never()).findByIdForUpdate(any());
+        verify(izvodjenjeRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void pokreniBodujeBezPrijave409() {
+        when(identitet.dostupno()).thenReturn(false);
+        predavanje40();
+        SystemException e = assertThrows(SystemException.class,
+                () -> service.pokreni(1L, new PokreniCmd(true, null, 40L, true)));
+        assertEquals(409, e.getCode());
+        assertEquals("Prijava studenata još nije dostupna.", e.getMessage());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(any());
+        verify(izvodjenjeRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void pokreniBodujeSaPrijavom() {
+        when(identitet.dostupno()).thenReturn(true);
+        when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
+        saRundama(0L);   // ni bez rundi se ne gubi čuvanje: prisustvo se upisuje
+        when(kodGenerator.novi()).thenReturn("123456");
+        when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+        predavanje40();
+
+        IzvodjenjeInfo info = service.pokreni(1L, new PokreniCmd(false, null, 40L, true));
+
+        ArgumentCaptor<Izvodjenje> c = ArgumentCaptor.forClass(Izvodjenje.class);
+        verify(izvodjenjeRepository).saveAndFlush(c.capture());
+        assertTrue(c.getValue().isBoduje());
+        assertTrue(c.getValue().isCuvanje());
+        assertTrue(info.boduje());
+        assertTrue(info.cuvanje());
+    }
+
+    @Test
+    void pokreniBezBodovanjaNeBoduje() {
+        when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
+        saRundama(2L);
+        when(kodGenerator.novi()).thenReturn("123456");
+        when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+        predavanje40();
+
+        // stari oblik komande (bez boduje) i nedostupna prijava: nebodovan run kao pre
+        IzvodjenjeInfo info = service.pokreni(1L, new PokreniCmd(false, null, 40L));
+
+        ArgumentCaptor<Izvodjenje> c = ArgumentCaptor.forClass(Izvodjenje.class);
+        verify(izvodjenjeRepository).saveAndFlush(c.capture());
+        assertFalse(c.getValue().isBoduje());
+        assertFalse(info.boduje());
+        verify(identitet, never()).dostupno();
+    }
+
+    @Test
+    void prezentacijaSamoSaZadatkomCuva() {
+        when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
+        saRundama(1L);
+        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(0L);
+        when(kodGenerator.novi()).thenReturn("123456");
+        when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
+
+        IzvodjenjeInfo info = service.pokreni(1L, new PokreniCmd(true, null, null));
+
+        assertTrue(info.cuvanje());
+        assertFalse(info.boduje());
+    }
+
     @Test
     void pokreniBezPitanjaNeCuva() {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
-        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(0L);
+        saRundama(0L);
         when(kodGenerator.novi()).thenReturn("042424");
         when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> {
             Izvodjenje novo = i.getArgument(0);
@@ -234,7 +335,7 @@ class IzvodjenjeServiceTest {
     @Test
     void pokreniPocetnoStanje() {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
-        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(2L);
+        saRundama(2L);
         when(kodGenerator.novi()).thenReturn("123456");
         when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         Grupa g = new Grupa();
@@ -272,7 +373,7 @@ class IzvodjenjeServiceTest {
     @Test
     void pokreniSaPredavanjem() {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
-        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(2L);
+        saRundama(2L);
         when(kodGenerator.novi()).thenReturn("123456");
         when(izvodjenjeRepository.saveAndFlush(any())).thenAnswer(i -> i.getArgument(0));
         Grupa g = new Grupa();
@@ -297,7 +398,7 @@ class IzvodjenjeServiceTest {
     @Test
     void pokreniSaPredavanjemDrugogPredmeta400() {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
-        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(2L);
+        saRundama(2L);
         Predmet drugi = new Predmet();
         drugi.setId(8L);
         Predavanje pr = new Predavanje();
@@ -330,7 +431,7 @@ class IzvodjenjeServiceTest {
 
     void pokreniKadUpisPadne(RuntimeException greska) {
         when(prezentacijaRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(prez));
-        when(slajdRepository.countByPrezentacijaIdAndTip(1L, TipSlajda.PITANJE)).thenReturn(2L);
+        saRundama(2L);
         when(kodGenerator.novi()).thenReturn("123456");
         when(izvodjenjeRepository.saveAndFlush(any())).thenThrow(greska);
     }
@@ -1062,9 +1163,31 @@ class IzvodjenjeServiceTest {
     // ---------------------------------------------------------------- 11. svaka komanda zaključava i objavljuje
 
     @ParameterizedTest
-    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI"},
+            mode = EnumSource.Mode.EXCLUDE)
     void svakaKomandaZakljucavaObjavljujeIVracaStanje(TipKomande tip) {
         doS2Zatvoreno();
+        proveriKomandu(tip);
+    }
+
+    /** RESENJE (zatvorena runda sa rešenjem) i BROJ_VARIJANTI (CEKA) važe samo na Zadatak slajdu (S4 posle S3). */
+    @ParameterizedTest
+    @EnumSource(value = TipKomande.class, names = {"RESENJE", "BROJ_VARIJANTI"})
+    void zadatakKomandeZakljucavajuIObjavljuju(TipKomande tip) {
+        Slajd z = new Slajd();
+        z.setId(14L);
+        z.setRb(4);
+        z.setTip(TipSlajda.ZADATAK);
+        z.setPrezentacija(prez);
+        slajdovi.add(z);
+        when(zadatakDodelaService.snimak(z, null)).thenReturn(new ZadatakSnimak(14L, 3L, "K",
+                List.of(new GrupaPutanja(3L, "K")), null,
+                List.of(new VarijantaSnimak(31L, "V1", 3L, "svg-31", "resenje-31", List.of(), Map.of()))));
+        idiNa(3);
+        if (tip == TipKomande.RESENJE) {
+            k(TipKomande.OTVORI_ZATVORI);
+            k(TipKomande.OTVORI_ZATVORI);
+        }
         proveriKomandu(tip);
     }
 

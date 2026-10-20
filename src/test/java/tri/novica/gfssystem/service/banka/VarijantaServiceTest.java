@@ -23,6 +23,8 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
+import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
 
@@ -70,6 +72,8 @@ class VarijantaServiceTest {
     @Mock VarijantaRepository varijantaRepository;
     @Mock PredmetRepository predmetRepository;
     @Mock MedijRepository medijRepository;
+    @Mock ZadatakDodelaRepository dodelaRepository;
+    @Mock PitanjeRundaRepository rundaRepository;
     @Mock MedijService medijService;
     @Mock LatexRender latexRender;
     @Mock GrupaZadatakaService grupaZadatakaService;
@@ -88,8 +92,9 @@ class VarijantaServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new VarijantaService(grupaRepository, varijantaRepository, predmetRepository, medijRepository, medijService,
-                new RenderVarijante(latexRender, medijService), grupaZadatakaService, transakcije, em, CLOCK);
+        service = new VarijantaService(grupaRepository, varijantaRepository, predmetRepository, medijRepository,
+                dodelaRepository, rundaRepository, medijService, new RenderVarijante(latexRender, medijService), grupaZadatakaService,
+                transakcije, em, CLOCK);
         predmet = new Predmet();
         predmet.setId(7L);
         predmet.setNaziv("Uvod u računarstvo");
@@ -345,7 +350,25 @@ class VarijantaServiceTest {
     }
 
     @Test
-    void aktivnaSaUspelimRenderomOstajeAktivnaIStariSvgSeBriseTekPosleNovog() {
+    void nacrtSaUspelimRenderomBriseStariSvgTekPosleNovog() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        clearInvocations(medijService);
+
+        VarijantaDetails i = service.izmeni(d.id(), cmd("Pretvori 1100."));
+
+        assertEquals(StatusVarijante.NACRT, i.status());
+        assertEquals(RenderStatus.OK, i.renderStatus());
+        assertEquals("svg-3", i.svgId());
+        assertEquals("svg-4", i.resenjeSvgId());
+        InOrder redosled = inOrder(medijService);
+        redosled.verify(medijService, times(2)).sacuvajRender(any(), anyString());
+        redosled.verify(medijService).obrisi("svg-1");
+        redosled.verify(medijService).obrisi("svg-2");
+    }
+
+    @Test
+    void odobrenaSaUspelimRenderomOstajeAktivnaIZadrzavaStariSvg() {
+        // odobrena varijanta je mogla ući u snimak runde Zadatak slajda (snimak čuva samo id-jeve SVG-ova): stari ostaju
         VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
         service.odobri(d.id());
         clearInvocations(medijService);
@@ -356,10 +379,18 @@ class VarijantaServiceTest {
         assertEquals(RenderStatus.OK, i.renderStatus());
         assertEquals("svg-3", i.svgId());
         assertEquals("svg-4", i.resenjeSvgId());
-        InOrder redosled = inOrder(medijService);
-        redosled.verify(medijService, times(2)).sacuvajRender(any(), anyString());
-        redosled.verify(medijService).obrisi("svg-1");
-        redosled.verify(medijService).obrisi("svg-2");
+        verify(medijService, times(2)).sacuvajRender(any(), anyString());
+        verify(medijService, never()).obrisi(anyString());
+
+        // vraćanje u nacrt ne briše ikadOdobrena: prisilan render i izmena i dalje ne brišu stare SVG-ove
+        service.vratiUNacrt(d.id());
+        clearInvocations(medijService);
+        VarijantaDetails r = service.render(d.id());
+        assertEquals("svg-5", r.svgId());
+        VarijantaDetails j = service.izmeni(d.id(), cmd("Pretvori 1111."));
+        assertEquals("svg-7", j.svgId());
+        verify(medijService, times(4)).sacuvajRender(any(), anyString());
+        verify(medijService, never()).obrisi(anyString());
     }
 
     @Test
@@ -437,6 +468,64 @@ class VarijantaServiceTest {
         verify(latexRender, times(2)).renderuj(anyString(), anyString(), anyList());
         assertEquals(StatusVarijante.AKTIVNA, varijanta(d.id()).getStatus());
         assertEquals("svg-1", varijanta(d.id()).getRenderSvg().getId());
+    }
+
+    @Test
+    void brisanjeOdobreneVarijanteZadrzavaSvgMedije() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        service.arhiviraj(d.id());
+        clearInvocations(medijService);
+
+        service.obrisi(d.id());
+
+        assertTrue(varijante.isEmpty());
+        verify(varijantaRepository).delete(any(Varijanta.class));
+        verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void brisanjeVarijanteKorisceneNaCasuJe409() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        when(dodelaRepository.existsByVarijantaId(d.id())).thenReturn(true);
+        clearInvocations(medijService);
+
+        assertTrue(service.koriscenoNaCasu(d.id()));
+        ocekujGresku(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(d.id()));
+
+        assertEquals(1, varijante.size());
+        verify(varijantaRepository, never()).delete(any(Varijanta.class));
+        verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void izvucenaAliNedodeljenaVarijantaSeNeBrise() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        // u snimku runde (otvaranje izvuklo više varijanti nego što ima učesnika), a bez reda u zadatak_dodele
+        when(dodelaRepository.existsByVarijantaId(d.id())).thenReturn(false);
+        when(rundaRepository.varijantaUSnimku(d.id())).thenReturn(true);
+        clearInvocations(medijService);
+
+        assertTrue(service.koriscenoNaCasu(d.id()));
+        ocekujGresku(409, "Korišćeno na času; arhiviraj.", () -> service.obrisi(d.id()));
+
+        assertEquals(1, varijante.size());
+        verify(varijantaRepository, never()).delete(any(Varijanta.class));
+        verify(medijService, never()).obrisi(anyString());
+    }
+
+    @Test
+    void snimakDrugeVarijanteNeBlokiraBrisanje() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        when(rundaRepository.varijantaUSnimku(d.id() + 1)).thenReturn(true);
+
+        assertFalse(service.koriscenoNaCasu(d.id()));
+        service.obrisi(d.id());
+
+        assertTrue(varijante.isEmpty());
+        verify(rundaRepository, times(2)).varijantaUSnimku(d.id());   // provera i brisanje
     }
 
     @Test
@@ -881,6 +970,25 @@ class VarijantaServiceTest {
         verify(latexRender, times(200)).renderuj(anyString(), anyString(), anyList());
         assertEquals(new RenderujSveInfo(1, 0, 0), service.renderujSve(7L));
         assertEquals(new RenderujSveInfo(0, 0, 0), service.renderujSve(7L));
+    }
+
+    @Test
+    void renderujSveZadrzavaStariSvgOdobreneABriseStariSvgNacrta() {
+        VarijantaDetails odobrena = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(odobrena.id());
+        VarijantaDetails nacrt = service.kreiraj(grupa.getId(), cmd("Pretvori 1100."));
+        predmet.setLatexPreambula("\\usepackage{amsmath}");
+        varijante.forEach(v -> v.setRenderHash(null));   // kao ponistiHashPredmeta posle izmene preambule
+        clearInvocations(medijService);
+
+        assertEquals(new RenderujSveInfo(2, 0, 0), service.renderujSve(7L));
+
+        verify(medijService, times(4)).sacuvajRender(any(), anyString());
+        assertNotEquals(odobrena.svgId(), varijanta(odobrena.id()).getRenderSvg().getId());
+        verify(medijService, never()).obrisi(odobrena.svgId());
+        verify(medijService, never()).obrisi(odobrena.resenjeSvgId());
+        verify(medijService).obrisi(nacrt.svgId());
+        verify(medijService).obrisi(nacrt.resenjeSvgId());
     }
 
     @Test

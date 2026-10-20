@@ -24,6 +24,8 @@ import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
+import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
+import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.utility.Serija;
 import tri.novica.gfssystem.validation.BankaPP;
@@ -46,13 +48,23 @@ import java.util.stream.Stream;
  * <b>Render:</b> pri svakom upisu (kreiranje, izmena, duplikat) servis računa heš ulaza rendera
  * ({@link RenderVarijante#hash}); renderuje sinhrono u istom zahtevu, osim kad je heš jednak sopstvenom prethodnom
  * ({@code render_hash} te varijante, nikad tuđem) i render je {@code OK}. Uspeh upisuje nove SVG medije ({@code RENDER_SVG},
- * {@code zadatak-<id>.svg}, {@code resenje-<id>.svg}) pa tek onda briše stare; neuspeh je stanje, ne izuzetak
- * ({@code GRESKA}, greška u {@code render_greska} kao {@code <deo>:<linija>: <poruka>}, stari SVG ostaje), a AKTIVNA tada pada u
- * NACRT pri čuvanju jedne varijante (kreiranje, izmena, prisilan render, duplikat). Render cele banke ({@link #renderujSve},
- * posle izmene preambule) ne spušta status: aktivna sa neuspelim renderom ostaje aktivna i prikazuje poslednji uspeo SVG.
+ * {@code zadatak-<id>.svg}, {@code resenje-<id>.svg}) pa tek onda briše stare (osim kad je varijanta ikad bila
+ * odobrena, vidi dole); neuspeh je stanje, ne izuzetak ({@code GRESKA}, greška u {@code render_greska} kao
+ * {@code <deo>:<linija>: <poruka>}, stari SVG ostaje), a AKTIVNA tada pada u NACRT pri čuvanju jedne varijante
+ * (kreiranje, izmena, prisilan render, duplikat). Render cele banke ({@link #renderujSve}, posle izmene preambule) ne
+ * spušta status: aktivna sa neuspelim renderom ostaje aktivna i prikazuje poslednji uspeo SVG.
  * Render servis koji ne radi ({@link RenderNedostupan}, 503) poništava ceo zahtev: ništa se ne upisuje (ni nova varijanta ni
  * izmena), front zadržava unos i ponavlja. {@link MedijService} briše fajl starog SVG-a tek posle commit-a, a fajl novog
  * briše ako se transakcija poništi: pad commit-a ostavlja varijantu sa starim SVG-om i njegovim fajlom, bez novih siročadi.
+ * <p>
+ * <b>SVG odobrene varijante se nikad ne briše:</b> snimak runde Zadatak slajda čuva samo id-jeve SVG-ova
+ * ({@code svgId}, {@code resenjeSvgId}), a izvlače se samo AKTIVNE, pa svaka varijanta iz snimka ima {@code ikadOdobrena}
+ * (ostaje i posle vraćanja u nacrt i arhiviranja). Za takvu varijantu render (izmena, prisilan render, render cele banke)
+ * upisuje nove SVG medije, a stare ne briše, i brisanje varijante (ili njene grupe) briše red, a ne i SVG medije; tako
+ * slike ranijih rundi u pregledu časa ostaju. Brisanje varijante koja je u snimku neke runde ili ima dodelu odbija
+ * {@link #koriscenoNaCasu} (409), pa SVG ostaje pre svega zbog izmene (stari SVG ostaje u snimku) i kao mreža iza te
+ * provere. Siročad {@code RENDER_SVG} su prihvaćena (mali SVG-ovi). Varijanta koja nikad nije odobrena (nacrt, npr.
+ * Klodov) briše stare kao pre.
  * <p>
  * <b>Render pre ključa</b> (upis u tri koraka): (1) provera komande i kratka transakcija samo za čitanje (pravila grupe i
  * odgovora, preambula, sadržaj koji se renderuje), bez ključa; (2) render, van transakcije i bez ijednog ključa; (3) kratka
@@ -123,6 +135,8 @@ public class VarijantaService {
     private final VarijantaRepository varijantaRepository;
     private final PredmetRepository predmetRepository;
     private final MedijRepository medijRepository;
+    private final ZadatakDodelaRepository dodelaRepository;
+    private final PitanjeRundaRepository rundaRepository;
     private final MedijService medijService;
     private final RenderVarijante renderVarijante;
     private final GrupaZadatakaService grupaZadatakaService;
@@ -148,9 +162,17 @@ public class VarijantaService {
         return details(varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena));
     }
 
-    /** Da li je varijanta ikad dodeljena na času; faza 1 nema dodela, pa je uvek {@code false} (faza 2: {@code zadatak_dodele}). */
+    /**
+     * Da li je varijanta ikad izvučena na času: ima dodelu (red u {@code zadatak_dodele}) ili je u snimku neke runde
+     * (izvučena, a nijednom učesniku nije dodeljena: manje učesnika od varijanti, ili učesnik koji tek dolazi). Takva se ne
+     * briše, nego arhivira (banka spec 4.1). FK RESTRICT štiti samo dodeljenu, izvučenu štiti snimak. Provera vidi samo
+     * commit-ovane runde: otvaranje runde (komanda Zadatak slajda) zaključava kandidate pre izvlačenja
+     * ({@code VarijantaRepository.zakljucajKandidate}, posle zaključanog izvođenja, pre upisa snimka), pa brisanje (koje
+     * zaključava varijantu pre ove provere) ili čeka otvaranje i vidi njegov snimak, ili ga otvaranje čeka i ne izvlači
+     * obrisanu varijantu.
+     */
     public boolean koriscenoNaCasu(Long varijantaId) {
-        return false;
+        return dodelaRepository.existsByVarijantaId(varijantaId) || rundaRepository.varijantaUSnimku(varijantaId);
     }
 
     // ---------------------------------------------------------------- upis
@@ -285,7 +307,10 @@ public class VarijantaService {
         });
     }
 
-    /** Briše varijantu (prilozi kaskadom; mediji priloga ostaju, duplikat ih može deliti), pa njene SVG medije. */
+    /**
+     * Briše varijantu (prilozi kaskadom; mediji priloga ostaju, duplikat ih može deliti), pa njene SVG medije, osim kad je
+     * ikad bila odobrena (mogla je ući u snimak runde, vidi <b>Render</b>); korišćena na času je 409.
+     */
     public void obrisi(Long id) {
         obrisiZakljucanu(zakljucaj(id));
     }
@@ -307,7 +332,7 @@ public class VarijantaService {
         if (koriscenoNaCasu(id)) {
             throw new SystemException(GrupaZadatakaService.KORISCENO_NA_CASU, HttpStatus.CONFLICT);
         }
-        List<String> svg = svgIds(v);
+        List<String> svg = v.isIkadOdobrena() ? List.of() : svgIds(v);
         varijantaRepository.delete(v);
         varijantaRepository.flush();
         svg.forEach(medijService::obrisi);
@@ -710,7 +735,9 @@ public class VarijantaService {
     /**
      * Upisuje ishod rendera. Neuspeh: {@code GRESKA} i poruka, stari SVG par ostaje do sledećeg uspešnog rendera (ni SVG
      * zadatka koji se preveo kad je palo samo rešenje ne zamenjuje stari: zadatak i rešenje su uvek iz istog rendera), a
-     * AKTIVNA pada u NACRT samo kad je {@code spustiAktivnu} (čuvanje jedne varijante, ne render cele banke).
+     * AKTIVNA pada u NACRT samo kad je {@code spustiAktivnu} (čuvanje jedne varijante, ne render cele banke). Uspeh upisuje
+     * nove SVG medije; stari se brišu samo kad varijanta nikad nije bila odobrena (snimak runde čuva id-jeve SVG-ova
+     * odobrene, vidi <b>Render</b>).
      */
     private void primeniRender(Varijanta v, String hash, RenderVarijante.Ishod ishod, boolean spustiAktivnu) {
         v.setRenderHash(hash);
@@ -722,7 +749,7 @@ public class VarijantaService {
             }
             return;
         }
-        List<String> stari = svgIds(v);
+        List<String> stari = v.isIkadOdobrena() ? List.of() : svgIds(v);
         v.setRenderSvg(sacuvajSvg(ishod.svg(), "zadatak-" + v.getId() + ".svg"));
         v.setRenderResenjeSvg(ishod.resenjeSvg() == null ? null : sacuvajSvg(ishod.resenjeSvg(), "resenje-" + v.getId() + ".svg"));
         v.setRenderStatus(RenderStatus.OK);

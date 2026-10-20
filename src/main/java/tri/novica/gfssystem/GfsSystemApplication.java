@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.time.Clock;
+import java.util.Random;
 
 // MCP stateless server pravi mcp/McpKonfig (isključena SDK provera argumenata prema šemi, vidi McpKonfig.StatelessServer)
 @SpringBootApplication(exclude = McpServerStatelessAutoConfiguration.class)
@@ -30,6 +31,12 @@ public class GfsSystemApplication {
     @Bean
     Clock clock() {
         return Clock.systemDefaultZone();
+    }
+
+    /** Jedini izvor slučajnosti za izvlačenje i raspodelu zadataka na času; testovi ga zamenjuju seed-ovanim ({@code SeedRandom}). */
+    @Bean
+    Random random() {
+        return new Random();
     }
 
 }

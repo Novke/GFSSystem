@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,9 @@ public interface SlajdRepository extends JpaRepository<Slajd, Long> {
     long countByPrezentacijaId(Long id);
 
     long countByPrezentacijaIdAndTip(Long id, TipSlajda tip);
+
+    /** Broj slajdova prezentacije čiji je tip među {@code tipovi} (npr. slajdovi sa rundama: PITANJE i ZADATAK). */
+    long countByPrezentacijaIdAndTipIn(Long id, Collection<TipSlajda> tipovi);
 
     @Query("select s.prezentacija.id from Slajd s where s.id = :id")
     Optional<Long> findPrezentacijaId(@Param("id") Long slajdId);

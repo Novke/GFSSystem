@@ -11,8 +11,10 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import tri.novica.gfssystem.dto.uzivo.JavnoIzvodjenjeInfo;
 import tri.novica.gfssystem.dto.uzivo.UcesnikInfo;
+import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -41,7 +43,9 @@ class UcesnikServiceTest {
 
     @Mock IzvodjenjeRepository izvodjenjeRepository;
     @Mock UcesnikRepository ucesnikRepository;
+    @Mock StudentRepository studentRepository;
     @Mock ApplicationEventPublisher publisher;
+    @Mock ZadatakDodelaService zadatakDodelaService;
 
     final MutableClock clock = new MutableClock(T0.atZone(ZONA).toInstant(), ZONA);
     final TokenGenerator tokenGenerator = new TokenGenerator();
@@ -69,8 +73,8 @@ class UcesnikServiceTest {
             return u;
         });
 
-        service = new UcesnikService(izvodjenjeRepository, ucesnikRepository, new ImenaUcesnika(ucesnikRepository),
-                tokenGenerator, publisher, clock);
+        service = new UcesnikService(izvodjenjeRepository, ucesnikRepository, studentRepository,
+                new ImenaUcesnika(ucesnikRepository), zadatakDodelaService, tokenGenerator, publisher, clock);
     }
 
     static Izvodjenje izvodjenje(Long id, String kod, Prezentacija prez) {
@@ -128,6 +132,8 @@ class UcesnikServiceTest {
         assertSame(iz, u.getIzvodjenje());
         assertEquals(T0, u.getKreirano());
         verify(publisher).publishEvent(new UcesnikPrijavljen(5L));
+        // otvorena ZADATAK runda: nov učesnik odmah dobija zadatak (servis sam proverava fazu i rundu)
+        verify(zadatakDodelaService).dodeliNovom(iz, u);
     }
 
     @Test
@@ -213,6 +219,90 @@ class UcesnikServiceTest {
         // izbačeni se ne računaju
         sacuvani.get(0).setIzbacen(true);
         assertEquals("Ana", service.prijavi(KOD, "Ana").info().ime());
+    }
+
+    // ---------------------------------------------------------------- bodovan run i identitet studenta
+
+    @Test
+    void infoNosiPrijavuObaveznuIPrijavljenogStudenta() {
+        assertEquals(new JavnoIzvodjenjeInfo("Statika 1", false, false), service.info(KOD));
+        iz.setBoduje(true);
+        assertEquals(new JavnoIzvodjenjeInfo("Statika 1", true, false), service.info(KOD, false));
+        assertEquals(new JavnoIzvodjenjeInfo("Statika 1", true, true), service.info(KOD, true));
+    }
+
+    @Test
+    void bodovanBezIdentiteta403PreProvereImena() {
+        iz.setBoduje(true);
+        // neispravno ime ne daje 400: student i ne treba da kuca ime
+        ocekuj(403, "Potrebna je prijava studenta.", () -> service.prijavi(KOD, "", Optional.empty()));
+        ocekuj(403, "Potrebna je prijava studenta.", () -> service.prijavi(KOD, "Ana"));
+        // identitet studenta koga nema u bazi je kao da identiteta nema
+        when(studentRepository.findById(9L)).thenReturn(Optional.empty());
+        ocekuj(403, "Potrebna je prijava studenta.", () -> service.prijavi(KOD, "Ana", Optional.of(9L)));
+        verify(ucesnikRepository, never()).save(any());
+        verifyNoInteractions(zadatakDodelaService);
+        // pod zaključanim izvođenjem
+        verify(izvodjenjeRepository, times(3)).findByIdForUpdate(5L);
+    }
+
+    @Test
+    void nebodovanSaNepostojecimStudentomKaoDanas() {
+        when(studentRepository.findById(9L)).thenReturn(Optional.empty());
+        UcesnikService.Prijavljen p = service.prijavi(KOD, " Ana ", Optional.of(9L));
+        assertEquals("Ana", p.info().ime());
+        assertNull(sacuvani.get(0).getStudent());
+        assertFalse(p.student());
+        ocekuj(400, ImenaUcesnika.NEISPRAVNO_IME, () -> service.prijavi(KOD, " ", Optional.of(9L)));
+    }
+
+    @Test
+    void studentUlaziPodImenomIzBaze() {
+        Student s = new Student();
+        s.setId(9L);
+        s.setIme("Ana");
+        s.setPrezime("Petrović");
+        s.setIndeks("GD 1/2025");
+        when(studentRepository.findById(9L)).thenReturn(Optional.of(s));
+        iz.setBoduje(true);
+
+        // ukucano ime (i neispravno) se ignoriše
+        UcesnikService.Prijavljen p = service.prijavi(KOD, "", Optional.of(9L));
+
+        assertEquals("Ana Petrović", p.info().ime());
+        assertTrue(p.student());
+        assertSame(s, sacuvani.get(0).getStudent());
+        assertEquals(TokenHash.od(p.token()), sacuvani.get(0).getTokenHash());
+        verify(publisher).publishEvent(new UcesnikPrijavljen(5L));
+    }
+
+    @Test
+    void istiStudentDobijaIstogUcesnikaSaNovimTokenom() {
+        Student s = new Student();
+        s.setId(9L);
+        s.setIme("Ana");
+        s.setPrezime("Petrović");
+        when(studentRepository.findById(9L)).thenReturn(Optional.of(s));
+        UcesnikService.Prijavljen prvi = service.prijavi(KOD, "x", Optional.of(9L));
+        Ucesnik u = sacuvani.get(0);
+        when(ucesnikRepository.findFirstByIzvodjenjeIdAndStudentIdAndIzbacenFalse(5L, 9L)).thenReturn(Optional.of(u));
+        // izvođenje je puno: postojeći red ne proverava granicu
+        for (int i = 0; i < 300; i++) {
+            Ucesnik d = new Ucesnik();
+            d.setId(1000L + i);
+            d.setIme("U" + i);
+            sacuvani.add(d);
+        }
+
+        UcesnikService.Prijavljen drugi = service.prijavi(KOD, "y", Optional.of(9L));
+
+        assertEquals(prvi.info(), drugi.info());
+        assertNotEquals(prvi.token(), drugi.token());
+        assertEquals(TokenHash.od(drugi.token()), u.getTokenHash());
+        assertEquals("Ana Petrović", u.getIme());
+        assertEquals(301, sacuvani.size());
+        // i postojeći red ide kroz dodelu (bez dupliranja: servis preskače učesnika koji već ima dodelu)
+        verify(zadatakDodelaService, times(2)).dodeliNovom(iz, u);
     }
 
     // ---------------------------------------------------------------- ja i token

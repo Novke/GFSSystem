@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.service.uzivo.PlatnoJson;
@@ -197,6 +198,46 @@ class PrezentacijaRestTest {
     }
 
     @Test
+    void zadatakSlajdKrozPutIOdgovorNosiOpis() throws Exception {
+        ZadatakSlajdaInfo opis = new ZadatakSlajdaInfo(5L, null, 4, "2 → 10", List.of(new GrupaPutanja(1L, "Konverzije"),
+                new GrupaPutanja(5L, "2 → 10")), true, 3, List.of(), false, List.of(), List.of());
+        when(service.izmeniSlajd(eq(1L), any())).thenReturn(new SlajdDetails(1L, 1, TipSlajda.ZADATAK, null, null, null, null,
+                false, null, null, null, opis));
+
+        mvc.perform(put("/slajdovi/1").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tip":"ZADATAK","zadatak":{"grupaId":5,"vremeSekunde":null,"brojVarijanti":4}}"""))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.tip").value("ZADATAK"))
+           .andExpect(jsonPath("$.zadatak.grupaId").value(5))
+           .andExpect(jsonPath("$.zadatak.vremeSekunde").value(org.hamcrest.Matchers.nullValue()))
+           .andExpect(jsonPath("$.zadatak.brojVarijanti").value(4))
+           .andExpect(jsonPath("$.zadatak.grupaNaziv").value("2 → 10"))
+           .andExpect(jsonPath("$.zadatak.putanja[1].naziv").value("2 → 10"))
+           .andExpect(jsonPath("$.zadatak.brojAktivnihVarijanti").value(3))
+           .andExpect(jsonPath("$.zadatak.list").value(true))
+           .andExpect(jsonPath("$.zadatak.upozorenja").isEmpty());
+        ArgumentCaptor<SlajdCmd> cmd = ArgumentCaptor.forClass(SlajdCmd.class);
+        verify(service).izmeniSlajd(eq(1L), cmd.capture());
+        assertEquals(TipSlajda.ZADATAK, cmd.getValue().tip());
+        assertEquals(5L, cmd.getValue().zadatak().grupaId());
+        assertNull(cmd.getValue().zadatak().vremeSekunde());
+        assertEquals(4, cmd.getValue().zadatak().brojVarijanti());
+    }
+
+    @Test
+    void slajdBezZadatkaImaZadatakNullUOdgovoruIUTelu() throws Exception {
+        when(service.izmeniSlajd(eq(9L), any())).thenReturn(SLAJD);
+
+        mvc.perform(put("/slajdovi/9").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tip":"INFO","naslov":"Uvod"}"""))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.zadatak").value(org.hamcrest.Matchers.nullValue()));
+        ArgumentCaptor<SlajdCmd> cmd = ArgumentCaptor.forClass(SlajdCmd.class);
+        verify(service).izmeniSlajd(eq(9L), cmd.capture());
+        assertNull(cmd.getValue().zadatak());
+    }
+
+    @Test
     void teloBezPrelazaJeBezPrelazaIOdgovorImaPrelazNull() throws Exception {
         when(service.izmeniSlajd(eq(7L), any())).thenReturn(SLAJD);
         mvc.perform(put("/slajdovi/7").contentType(MediaType.APPLICATION_JSON).content("{\"tip\":\"INFO\",\"naslov\":\"Uvod\"}"))
@@ -252,6 +293,19 @@ class PrezentacijaRestTest {
            .andExpect(jsonPath("$.grupa.naziv").value("GD-2025"))
            .andExpect(jsonPath("$.predavanje").value(org.hamcrest.Matchers.nullValue()));
         verify(izvodjenjeService).pokreni(1L, new PokreniCmd(true, 3L, null));
+    }
+
+    @Test
+    void pokreniBodovanRun() throws Exception {
+        when(izvodjenjeService.pokreni(eq(1L), any())).thenReturn(new IzvodjenjeInfo(9L,
+                new PrezentacijaKratko(1L, "Uvod", 7L), "042424", StatusIzvodjenja.AKTIVNO, true,
+                new GrupaKratko(3L, "GD-2025"), null, IZMENJENO, null, 0, 0, true));
+        // Jackson puni kanonski konstruktor record-a i kad postoji kraći
+        mvc.perform(post("/prezentacije/1/izvodjenja").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cuvanje\":false,\"grupaId\":null,\"predavanjeId\":40,\"boduje\":true}"))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.boduje").value(true));
+        verify(izvodjenjeService).pokreni(1L, new PokreniCmd(false, null, 40L, true));
     }
 
     @Test
