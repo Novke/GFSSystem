@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +18,7 @@ import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
+import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.validation.BankaPP;
@@ -59,7 +61,9 @@ class GrupaZadatakaServiceTest {
     @Mock GrupaZadatakaRepository grupaRepository;
     @Mock VarijantaRepository varijantaRepository;
     @Mock PredmetRepository predmetRepository;
+    @Mock IskljucenaTemaRepository temaRepository;
     @Mock MedijService medijService;
+    @Mock EntityManager em;
 
     GrupaZadatakaService service;
     Predmet predmet;
@@ -71,7 +75,8 @@ class GrupaZadatakaServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GrupaZadatakaService(grupaRepository, varijantaRepository, predmetRepository, medijService, CLOCK);
+        service = new GrupaZadatakaService(grupaRepository, varijantaRepository, predmetRepository, temaRepository,
+                medijService, em, CLOCK);
         predmet = predmet(7L, "Uvod u računarstvo");
         drugiPredmet = predmet(8L, "Statika");
 
@@ -443,6 +448,33 @@ class GrupaZadatakaServiceTest {
                 service.putanja(b));
 
         ocekuj(404, "Grupa nije pronađena.", () -> service.detalji(999L));
+    }
+
+    @Test
+    void iskljucenjePretkaVaziZaPodstabloASopstvenoImaPrednost() {
+        GrupaZadataka r = koren("Brojni sistemi", 1);
+        GrupaZadataka a = podgrupa(r, "Razlomljeni", 1);
+        GrupaZadataka a1 = podgrupa(a, "10 → 2", 1);
+        GrupaZadataka a2 = podgrupa(a, "2 → 10", 2);
+        GrupaZadataka b = podgrupa(r, "Celi", 2);
+        when(temaRepository.iskljuceneGrupe(7L)).thenReturn(Map.of(a.getId(), 40L, a2.getId(), 41L));
+
+        GrupaCvor cr = service.stablo(7L, Namena.PREDAVANJE).get(0);
+        GrupaCvor ca = cr.deca().get(0);
+        assertEquals(List.of(false, true, true, true, false), Stream.of(cr, ca, ca.deca().get(0), ca.deca().get(1), cr.deca().get(1))
+                .map(GrupaCvor::iskljucena).toList());
+        assertNull(cr.iskljucenjeId());
+        assertEquals(40L, ca.iskljucenjeId());
+        assertEquals(40L, ca.deca().get(0).iskljucenjeId());
+        assertEquals(41L, ca.deca().get(1).iskljucenjeId());
+        assertNull(cr.deca().get(1).iskljucenjeId());
+        verify(temaRepository, times(1)).iskljuceneGrupe(7L);
+
+        assertEquals(40L, service.detalji(a1.getId()).iskljucenjeId());
+        assertTrue(service.detalji(a1.getId()).iskljucena());
+        assertEquals(41L, service.detalji(a2.getId()).iskljucenjeId());
+        assertFalse(service.detalji(b.getId()).iskljucena());
+        assertNull(service.detalji(r.getId()).iskljucenjeId());
     }
 
     // ---------------------------------------------------------------- izmeni

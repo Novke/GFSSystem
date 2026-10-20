@@ -268,9 +268,12 @@ class GrupaZadatakaServiceDbTest {
         assertEquals(List.of(b.kljuc()), service.detalji(g.id()).polja().stream().map(Polje::kljuc).toList());
     }
 
-    /** Carry-forward Task 1 (EAGER roditelj): stablo od 29 grupa u 4 nivoa je stalan broj upita, ne N+1. */
+    /**
+     * Carry-forward Task 1 (EAGER roditelj): stablo od 29 grupa u 4 nivoa je stalan broj upita, ne N+1: predmet postoji,
+     * grupe, predmet grupa, brojači, (MCP) Klodovi nacrti po grupi i isključene grupe predmeta.
+     */
     @Test
-    void stabloJeNajvise4UpitaBezObziraNaBrojGrupa() {
+    void stabloJeNajvise6UpitaBezObziraNaBrojGrupa() {
         GrupaDetails r = koren("R");
         for (int i = 0; i < 4; i++) {
             GrupaDetails a = podgrupa(r, "A" + i);
@@ -278,6 +281,9 @@ class GrupaZadatakaServiceDbTest {
                 GrupaDetails b = podgrupa(a, "B" + j);
                 varijanta(podgrupa(b, "C").id(), StatusVarijante.AKTIVNA, RenderStatus.OK, "{}");
             }
+            // isključena tema nad svakom granom: oznaka je i dalje jedan upit (teme nestaju sa predmetom u tearDown-u)
+            jdbc.update("insert into iskljucene_teme (predmet_id, opis, grupa_id, kreirano) values (?, ?, ?, now(6))",
+                    predmet.getId(), "Grana A" + i, a.id());
         }
         Statistics statistika = emf.unwrap(SessionFactory.class).getStatistics();
         boolean bila = statistika.isStatisticsEnabled();
@@ -288,8 +294,9 @@ class GrupaZadatakaServiceDbTest {
             long upita = statistika.getPrepareStatementCount();
 
             assertEquals(12, stablo.get(0).brojAktivnih());
+            assertTrue(stablo.get(0).deca().stream().allMatch(GrupaCvor::iskljucena));
             assertTrue(statistika.getEntityLoadCount() >= 29, "statistika mora da broji");
-            assertTrue(upita >= 1 && upita <= 4, "stablo: " + upita + " SQL upita");
+            assertTrue(upita >= 1 && upita <= 6, "stablo: " + upita + " SQL upita");
         } finally {
             statistika.setStatisticsEnabled(bila);
         }

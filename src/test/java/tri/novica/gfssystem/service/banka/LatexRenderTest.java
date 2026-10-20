@@ -100,6 +100,89 @@ class LatexRenderTest {
     }
 
     @Test
+    void stariPozivSaJednimFormatomNeSaljeFormati() {
+        server.expect(requestTo(URL + "/render"))
+                .andExpect(jsonPath("$.format").value("svg"))
+                .andExpect(jsonPath("$.formati").doesNotExist())
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\"x\"}", MediaType.APPLICATION_JSON));
+
+        render.renderuj("svg", "x", List.of());
+
+        server.verify();
+    }
+
+    // ---------------------------------------------------------------- više formata iz jednog prevođenja
+
+    @Test
+    void viseFormataSaljeFormatiIPrviKaoFormatIVracaPng() {
+        server.expect(requestTo(URL + "/render")).andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.format").value("svg"))
+                .andExpect(jsonPath("$.formati.length()").value(2))
+                .andExpect(jsonPath("$.formati[0]").value("svg"))
+                .andExpect(jsonPath("$.formati[1]").value("png"))
+                .andExpect(jsonPath("$.tex").value("x^2"))
+                .andExpect(jsonPath("$.prilozi[0].ime").value("slika"))
+                .andExpect(jsonPath("$.timeoutSekunde").value(20))
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\"PHN2Zy8+\",\"png\":\"iVBORw0=\",\"trajanjeMs\":700}",
+                        MediaType.APPLICATION_JSON));
+
+        RenderOdgovor o = render.renderuj(List.of("svg", "png"), "x^2", PRILOZI);
+
+        assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 700L, false, "iVBORw0="));
+        server.verify();
+    }
+
+    @Test
+    void samoPngJeIFormatIFormati() {
+        server.expect(requestTo(URL + "/render"))
+                .andExpect(jsonPath("$.format").value("png"))
+                .andExpect(jsonPath("$.formati.length()").value(1))
+                .andExpect(jsonPath("$.formati[0]").value("png"))
+                .andExpect(jsonPath("$.prilozi.length()").value(0))
+                .andRespond(withSuccess("{\"ok\":true,\"png\":\"iVBORw0=\"}", MediaType.APPLICATION_JSON));
+
+        RenderOdgovor o = render.renderuj(List.of("png"), "x", null);
+
+        assertThat(o.ok()).isTrue();
+        assertThat(o.png()).isEqualTo("iVBORw0=");
+        assertThat(o.svg()).isNull();
+        server.verify();
+    }
+
+    @Test
+    void uspehBezSvakogTrazenogFormataJeNedostupan() {
+        // stariji servis ne zna formati: vrati samo format (prvi)
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\"PHN2Zy8+\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":true,\"png\":\"iVBORw0=\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render"))
+                .andRespond(withSuccess("{\"ok\":true,\"svg\":\"PHN2Zy8+\",\"png\":\" \"}", MediaType.APPLICATION_JSON));
+
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> render.renderuj(List.of("svg", "png"), "x", List.of())).isInstanceOf(RenderNedostupan.class);
+        }
+        server.verify();
+    }
+
+    @Test
+    void neuspehSaViseFormataJeOkFalseSaGreskom() {
+        server.expect(requestTo(URL + "/render")).andRespond(withSuccess(
+                "{\"ok\":false,\"greska\":{\"linija\":3,\"poruka\":\"x\"},\"log\":\"! x\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(URL + "/render")).andRespond(withStatus(HttpStatus.BAD_REQUEST).body("Neispravan zahtev."));
+
+        assertThat(render.renderuj(List.of("svg", "png"), "\\foo", List.of()))
+                .isEqualTo(new RenderOdgovor(false, null, null, new RenderGreskaInfo(3, "x"), "! x", null, false));
+        assertThat(render.renderuj(List.of("svg", "png"), "x", List.of())).isEqualTo(RenderOdgovor.odbijen("Neispravan zahtev."));
+    }
+
+    @Test
+    void bezIjednogFormataJeGreskaPrograma() {
+        assertThatThrownBy(() -> render.renderuj(List.of(), "x", List.of())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> render.renderuj((List<String>) null, "x", List.of())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void timeoutServisaJeZaDesetSekundiManjiAliNajmanjeDeset() {
         RestClient.Builder b = RestClient.builder();
         assertThat(new LatexRender(b, URL, 30).timeoutServisa()).isEqualTo(20);
@@ -288,6 +371,26 @@ class LatexRenderTest {
             assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 5L, false));
             assertThat(contentType.get()).startsWith("application/json");
             assertThat(primljeno.get()).contains("\"format\":\"svg\"", "\"tex\":\"čšž\"", "\"timeoutSekunde\":20");
+            assertThat(primljeno.get()).doesNotContain("formati");
+        }
+
+        @Test
+        void viseFormataPrekoStvarneVeze() {
+            http.createContext("/render", ex -> {
+                primljeno.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                byte[] telo = "{\"ok\":true,\"svg\":\"PHN2Zy8+\",\"png\":\"iVBORw0=\",\"trajanjeMs\":5}"
+                        .getBytes(StandardCharsets.UTF_8);
+                ex.getResponseHeaders().add("Content-Type", "application/json");
+                ex.sendResponseHeaders(200, telo.length);
+                ex.getResponseBody().write(telo);
+                ex.close();
+            });
+            http.start();
+
+            RenderOdgovor o = klijent(30).renderuj(List.of("svg", "png"), "x", List.of());
+
+            assertThat(o).isEqualTo(new RenderOdgovor(true, "PHN2Zy8+", null, null, null, 5L, false, "iVBORw0="));
+            assertThat(primljeno.get()).contains("\"format\":\"svg\"", "\"formati\":[\"svg\",\"png\"]");
         }
 
         @Test

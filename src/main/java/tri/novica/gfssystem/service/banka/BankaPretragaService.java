@@ -17,9 +17,10 @@ import tri.novica.gfssystem.repository.spec.BankaSpecs;
 import java.util.Set;
 
 /**
- * Pretraga varijanti cele banke (spec banke 2.6): filteri po predmetu, nameni, statusu i tekstu upita, stranica kao u
- * ostalim listama (vidi "List and overview API conventions"). Čitanje: jedan upit za stranicu i jedan za ukupan broj; grupa
- * varijante i lanac njenih predaka dolaze u istom upitu ({@link BankaSpecs#zaPrikaz()}), pa putanja ne košta ništa više.
+ * Pretraga varijanti cele banke (spec banke 2.6): filteri po predmetu, nameni, statusu, izvoru, Klodovoj seriji (spec MCP
+ * 6.1) i tekstu upita, stranica kao u ostalim listama (vidi "List and overview API conventions"). Čitanje: jedan upit za
+ * stranicu i jedan za ukupan broj; grupa varijante i lanac njenih predaka dolaze u istom upitu ({@link BankaSpecs#zaPrikaz()}),
+ * pa putanja ne košta ništa više.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,6 +42,8 @@ public class BankaPretragaService {
                 BankaSpecs.predmet(f.predmetId()),
                 BankaSpecs.namena(f.namena()),
                 BankaSpecs.status(f.status()),
+                BankaSpecs.izvor(f.izvor()),
+                BankaSpecs.serija(f.serija()),
                 BankaSpecs.upit(f.q()));
         Page<Varijanta> strana = varijantaRepository.findAll(spec, pageable);
         return new PagedModel<>(strana.map(this::stavka));
@@ -49,7 +52,7 @@ public class BankaPretragaService {
     private BankaPretragaStavka stavka(Varijanta v) {
         return new BankaPretragaStavka(v.getId(), v.getGrupa().getId(), v.getGrupa().getNaziv(),
                 grupaZadatakaService.putanja(v.getGrupa()), v.getNaziv(), v.getStatus(), v.getRenderStatus(),
-                isecak(v.getTekst()));
+                isecak(v.getTekst()), v.getIzvor(), v.getSerija());
     }
 
     /** Prvih {@value #DUZINA_ISECKA} znakova (code point-a, bez cepanja para) sa novim redovima sažetim u razmak. */

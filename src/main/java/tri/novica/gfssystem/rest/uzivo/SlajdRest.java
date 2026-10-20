@@ -12,7 +12,7 @@ import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 import java.util.List;
 
 /**
- * Izmena, brisanje i dupliranje pojedinačnog slajda i potezi njegovih crteža (iza basic-auth-a); dodavanje je u
+ * Čitanje, izmena, brisanje i dupliranje pojedinačnog slajda i potezi njegovih crteža (iza basic-auth-a); dodavanje je u
  * {@link PrezentacijaRest}.
  */
 @RestController
@@ -21,6 +21,13 @@ import java.util.List;
 public class SlajdRest {
 
     private final PrezentacijaService prezentacijaService;
+
+    /** Pun slajd (PLATNO sa potezima); front ga koristi za "Učitaj ponovo" jednog slajda (A2). */
+    @GetMapping("/{id}")
+    @ResponseStatus(HttpStatus.OK)
+    public SlajdDetails slajd(@PathVariable Long id) {
+        return prezentacijaService.slajd(id);
+    }
 
     /**
      * Potezi crteža slajda (prozor publike i konzola; snimak izvođenja ih ne nosi). Nastavnički endpoint, nikad pod

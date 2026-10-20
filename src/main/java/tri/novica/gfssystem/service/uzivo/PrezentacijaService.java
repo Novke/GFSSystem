@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import tri.novica.gfssystem.dto.banka.PonistavanjeInfo;
+import tri.novica.gfssystem.dto.banka.StavkaPonistavanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.Predmet;
@@ -21,6 +23,7 @@ import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
 import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
 import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.utility.Serija;
 import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.validation.SlajdPP;
 
@@ -39,6 +42,11 @@ import java.util.function.Consumer;
  * obriše i pitanje i opcije. Posle zaključavanja prezentacije, a pre upisa, {@link PrezentacijaPromene#zakljucaj}
  * zaključa aktivna izvođenja (red prezentacija -> izvođenje -> slajdovi); posle svake izmene slajdova javlja se
  * {@link PrezentacijaPromene} (izvođenje u toku).
+ * <p>
+ * Klod (MCP, spec MCP 4.1 i 4.4) piše seriju na prezentacije i slajdove koje napravi ({@link #kreiraj(CreatePrezentacijaCmd,
+ * String)}, {@link #dodajSlajdIzSerije}), ne menja prezentaciju koja se upravo izvodi i poništava seriju
+ * ({@link #ponistiSeriju}). Dupliranje slajda ili prezentacije seriju ne kopira: kopija je Novicina, pa je poništavanje
+ * serije ne briše, a prezentacija serije sa njom ostaje.
  */
 @Service
 @RequiredArgsConstructor
@@ -53,11 +61,17 @@ public class PrezentacijaService {
     static final String NEISPRAVAN_REDOSLED = "Redosled mora sadržati tačno sve slajdove prezentacije.";
     static final String IZVODJENJE_U_TOKU = "Prezentacija ima izvođenje u toku. Završi ga pre brisanja.";
     static final String NEISPRAVAN_NAZIV = "Naziv je obavezan (najviše 200 znakova).";
+    static final String IZVODI_SE = "Prezentacija se upravo izvodi; izmene posle časa.";
+    static final String RAZLOG_IZVODJENA = "Prezentacija je izvođena.";
+    static final String RAZLOG_IZVODI_SE = "Prezentacija se upravo izvodi.";
+    static final String RAZLOG_NOVICINI_SLAJDOVI = "Prezentacija ima Novicine slajdove.";
 
     private static final int MAX_NAZIV = 200;
     private static final int MAX_OPIS = 1000;
     private static final String SUFIKS_KOPIJE = " (kopija)";
     private static final int MAX_PREDAVANJA = 30;
+    /** Opis slajda u nazivu stavke poništavanja (naslov ili tekst pitanja), u znakovima. */
+    private static final int MAX_OPIS_SLAJDA = 80;
 
     private final PrezentacijaRepository prezentacijaRepository;
     private final SlajdRepository slajdRepository;
@@ -81,6 +95,17 @@ public class PrezentacijaService {
     }
 
     public PrezentacijaDetails kreiraj(CreatePrezentacijaCmd cmd) {
+        return kreiraj(cmd, null);
+    }
+
+    /**
+     * Nova prezentacija; {@code serija} je Klodova serija upisa (MCP {@code napravi_prezentaciju}), {@code null} = bez
+     * (UI), van {@link Serija#OBRAZAC} 400.
+     */
+    public PrezentacijaDetails kreiraj(CreatePrezentacijaCmd cmd, String serija) {
+        if (serija != null) {
+            Serija.proveri(serija);
+        }
         if (cmd == null || cmd.predmetId() == null) {
             throw new SystemException("Predmet je obavezan.", HttpStatus.BAD_REQUEST);
         }
@@ -98,10 +123,11 @@ public class PrezentacijaService {
         p.setTelefonPrikaz(TelefonPrikaz.DUGMAD);
         p.setDetaljiDozvoljeni(true);
         p.setTema(Objects.requireNonNullElse(cmd.tema(), Tema.NACRT));
+        p.setSerija(serija);
         p.setKreirano(sada);
         p.setIzmenjeno(sada);
         p = prezentacijaRepository.save(p);
-        log.info("Prezentacija kreirana: id={}, predmet={}", p.getId(), predmet.getId());
+        log.info("Prezentacija kreirana: id={}, predmet={}, serija={}", p.getId(), predmet.getId(), serija);
         return details(p, List.of());
     }
 
@@ -137,6 +163,12 @@ public class PrezentacijaService {
         if (izvodjenjeRepository.existsByPrezentacijaIdAndStatus(id, StatusIzvodjenja.AKTIVNO)) {
             throw new SystemException(IZVODJENJE_U_TOKU, HttpStatus.CONFLICT);
         }
+        obrisiZakljucanu(p);
+    }
+
+    /** Briše zaključanu prezentaciju sa slajdovima (pitanja i opcije kroz JPA) i izvođenjima (kaskada u bazi). */
+    private void obrisiZakljucanu(Prezentacija p) {
+        Long id = p.getId();
         // kroz JPA, ne kaskadom u bazi: FK slajdovi -> pitanja nema ON DELETE CASCADE
         slajdRepository.deleteAll(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(id));
         slajdRepository.flush();
@@ -223,7 +255,30 @@ public class PrezentacijaService {
     /** Novi slajd na kraj ili odmah posle slajda {@code posle}. */
     public SlajdDetails dodajSlajd(Long prezentacijaId, SlajdCmd cmd, Long posle) {
         ProverenSlajd n = proveren(cmd);
+        return dodaj(zakljucaj(prezentacijaId), n, posle, null);
+    }
+
+    /**
+     * Klodov nov slajd (MCP {@code dodaj_slajd}) sa serijom (obavezna, van {@link Serija#OBRAZAC} 400), na kraj ili odmah
+     * posle {@code posle}. Pod ključem prezentacije: dok se prezentacija izvodi 409 {@value #IZVODI_SE} (REST izmene tada
+     * menjaju čas uživo, Klodove ne), pa tek onda pun {@link #proveren} (vrste medija, Markdown slike), za razliku od REST
+     * upisa koji proveravaju pre ključa. Granica od 200 slajdova kao {@link #dodajSlajd}.
+     */
+    public SlajdDetails dodajSlajdIzSerije(Long prezentacijaId, SlajdCmd cmd, Long posle, String serija) {
+        Serija.proveri(serija);
         Prezentacija p = zakljucaj(prezentacijaId);
+        if (izvodjenjeRepository.existsByPrezentacijaIdAndStatus(prezentacijaId, StatusIzvodjenja.AKTIVNO)) {
+            throw new SystemException(IZVODI_SE, HttpStatus.CONFLICT);
+        }
+        ProverenSlajd n = proveren(cmd);
+        SlajdDetails d = dodaj(p, n, posle, serija);
+        log.info("Slajd iz serije dodat: id={}, prezentacija={}, serija={}", d.id(), prezentacijaId, serija);
+        return d;
+    }
+
+    /** Dodaje proveren slajd u zaključanu prezentaciju (na kraj ili posle {@code posle}) i prenumeriše. */
+    private SlajdDetails dodaj(Prezentacija p, ProverenSlajd n, Long posle, String serija) {
+        Long prezentacijaId = p.getId();
         List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(prezentacijaId);
         SlajdPP.proveriBrojSlajdova(slajdovi.size());
         int mesto = slajdovi.size();
@@ -236,6 +291,7 @@ public class PrezentacijaService {
         }
         Slajd s = new Slajd();
         s.setPrezentacija(p);
+        s.setSerija(serija);
         primeni(s, n);
         slajdovi.add(mesto, s);
         prenumerisi(slajdovi);
@@ -254,6 +310,19 @@ public class PrezentacijaService {
         sacuvajIzmenu(p);
         javi(pr -> pr.slajdoviPromenjeni(p.getId()));
         return SlajdMapper.uDetails(s, platnoJson);
+    }
+
+    /** Jedan slajd, pun (PLATNO sa potezima crteža), za {@code GET /slajdovi/{id}}. Samo čitanje, bez zaključavanja. */
+    @Transactional(readOnly = true)
+    public SlajdDetails slajd(Long id) {
+        Slajd s = slajdRepository.findById(id).orElseThrow(PrezentacijaService::slajdNijePronadjen);
+        return SlajdMapper.uDetails(s, platnoJson);
+    }
+
+    /** Id prezentacije kojoj slajd pripada (MCP {@code slajd}: link u UI); nepostojeći slajd je 404. Samo čitanje. */
+    @Transactional(readOnly = true)
+    public Long prezentacijaSlajda(Long slajdId) {
+        return slajdRepository.findPrezentacijaId(slajdId).orElseThrow(PrezentacijaService::slajdNijePronadjen);
     }
 
     /** Potezi svih CRTEZ slojeva slajda, redom slojeva; prazno za INFO i PITANJE. Samo čitanje, bez zaključavanja. */
@@ -324,6 +393,91 @@ public class PrezentacijaService {
         return details(p, novi);
     }
 
+    // ---------------------------------------------------------------- serija (MCP)
+
+    /**
+     * Poništava Klodovu seriju u prezentacijama (spec MCP 4.3, {@code ponisti_seriju}; banku poništava
+     * {@code SerijaService}). Nijedan slajd van serije se ne briše. Prezentacija serije koja nikad nije izvođena i ima
+     * samo slajdove te serije (ili nijedan) briše se cela. Neizvođena prezentacija serije sa ijednim slajdom van serije
+     * (Novica ga je dodao ili duplirao u UI-ju, ili ga je dodala druga serija) ostaje i preskočena je
+     * ({@value #RAZLOG_NOVICINI_SLAJDOVI}), a brišu se samo njeni slajdovi serije, kao u Novicinoj prezentaciji.
+     * Izvođena prezentacija serije se preskače cela, sa svim slajdovima: {@value #RAZLOG_IZVODJENA}, a dok se upravo
+     * izvodi {@value #RAZLOG_IZVODI_SE}. Slajdovi serije u drugim prezentacijama se brišu (sa pitanjem i opcijama) i
+     * ostali prenumerišu, osim dok se prezentacija izvodi: tada je svaki slajd serije preskočen, {@value #RAZLOG_IZVODI_SE}.
+     * Ključevi prezentacija idu rastuće po id-ju (posle svakog, kao i inače, njena aktivna izvođenja), a pre ključa se
+     * čitaju samo id-jevi. {@code potvrdi=false} ništa ne zaključava ni menja, a odlučuje istim pravilima: {@code obrisano}
+     * je spisak onoga što bi se obrisalo. Stavke idu redom prezentacija (id), u prezentaciji po {@code rb}.
+     */
+    public PonistavanjeInfo ponistiSeriju(String serija, boolean potvrdi) {
+        Serija.proveri(serija);
+        Set<Long> ids = new TreeSet<>(prezentacijaRepository.findIdsBySerija(serija));
+        ids.addAll(slajdRepository.findPrezentacijaIdsBySerija(serija));
+        List<StavkaPonistavanja> obrisano = new ArrayList<>();
+        List<StavkaPonistavanja> preskoceno = new ArrayList<>();
+        for (Long id : ids) {
+            Optional<Prezentacija> nadjena = potvrdi ? zakljucajAkoPostoji(id) : prezentacijaRepository.findById(id);
+            if (nadjena.isEmpty()) {
+                continue;   // obrisana u međuvremenu
+            }
+            Prezentacija p = nadjena.get();
+            boolean prezentacijaSerije = serija.equals(p.getSerija());
+            if (prezentacijaSerije && izvodjenjeRepository.countByPrezentacijaId(id) > 0) {
+                preskoceno.add(stavka(p, izvodjenjeRepository.existsByPrezentacijaIdAndStatus(id, StatusIzvodjenja.AKTIVNO)
+                        ? RAZLOG_IZVODI_SE : RAZLOG_IZVODJENA));
+                continue;
+            }
+            List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(id);
+            List<Slajd> izSerije = slajdovi.stream().filter(s -> serija.equals(s.getSerija())).toList();
+            if (prezentacijaSerije) {
+                if (izSerije.size() == slajdovi.size()) {
+                    obrisano.add(stavka(p, null));
+                    if (potvrdi) {
+                        obrisiZakljucanu(p);
+                    }
+                    continue;
+                }
+                // Novica je dodao ili duplirao slajd: prezentacija ostaje, brišu se samo slajdovi serije (ispod)
+                preskoceno.add(stavka(p, RAZLOG_NOVICINI_SLAJDOVI));
+            }
+            if (izSerije.isEmpty()) {
+                continue;   // nema (više) slajdova serije: obrisani u međuvremenu ili ranijim poništavanjem
+            }
+            if (izvodjenjeRepository.existsByPrezentacijaIdAndStatus(id, StatusIzvodjenja.AKTIVNO)) {
+                izSerije.forEach(s -> preskoceno.add(stavka(p, s, RAZLOG_IZVODI_SE)));
+                continue;
+            }
+            izSerije.forEach(s -> obrisano.add(stavka(p, s, null)));
+            if (potvrdi) {
+                slajdovi.removeAll(izSerije);
+                slajdRepository.deleteAll(izSerije);
+                prenumerisi(slajdovi);
+                sacuvajIzmenu(p);
+                javi(pr -> pr.slajdoviPromenjeni(id));
+            }
+        }
+        if (potvrdi) {
+            log.info("Serija poništena u prezentacijama: serija={}, obrisano={}, preskočeno={}", serija, obrisano.size(),
+                    preskoceno.size());
+        }
+        return new PonistavanjeInfo(potvrdi, obrisano, preskoceno);
+    }
+
+    private static StavkaPonistavanja stavka(Prezentacija p, String razlog) {
+        return new StavkaPonistavanja(StavkaPonistavanja.PREZENTACIJA, p.getId(), p.getNaziv(), razlog);
+    }
+
+    /** Slajd u stavci: "{@code <prezentacija>, slajd <rb>: <naslov ili tekst pitanja ili tip>}" (opis skraćen). */
+    private static StavkaPonistavanja stavka(Prezentacija p, Slajd s, String razlog) {
+        String opis = s.getNaslov() != null ? s.getNaslov()
+                : s.getPitanje() != null ? s.getPitanje().getTekst()
+                : s.getTip().name();
+        if (duzina(opis) > MAX_OPIS_SLAJDA) {
+            opis = opis.substring(0, opis.offsetByCodePoints(0, MAX_OPIS_SLAJDA)).stripTrailing() + "…";
+        }
+        return new StavkaPonistavanja(StavkaPonistavanja.SLAJD, s.getId(),
+                p.getNaziv() + ", slajd " + s.getRb() + ": " + opis, razlog);
+    }
+
     // ---------------------------------------------------------------- pokretanje
 
     /** Predavanja predmeta prezentacije koja nisu završena ili su od danas, najnovija prva, najviše 30. */
@@ -349,8 +503,15 @@ public class PrezentacijaService {
      * kakvog upisa: red zaključavanja prezentacija -> izvođenje -> slajdovi je isti u svim putanjama.
      */
     private Prezentacija zakljucaj(Long id) {
-        Prezentacija p = prezentacijaRepository.findByIdForUpdate(id).orElseThrow(PrezentacijaService::nijePronadjena);
-        javi(pr -> pr.zakljucaj(id));
+        return zakljucajAkoPostoji(id).orElseThrow(PrezentacijaService::nijePronadjena);
+    }
+
+    /** Kao {@link #zakljucaj}, ali bez 404: prazno kad prezentacije nema (izvođenja se tada ne zaključavaju). */
+    private Optional<Prezentacija> zakljucajAkoPostoji(Long id) {
+        Optional<Prezentacija> p = prezentacijaRepository.findByIdForUpdate(id);
+        if (p.isPresent()) {
+            javi(pr -> pr.zakljucaj(id));
+        }
         return p;
     }
 
@@ -364,12 +525,14 @@ public class PrezentacijaService {
     }
 
     /**
-     * Normalizuje i proverava komandu (400 pri grešci), uključujući čitanje dokumenta platna i postojanje slika. Radi
-     * se pre zaključavanja (red zaključavanja), kao i upit o slikama.
+     * Normalizuje i proverava komandu (400 pri grešci), uključujući čitanje dokumenta platna, postojanje slika i slike
+     * u Markdown-u (spec 6.5). REST upisi ga zovu pre zaključavanja, a {@link #dodajSlajdIzSerije} posle ključa i provere
+     * izvođenja; upiti o slikama ne zaključavaju ništa, pa red zaključavanja ostaje isti.
      */
     private ProverenSlajd proveren(SlajdCmd cmd) {
         SlajdCmd n = SlajdPP.normalizuj(cmd);
         SlajdPP.proveri(n);
+        proveriSlikeUTekstu(SlajdPP.slikeSlajda(n));
         proveriSliku(n.slikaId());
         if (n.pitanje() != null) {
             proveriSliku(n.pitanje().slikaId());
@@ -391,6 +554,20 @@ public class PrezentacijaService {
             }
         }
         return new ProverenSlajd(n, platno);
+    }
+
+    /**
+     * Markdown slike slajda ({@link SlajdPP#slikeSlajda}) su postojeći mediji vrste {@code SLIKA}, jednim upitom; nepostojeći
+     * UUID, render SVG i prilozi banke su 400 {@link SlajdPP#SLIKA_VAN_GFS} (kao i cilj van GFS-a).
+     */
+    private void proveriSlikeUTekstu(Set<String> ids) {
+        if (ids.isEmpty()) {
+            return;
+        }
+        List<VrstaMedija> vrste = medijRepository.vrste(ids);
+        if (vrste.size() != ids.size() || vrste.stream().anyMatch(v -> v != VrstaMedija.SLIKA)) {
+            throw new SystemException(SlajdPP.SLIKA_VAN_GFS, HttpStatus.BAD_REQUEST);
+        }
     }
 
     /**
@@ -463,6 +640,10 @@ public class PrezentacijaService {
         return o;
     }
 
+    /**
+     * Kopija sadržaja slajda bez serije: kopija je Novicina, pa je poništavanje serije ne briše, a prezentacija serije u
+     * kojoj je ostaje ({@value #RAZLOG_NOVICINI_SLAJDOVI}).
+     */
     private static Slajd kopija(Slajd s) {
         Slajd k = new Slajd();
         k.setTip(s.getTip());

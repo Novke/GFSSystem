@@ -1,6 +1,7 @@
 # gfs-latex: render servis za LaTeX
 
-Mali HTTP servis koji ceo LaTeX dokument pretvara u SVG (telefon, projektor) ili PDF, za banku zadataka (spec banke 3.1).
+Mali HTTP servis koji ceo LaTeX dokument pretvara u SVG (telefon, projektor), PDF ili PNG (slika za Kloda kroz MCP), za
+banku zadataka (spec banke 3.1, spec MCP 6.4). Više formata stiže iz jednog prevođenja.
 Zove ga backend (`service/banka/LatexRender`, `gfs.latex.url`); sam ne zna ništa o zadacima ni bazi. Debian bookworm +
 TeX Live iz Debiana + poppler (`pdftocairo`); server je Python 3 stdlib (`server.py`), bez pip zavisnosti i bez tajni.
 
@@ -19,7 +20,12 @@ Telo je JSON do `RENDER_MAX_BODY` (60 MB), sa `Content-Length` ili `Transfer-Enc
 }
 ```
 
-- `format`: `svg` ili `pdf`. `tex`: ceo dokument (omot, preambula i telo sklapa backend, `LatexDokument`), UTF-8, do 2 MB.
+- `formati` (može da izostane): neprazna lista formata bez ponavljanja iz `svg`, `pdf`, `png`, npr. `["svg","png"]`. Svi
+  stižu iz **jednog** pdflatex prevođenja, redom kojim su traženi. Kad postoji, ima prednost i `format` se ne čita.
+- `format`: stari oblik sa jednim formatom, `svg` ili `pdf` (samo kad nema `formati`; `png` ide samo kroz `formati`).
+  Java klijent uz `formati` šalje i `format` = prvi traženi, pa stariji servis bez `formati` vrati samo njega, a klijent
+  to vidi kao neupotrebljiv odgovor (`RenderNedostupan`), nikad kao delimičan uspeh.
+- `tex`: ceo dokument (omot, preambula i telo sklapa backend, `LatexDokument`), UTF-8, do 2 MB.
 - `prilozi` (može da izostane, najviše 20): svaki postaje fajl `<ime>.<ekstenzija>` pored dokumenta, pa ga LaTeX zove
   sa `\includegraphics{<ime>}`. `ime` po `^[a-z0-9_-]{1,60}$` (osim `dokument`, rezervisano), `ekstenzija` je `pdf`,
   `png`, `jpg` ili `jpeg`, `sadrzaj` je base64, isti fajl dvaput je 400. WebP nije LaTeX prilog (pdflatex ga ne
@@ -30,24 +36,28 @@ Odgovor je uvek 200 kad je zahtev ispravan:
 
 ```json
 {"ok": true, "svg": "<base64>", "trajanjeMs": 640}
+{"ok": true, "svg": "<base64>", "png": "<base64>", "trajanjeMs": 910}
 {"ok": false, "greska": {"linija": 14, "poruka": "Undefined control sequence."}, "log": "<poslednjih 60 linija loga>"}
 ```
 
-- Uspeh uvek nosi traženi format (`svg` ili `pdf`, neprazan), neuspeh uvek nosi `greska` (i `log`).
+- Uspeh nosi **svaki** traženi format (neprazan) i nijedan drugi, neuspeh uvek nosi `greska` (i `log`). Kad padne
+  pretvaranje bilo kog formata, ceo odgovor je neuspeh.
+- PNG: `pdftocairo -png -singlefile -scale-to 1400` (samo prva strana, duža ivica 1400 px, bela pozadina, bez providnosti).
 - `greska.linija` je linija u **celom dokumentu** (backend oduzima linije omota i preambule) ili `null` kad se ne zna.
   Poruka je prvi red `dokument.tex:N: ...` iz loga (`-file-line-error`), pa red iz drugog fajla (paket) bez linije, pa
   prvi red `! ...`; za `Emergency stop.` uzima se red `! ...` pre njega (npr. `LaTeX Error: File ... not found.`).
   Najviše 300 znakova.
 - Poruke servisa: `Prekoračeno vreme kompajliranja (N s).`, `Prevelik izlaz.` (izlaz iznad `RENDER_MAX_OUTPUT` ili
   fajl iznad 64 MB), `Dokument nema stranica.` (nema strana, ili `dokument.pdf` nije PDF koji je napravio pdflatex, npr.
-  dokument ga sam napiše kroz `\openout`), `Pretvaranje PDF-a u SVG nije uspelo.`,
-  `Prekoračeno vreme pretvaranja u SVG.`, `LaTeX nije uspeo, vidi log.`
+  dokument ga sam napiše kroz `\openout`), `Pretvaranje PDF-a u SVG nije uspelo.`, `Pretvaranje PDF-a u PNG nije uspelo.`,
+  `Prekoračeno vreme pretvaranja u SVG.`, `Prekoračeno vreme pretvaranja u PNG.`, `LaTeX nije uspeo, vidi log.`
 
 Ostali statusi (telo `{"greska": "..."}`): **400** `Neispravan zahtev.` (nije JSON objekat ili je preduboko ugnežđen,
-pogrešan tip polja, `format`, prazan ili prevelik `tex`, neispravan prilog ili više od 20 priloga, nejasna
-`Content-Length`/`Transfer-Encoding` zaglavlja, chunked telo u više od 100 000 delova), **413** `Prevelik zahtev.` (telo
-iznad `RENDER_MAX_BODY`; uz `Expect: 100-continue` odbija se pre slanja tela), **404** nepoznata putanja, **405**
-pogrešan metod (zaglavlje `Allow`), **500** `Greška servisa.` (npr. pun `/tmp`).
+pogrešan tip polja, `format` bez `formati`, `formati` koja nije neprazna lista poznatih formata bez ponavljanja, prazan
+ili prevelik `tex`, neispravan prilog ili više od 20 priloga, nejasna `Content-Length`/`Transfer-Encoding` zaglavlja,
+chunked telo u više od 100 000 delova), **413** `Prevelik zahtev.` (telo iznad `RENDER_MAX_BODY`; uz
+`Expect: 100-continue` odbija se pre slanja tela), **404** nepoznata putanja, **405** pogrešan metod (zaglavlje
+`Allow`), **500** `Greška servisa.` (npr. pun `/tmp`).
 
 ### `GET /zdravlje`
 
@@ -65,10 +75,15 @@ pogrešan metod (zaglavlje `Allow`), **500** `Greška servisa.` (npr. pun `/tmp`
   1 GB adresnog prostora, 64 MB po fajlu, bez core fajla. Po isteku roka ubija se cela grupa procesa.
 - Drugi prolaz samo kad log traži (`Rerun to get ...`), u istom roku. stdout pdflatex-a ide u fajl, ne u memoriju servera.
   Posle prolaza `dokument.pdf` mora da počinje sa `%PDF-`, a log ne sme da kaže `No pages of output`.
-- SVG: `pdftocairo -svg dokument.pdf dokument.svg` (glifovi kao putanje, slike kao `data:` URI, bez fontova i skripti),
-  najviše 20 s i ne više od 5 s posle roka prevoda, pa odgovor stiže pre nego što Java klijent odustane (rok + 10 s).
+- Jedno prevođenje po zahtevu, ma koliko formata; svako upiše jedan red `prevođenje: <ms> ms` u log (trajanje pdflatex
+  prolaza; smoke test broji te redove).
+- SVG: `pdftocairo -svg dokument.pdf dokument.svg` (glifovi kao putanje, slike kao `data:` URI, bez fontova i skripti);
+  PNG: `pdftocairo -png -singlefile -scale-to 1400 dokument.pdf dokument` (fajl `dokument.png`); PDF je sam `dokument.pdf`.
+  Svaki izlaz je pod istim `RENDER_MAX_OUTPUT`. Sva pretvaranja jednog zahteva zajedno traju najviše 20 s i ne više od
+  5 s posle roka prevoda, pa odgovor stiže pre nego što Java klijent odustane (rok + 10 s).
 - Najviše 4 prevoda istovremeno (`BoundedSemaphore`); peti čeka. `/zdravlje` ne čeka.
-- Jedna linija loga po zahtevu na stdout (metod, putanja, status, ms, `ok=`); izvor dokumenta se nikad ne loguje.
+- Jedna linija loga po zahtevu na stdout (metod, putanja, status, ms, `ok=`), uz red `prevođenje:` kad je bilo prevođenja;
+  izvor dokumenta se nikad ne loguje.
 
 ## Izolacija
 
@@ -93,11 +108,13 @@ bash latex-render/test/smoke.sh   # build + kontejner sa izolacijom kao u compos
 ```
 
 Smoke proverava: `primer.tex` (omot i podrazumevana preambula iz `LatexDokument.java`, TikZ automat, `enumitem`,
-`booktabs`, `amsmath`/`amssymb`, PNG prilog) u SVG i PDF, isto telo poslato chunked, `primer-greska.tex` (`ok=false`,
-linija 14 = treća linija tela), `zabranjeno.tex` (`ok=false`, nema izlaza `id` ni sadržaja `/etc/passwd`, nema `/tmp/x`
-u kontejneru), `bez-strana.tex` (sam napiše `dokument.pdf`: `Dokument nema stranica.`), da posle zahteva u `/tmp` nema
-radnih direktorijuma, 400 (loš i preduboko ugnežđen JSON, `format: png`, ime `../slika`, WebP prilog, 21 prilog), 413
-(70 MB), 404, 405 i `/zdravlje`.
+`booktabs`, `amsmath`/`amssymb`, PNG prilog) u SVG i PDF, isto telo poslato chunked, `formati: ["svg","png"]` (oba
+ključa, PNG počinje sa `\x89PNG` i duža ivica mu je 1400 px, u logu tačno jedan nov red `prevođenje:`) i
+`["png","pdf"]` (bez SVG-a), `primer-greska.tex` (`ok=false`, linija 14 = treća linija tela), `zabranjeno.tex`
+(`ok=false`, nema izlaza `id` ni sadržaja `/etc/passwd`, nema `/tmp/x` u kontejneru), `bez-strana.tex` (sam napiše
+`dokument.pdf`: `Dokument nema stranica.`), da posle zahteva u `/tmp` nema radnih direktorijuma, 400 (loš i preduboko
+ugnežđen JSON, `format: png`, ime `../slika`, WebP prilog, 21 prilog, `formati` prazna, sa ponavljanjem, sa nepoznatim
+formatom ili koja nije lista), 413 (70 MB), 404, 405 i `/zdravlje`.
 
 Ručno, na portu na koji backend sa `dev` profilom već gleda (`gfs.latex.url` = `http://localhost:8800`):
 
@@ -106,6 +123,8 @@ docker build -t gfs-latex latex-render
 docker run --rm --read-only --tmpfs /tmp:size=256m,mode=1777 --cap-drop ALL \
   --security-opt no-new-privileges:true -p 127.0.0.1:8800:8800 gfs-latex
 python3 -I -c 'import json; print(json.dumps({"format": "pdf", "tex": open("latex-render/test/primer-greska.tex").read()}))' \
+  | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:8800/render
+python3 -I -c 'import json; print(json.dumps({"formati": ["svg", "png"], "tex": "\\documentclass{standalone}\n\\begin{document}$x^2$\\end{document}\n"}))' \
   | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:8800/render
 ```
 
@@ -120,7 +139,7 @@ Oko 1,3 GB raspakovan (oko 400 MB kompresovan), build oko 3 minuta (TeX Live iz 
 |---|---|---|
 | `RENDER_PORT` | `8800` | port servera (sluša na `0.0.0.0` u kontejneru; i healthcheck ga čita), 1 do 65535 |
 | `RENDER_MAX_TIMEOUT` | `60` | gornja granica za `timeoutSekunde` (s), najmanje 5 |
-| `RENDER_MAX_OUTPUT` | `5242880` | najveći SVG ili PDF u odgovoru (B), iznad je `Prevelik izlaz.`; najmanje 65536 |
+| `RENDER_MAX_OUTPUT` | `5242880` | najveći SVG, PDF ili PNG u odgovoru (B, svaki format posebno), iznad je `Prevelik izlaz.`; najmanje 65536 |
 | `RENDER_MAX_BODY` | `62914560` | najveće telo zahteva (B), iznad je 413; najmanje 1048576 |
 
 Vrednost van opsega ili koja nije ceo broj: server ispiše poruku na stderr i izađe sa kodom 2 (kontejner ne radi pogrešno

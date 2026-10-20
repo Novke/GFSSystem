@@ -34,7 +34,8 @@ import java.util.stream.Stream;
  * preambulu proverava servis preambule pri čuvanju (deny-lista i {@link #proveriPreambulu probni render}), ovde ne. Greška u
  * bilo kom delu je ceo render neuspeo ({@code ok=false} sa delom i linijom relativnom na taj deo); kad padne samo rešenje,
  * ishod nosi i SVG zadatka (proba ga prikazuje), a {@code VarijantaService} ga ne čuva (varijanta zadržava poslednji uspeo par
- * zadatak i rešenje). Poruka greške: red {@code dokument.tex:N:} iz loga
+ * zadatak i rešenje). Uz SVG (ili umesto njega) ide i PNG istog dela iz istog prevođenja kad ga traži MCP (spec MCP 6.4);
+ * PNG se ne čuva. Poruka greške: red {@code dokument.tex:N:} iz loga
  * ({@link LatexGreska#izLoga}); kad ga u kraju loga nema (greška iz paketa, istek vremena, red ispao iz poslednjih
  * linija), poruka i linija koje je našao servis (linija svedena na deo); bez obe opšta poruka. Odbijen zahtev (4xx,
  * {@link RenderOdgovor#odbijen()}, poruka je telo odgovora) nikad ne prikazuje telo: nastavnik dobija opštu poruku,
@@ -57,6 +58,8 @@ public class RenderVarijante {
      */
     static final int RENDER_VERZIJA = 1;
     private static final String FORMAT = "svg";
+    private static final List<String> SVG_I_PNG = List.of(FORMAT, "png");
+    private static final List<String> SAMO_PNG = List.of("png");
     private static final char RAZDVAJAC = '\u0000';
     private static final Map<String, String> EKSTENZIJE =
             Map.of("image/png", "png", "image/jpeg", "jpg", "application/pdf", "pdf");
@@ -69,9 +72,15 @@ public class RenderVarijante {
     /**
      * Ishod rendera: uspeh nosi SVG zadatka i (kad rešenje postoji) rešenja, neuspeh grešku i deo
      * ({@value #DEO_TEKST} ili {@value #DEO_RESENJE}); neuspeh rešenja nosi i SVG zadatka koji se preveo, neuspeh teksta
-     * nijedan SVG.
+     * nijedan SVG. {@code png}/{@code resenjePng} isto, samo kad je PNG tražen; SVG je tada {@code null} ako nije tražen.
      */
-    public record Ishod(boolean ok, byte[] svg, byte[] resenjeSvg, RenderGreskaInfo greska, String deo) {
+    public record Ishod(boolean ok, byte[] svg, byte[] resenjeSvg, RenderGreskaInfo greska, String deo, byte[] png,
+                        byte[] resenjePng) {
+
+        /** Ishod bez PNG-a. */
+        public Ishod(boolean ok, byte[] svg, byte[] resenjeSvg, RenderGreskaInfo greska, String deo) {
+            this(ok, svg, resenjeSvg, greska, deo, null, null);
+        }
     }
 
     /** Greška pročitana iz kolone {@code render_greska}; {@code deo} je {@code null} za zapis bez dela. */
@@ -81,7 +90,7 @@ public class RenderVarijante {
         }
     }
 
-    private record Deo(byte[] svg, RenderGreskaInfo greska) {
+    private record Deo(byte[] svg, byte[] png, RenderGreskaInfo greska) {
     }
 
     /** Deny-lista za tekst i rešenje: 400 {@code Komanda <ime> nije dozvoljena.} za prvu zabranjenu komandu. */
@@ -92,27 +101,43 @@ public class RenderVarijante {
     }
 
     /**
-     * Prevodi tekst pa rešenje (prazno rešenje se preskače) sa istim prilozima, učitanim jednom.
+     * Prevodi tekst pa rešenje (prazno rešenje se preskače) sa istim prilozima, učitanim jednom; samo SVG.
      *
      * @param preambula preambula predmeta; {@code null} ili prazna = podrazumevana
      * @throws SystemException  400 za zabranjenu komandu ili prilog koji nije PNG, JPEG ili PDF (pre poziva servisa)
      * @throws RenderNedostupan kad render servis ne radi ili vrati neupotrebljiv SVG
      */
     public Ishod renderuj(String preambula, String tekst, String resenje, List<PrilogCmd> prilozi) {
+        return renderuj(preambula, tekst, resenje, prilozi, true, false);
+    }
+
+    /**
+     * Kao {@link #renderuj(String, String, String, List)}, sa izborom formata: svaki deo je jedno prevođenje koje vraća
+     * sve tražene formate ({@code svg} za čuvanje, {@code png} za Kloda). Bez PNG-a ide stari poziv sa jednim formatom
+     * ({@code latexRender.renderuj("svg", ...)}), isti zahtev kao pre PNG-a.
+     *
+     * @throws IllegalArgumentException kad nije tražen nijedan format
+     * @throws RenderNedostupan         kad render servis ne radi ili ne vrati svaki traženi format
+     */
+    public Ishod renderuj(String preambula, String tekst, String resenje, List<PrilogCmd> prilozi, boolean svg,
+                          boolean png) {
+        if (!svg && !png) {
+            throw new IllegalArgumentException("Render traži bar jedan format.");
+        }
         proveriTelo(tekst, resenje);
         List<RenderPrilog> zaRender = zaRender(prilozi);
-        Deo zadatak = prevedi(preambula, tekst, zaRender);
+        Deo zadatak = prevedi(preambula, tekst, zaRender, svg, png);
         if (zadatak.greska() != null) {
             return new Ishod(false, null, null, zadatak.greska(), DEO_TEKST);
         }
         if (resenje == null || resenje.isBlank()) {
-            return new Ishod(true, zadatak.svg(), null, null, null);
+            return new Ishod(true, zadatak.svg(), null, null, null, zadatak.png(), null);
         }
-        Deo r = prevedi(preambula, resenje, zaRender);
+        Deo r = prevedi(preambula, resenje, zaRender, svg, png);
         if (r.greska() != null) {
-            return new Ishod(false, zadatak.svg(), null, r.greska(), DEO_RESENJE);
+            return new Ishod(false, zadatak.svg(), null, r.greska(), DEO_RESENJE, zadatak.png(), null);
         }
-        return new Ishod(true, zadatak.svg(), r.svg(), null, null);
+        return new Ishod(true, zadatak.svg(), r.svg(), null, null, zadatak.png(), r.png());
     }
 
     /**
@@ -200,20 +225,22 @@ public class RenderVarijante {
         }
     }
 
-    private Deo prevedi(String preambula, String telo, List<RenderPrilog> prilozi) {
+    private Deo prevedi(String preambula, String telo, List<RenderPrilog> prilozi, boolean svg, boolean png) {
         LatexDokument.Dokument dokument = LatexDokument.zaTelefon(preambula, telo);
-        RenderOdgovor odgovor = latexRender.renderuj(FORMAT, dokument.tex(), prilozi);
+        RenderOdgovor odgovor = png
+                ? latexRender.renderuj(svg ? SVG_I_PNG : SAMO_PNG, dokument.tex(), prilozi)
+                : latexRender.renderuj(FORMAT, dokument.tex(), prilozi);
         if (odgovor.ok()) {
-            return new Deo(svg(odgovor.svg()), null);
+            return new Deo(svg ? dekodiraj(odgovor.svg(), "SVG") : null, png ? dekodiraj(odgovor.png(), "PNG") : null, null);
         }
-        return new Deo(null, greska(odgovor, dokument.pomakLinija()));
+        return new Deo(null, null, greska(odgovor, dokument.pomakLinija()));
     }
 
-    private static byte[] svg(String base64) {
+    private static byte[] dekodiraj(String base64, String format) {
         try {
             return Base64.getDecoder().decode(base64);
         } catch (IllegalArgumentException e) {
-            log.warn("Render servis je vratio SVG koji nije base64.");
+            log.warn("Render servis je vratio {} koji nije base64.", format);
             throw new RenderNedostupan(e);
         }
     }

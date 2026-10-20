@@ -37,6 +37,9 @@ public class Slajd {
     /** Prelaz pri ulasku na slajd (faza 5); sve kolone null = bez prelaza (Hibernate tada vraća null). */
     @Embedded
     private PrelazSlajda prelaz;
+    /** Klodova serija upisa (MCP); null za slajdove napravljene u UI-ju ili uvozom. */
+    @Column(length = 60)
+    private String serija;
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "pitanje_id")
     private Pitanje pitanje;

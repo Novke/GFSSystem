@@ -53,6 +53,13 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             where v.grupa.id in :ids group by v.grupa.id, v.status, v.renderStatus""")
     List<Object[]> brojaciPoGrupi(@Param("ids") Collection<Long> ids);
 
+    /** Klodovi nacrti (CLAUDE, NACRT) po grupi za stablo, jedan upit: redovi {@code [grupaId, broj]}, grupe bez njih nisu tu. */
+    @Query("""
+            select v.grupa.id, count(v) from Varijanta v
+            where v.grupa.id in :ids and v.izvor = tri.novica.gfssystem.entity.banka.IzvorVarijante.CLAUDE
+            and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.NACRT group by v.grupa.id""")
+    List<Object[]> claudeNacrtiPoGrupi(@Param("ids") Collection<Long> ids);
+
     /**
      * Sve varijante predmeta (ponovni render cele banke posle izmene preambule) u jednom upitu: grupa sa precima (dubina
      * je najviše 6) i predmetom, oba SVG medija i prilozi sa medijima (sve EAGER veze, inače upit po varijanti i grupi).
@@ -66,6 +73,29 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             left join fetch v.prilozi p left join fetch p.medij
             where g.predmet.id = :predmetId""")
     List<Varijanta> svePredmeta(@Param("predmetId") Long predmetId);
+
+    /**
+     * Brojači serija ({@code SerijaService}), jedan upit: redovi {@code [serija, Klodovih nacrta, ikad odobrenih, najnovije
+     * kreirano]}; {@code predmetId == null} = svi predmeti.
+     */
+    @Query("""
+            select v.serija,
+            sum(case when v.izvor = tri.novica.gfssystem.entity.banka.IzvorVarijante.CLAUDE
+              and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.NACRT then 1 else 0 end),
+            sum(case when v.ikadOdobrena = true then 1 else 0 end), max(v.kreirano)
+            from Varijanta v where v.serija is not null and (:predmetId is null or v.grupa.predmet.id = :predmetId)
+            group by v.serija""")
+    List<Object[]> brojaciPoSeriji(@Param("predmetId") Long predmetId);
+
+    /**
+     * Varijante serije za poništavanje, rastuće po id-ju: redovi {@code [id, rb, naziv, grupaId, naziv grupe, status, izvor,
+     * ikadOdobrena]}. Samo vrednosti, ne entiteti: brisanje posle zaključava i čita varijantu samo, a entitet učitan pre
+     * ključa ostao bi u persistence context-u sa stanjem od pre ključa (Novica je u međuvremenu mogao da odobri).
+     */
+    @Query("""
+            select v.id, v.rb, v.naziv, g.id, g.naziv, v.status, v.izvor, v.ikadOdobrena
+            from Varijanta v join v.grupa g where v.serija = :serija order by v.id""")
+    List<Object[]> zaPonistavanje(@Param("serija") String serija);
 
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying

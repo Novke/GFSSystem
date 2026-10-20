@@ -21,11 +21,13 @@ import tri.novica.gfssystem.dto.banka.RenderZahtev;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * HTTP klijent render servisa (kontejner {@code gfs-latex}, spec banke 3.1): {@code POST /render} pretvara LaTeX u SVG ili
- * PDF ({@code GET /zdravlje} servisa koristi healthcheck kontejnera, ne backend). Klijent se gradi ovde (veza 5 s, čitanje {@code gfs.latex.timeout-sekunde}),
+ * HTTP klijent render servisa (kontejner {@code gfs-latex}, spec banke 3.1): {@code POST /render} pretvara LaTeX u SVG,
+ * PDF ili PNG, po potrebi više formata iz istog prevođenja (spec MCP 6.4) ({@code GET /zdravlje} servisa koristi
+ * healthcheck kontejnera, ne backend). Klijent se gradi ovde (veza 5 s, čitanje {@code gfs.latex.timeout-sekunde}),
  * bez {@code RestClient.Builder} beana: pom nema {@code spring-boot-restclient}, a bean tog tipa bi kasnije zaklonio Bootov.
  * <p>
  * Neuspeh kompilacije nije izuzetak: stiže kao {@code ok=false} sa greškom (servis odgovara 200). Servis koji ne radi
@@ -77,7 +79,29 @@ public class LatexRender {
      *                          neuspeh bez greške)
      */
     public RenderOdgovor renderuj(String format, String tex, List<RenderPrilog> prilozi) {
-        RenderZahtev zahtev = new RenderZahtev(format, tex, prilozi == null ? List.of() : prilozi, timeoutServisa);
+        return posalji(new RenderZahtev(format, tex, prilozi == null ? List.of() : prilozi, timeoutServisa),
+                Collections.singletonList(format));
+    }
+
+    /**
+     * Više formata iz jednog prevođenja (npr. {@code ["svg","png"]}: SVG za čuvanje i PNG za Kloda). Zahtev nosi
+     * {@code formati} i, kao {@code format}, prvi od njih; servis koji ne zna {@code formati} vrati samo taj jedan, pa je
+     * odgovor neupotrebljiv ({@link RenderNedostupan}), nikad delimičan uspeh.
+     *
+     * @param formati neprazna lista iz {@code svg}, {@code pdf}, {@code png}, bez ponavljanja
+     * @param prilozi može {@code null} (kao prazna lista)
+     * @throws RenderNedostupan kao {@link #renderuj(String, String, List)}, i kad uspeh ne nosi <b>svaki</b> traženi format
+     */
+    public RenderOdgovor renderuj(List<String> formati, String tex, List<RenderPrilog> prilozi) {
+        if (formati == null || formati.isEmpty()) {
+            throw new IllegalArgumentException("Render traži bar jedan format.");
+        }
+        List<String> trazeni = List.copyOf(formati);
+        List<RenderPrilog> zaSlanje = prilozi == null ? List.of() : prilozi;
+        return posalji(new RenderZahtev(trazeni.get(0), tex, zaSlanje, timeoutServisa, trazeni), trazeni);
+    }
+
+    private RenderOdgovor posalji(RenderZahtev zahtev, List<String> trazeni) {
         try {
             Telo telo = klijent.post().uri("/render")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -85,7 +109,7 @@ public class LatexRender {
                     .retrieve()
                     .body(Telo.class);
             RenderOdgovor odgovor = telo == null ? null : telo.odgovor();
-            if (!upotrebljiv(odgovor, format)) {
+            if (!upotrebljiv(odgovor, trazeni)) {
                 log.warn("Render servis je vratio odgovor bez sadržaja.");
                 throw new RenderNedostupan();
             }
@@ -101,18 +125,21 @@ public class LatexRender {
 
     /** JSON telo odgovora servisa; nepoznata polja se ignorišu, a {@code odbijen} u {@link RenderOdgovor} postavlja samo ovaj klijent. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Telo(boolean ok, String svg, String pdf, RenderGreskaInfo greska, String log, Long trajanjeMs) {
+    record Telo(boolean ok, String svg, String pdf, RenderGreskaInfo greska, String log, Long trajanjeMs, String png) {
         RenderOdgovor odgovor() {
-            return new RenderOdgovor(ok, svg, pdf, greska, log, trajanjeMs, false);
+            return new RenderOdgovor(ok, svg, pdf, greska, log, trajanjeMs, false, png);
         }
     }
 
-    /** Uspeh nosi traženi format (svg ili pdf), neuspeh nosi grešku; sve drugo je servis koji se loše ponaša. */
-    private static boolean upotrebljiv(RenderOdgovor o, String format) {
+    /** Uspeh nosi svaki traženi format, neuspeh nosi grešku; sve drugo je servis koji se loše ponaša. */
+    private static boolean upotrebljiv(RenderOdgovor o, List<String> formati) {
         if (o == null) return false;
         if (!o.ok()) return o.greska() != null;
-        String sadrzaj = "pdf".equals(format) ? o.pdf() : o.svg();
-        return sadrzaj != null && !sadrzaj.isBlank();
+        for (String format : formati) {
+            String sadrzaj = "pdf".equals(format) ? o.pdf() : "png".equals(format) ? o.png() : o.svg();
+            if (sadrzaj == null || sadrzaj.isBlank()) return false;
+        }
+        return true;
     }
 
     /** Servis piše UTF-8; {@code getResponseBodyAsString()} bez charset-a u zaglavlju dekodira kao ISO-8859-1. */
