@@ -135,6 +135,11 @@ PUT /prezentacije/{id}/redosled ADMIN
 POST /prezentacije/{id}/slajdovi ADMIN
 POST /prezentacije/{id}/slajdovi/uvoz ADMIN
 GET /public/lti/jwks ANONIMNO
+POST /public/lti/povezi STUDENT
+GET /public/lti/povezivanje ANONIMNO
+GET /public/lti/prijava ANONIMNO
+POST /public/lti/prijava ANONIMNO
+POST /public/lti/start ANONIMNO
 GET /public/mediji/{id} ANONIMNO
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO

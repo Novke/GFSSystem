@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.security;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -8,6 +9,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.handler.AbstractHandlerMapping;
 
 import java.util.Arrays;
 import java.util.List;
@@ -18,6 +20,11 @@ import java.util.List;
  * u bezbednosnom lancu ({@link #corsConfigurationSource()}, {@code http.cors}: preflight dobija CORS odgovor pre pravila
  * pristupa, tuđ origin 403) i u Spring MVC-u ({@link #addCorsMappings}, za testove bez lanca); lanac postavi zaglavlja
  * prvi, a MVC tada ništa ne dodaje. Ista lista je i za proveru porekla ({@link ProveraPoreklaFilter}).
+ * <p>
+ * LTI login i launch ({@link ProveraPoreklaFilter#LTI_IZUZECI}) su izuzeti na oba mesta ({@link #bezLti}): stižu kao
+ * navigacija pregledača sa Moodle-a ({@code form_post} nosi {@code Origin} Moodle-a), pa bi ih CORS odbio sa 403; CORS
+ * ovde ništa ne štiti (odgovor je preusmerenje, štite ga {@code state}, {@code nonce} i {@code gfs_lti}). Bez
+ * konfiguracije ti odgovori nemaju ni CORS zaglavlja.
  */
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
@@ -56,6 +63,25 @@ public class CorsConfig implements WebMvcConfigurer {
         c.applyPermitDefaultValues();
         UrlBasedCorsConfigurationSource izvor = new UrlBasedCorsConfigurationSource();
         izvor.registerCorsConfiguration("/**", c);
-        return izvor;
+        return bezLti(izvor);
+    }
+
+    /** Isti izuzetak za Spring MVC: svaki handler mapping dobija izvor bez LTI login-a i launch-a. */
+    @Bean
+    static BeanPostProcessor corsBezLtiUMvc() {
+        return new BeanPostProcessor() {
+            @Override
+            public Object postProcessAfterInitialization(Object bean, String ime) {
+                if (bean instanceof AbstractHandlerMapping m && m.getCorsConfigurationSource() != null) {
+                    m.setCorsConfigurationSource(bezLti(m.getCorsConfigurationSource()));
+                }
+                return bean;
+            }
+        };
+    }
+
+    /** Izvor koji za LTI login i launch nema konfiguraciju ({@code null}: CORS procesor tada ne radi ništa). */
+    static CorsConfigurationSource bezLti(CorsConfigurationSource izvor) {
+        return req -> ProveraPoreklaFilter.LTI_IZUZECI.matches(req) ? null : izvor.getCorsConfiguration(req);
     }
 }

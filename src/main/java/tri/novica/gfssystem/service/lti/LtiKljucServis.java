@@ -57,7 +57,8 @@ public class LtiKljucServis {
         this.tokeni = tokeni;
         this.clock = clock;
         this.transakcija = new TransactionTemplate(tm);
-        // nova transakcija: commit je pre otpuštanja brave i kad pozivalac već ima spoljnu transakciju (drugi tok ne pravi drugi ključ)
+        // nova transakcija: commit je pre otpuštanja brave i kad pozivalac već ima spoljnu transakciju (drugi tok ne pravi drugi ključ).
+        // Pozivalac unutar transakcije zato pri pravljenju prvog ključa traži drugu vezu iz pula; najbolje je zvati van transakcije.
         this.transakcija.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 

@@ -72,6 +72,8 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/lti/prijava"),
             new Pravilo(POST, "/public/lti/start"),
             new Pravilo(GET, "/public/lti/jwks"),
+            // ime Moodle naloga za ekran povezivanja: samo čita, uz kolačić gfs_lti_par (bez njega 410)
+            new Pravilo(GET, "/public/lti/povezivanje"),
             // prijava nastavnika: nastavničko, pa namerno van /public; /auth/ja bez sesije vraća 401 sam kontroler
             new Pravilo(POST, "/auth/prijava"),
             new Pravilo(GET, "/auth/ja"));

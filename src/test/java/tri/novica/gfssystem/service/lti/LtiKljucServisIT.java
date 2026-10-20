@@ -135,7 +135,8 @@ class LtiKljucServisIT {
 
     @Test
     void istovremenoPrvoPravljenjeDajeJedanRedCakIUnutarSpoljneTransakcije() throws Exception {
-        int n = 8;
+        // svaka nit drži vezu spoljne transakcije i traži još jednu za REQUIRES_NEW: pul (Hikari 10) mora imati bar n + 1 veza
+        int n = 5;
         ExecutorService izvrsilac = Executors.newFixedThreadPool(n);
         try {
             CountDownLatch start = new CountDownLatch(1);
