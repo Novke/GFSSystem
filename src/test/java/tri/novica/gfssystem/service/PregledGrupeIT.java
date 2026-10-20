@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * se vraća unazad. Podaci su u školskoj godini 2088/89 (i 2087/88 za stariju grupu), tvrdnje su samo o sopstvenim id-jevima.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class PregledGrupeIT {
 

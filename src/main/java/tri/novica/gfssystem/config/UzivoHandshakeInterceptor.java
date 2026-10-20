@@ -20,7 +20,8 @@ import java.util.Optional;
  * Uloga sesije po ulazu, vezana za sam endpoint (ne za tekst putanje): {@link WebSocketConfig} registruje {@code /ws}
  * sa nastavničkim, a {@code /public/ws} sa studentskim primerkom. Studentski ulaz (javno, nginx {@code /api/public/ws})
  * traži važeći kolačić {@code gfs_uzivo} (učesnik postoji, nije izbačen, izvođenje AKTIVNO), inače 403 i rukovanje ne
- * uspeva (telefon tada nudi unos imena). Nastavnički ulaz ({@code /ws}, nginx {@code /api/ws}, iza basic-auth-a) samo
+ * uspeva (telefon tada nudi unos imena). Nastavnički ulaz ({@code /ws}, nginx {@code /api/ws}; rukovanje bezbednosni lanac
+ * pušta samo uz sesiju nastavnika) samo
  * upiše ulogu. Origin proverava Spring ({@code setAllowedOriginPatterns} iz {@code gfs.front.url}).
  */
 @Slf4j

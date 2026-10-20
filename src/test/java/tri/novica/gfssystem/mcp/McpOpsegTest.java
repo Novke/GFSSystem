@@ -136,7 +136,19 @@ class McpOpsegTest {
             SERVIS + ".uzivo.UzivoObjavljivac",
             SERVIS + ".uzivo.ZadatakDodelaService",
             SERVIS + ".uzivo.ZadatakRezultatBuilder",
-            KOREN + ".security.IdentitetStudenta");
+            KOREN + ".security.IdentitetStudenta",
+            // prijava: sesije nastavnika, nalozi i kodovi studenata, obaveštenja, mejl, Moodle LTI (ključevi i registracije)
+            SERVIS + ".prijava.NastavnikSesijaServis",
+            SERVIS + ".prijava.StudentskaPrijava",
+            SERVIS + ".prijava.KodServis",
+            SERVIS + ".prijava.PokusajiServis",
+            SERVIS + ".prijava.KljuceviAplikacije",
+            SERVIS + ".prijava.ObavestenjeServis",
+            SERVIS + ".prijava.MaskaMejla",
+            SERVIS + ".mejl.SmtpMejlServis",
+            SERVIS + ".mejl.MejlPosleCommita",
+            SERVIS + ".lti.LtiKljucServis",
+            SERVIS + ".lti.LtiRegistracijaServis");
 
     /** Pojedinačne zabranjene metode dozvoljenih servisa (puno ime vlasnika + ime metode, svi overload-i). */
     static final Set<String> ZABRANJENE_METODE = Set.of(
@@ -180,8 +192,10 @@ class McpOpsegTest {
 
     // (b)
     static final DescribedPredicate<JavaClass> ZABRANJENO_ZA_MCP = DescribedPredicate.describe(
-            "repozitorijumi, EntityManager, JDBC, ApplicationContext/BeanFactory, ne-enum entiteti, REST kontroleri",
+            "repozitorijumi, EntityManager, JDBC, ApplicationContext/BeanFactory, ne-enum entiteti, REST kontroleri, "
+                    + "bezbednost (sesije, kolačići, matrica pristupa)",
             k -> k.isAssignableTo(Repository.class) || k.isAssignableTo(EntityManager.class)
+                    || uPaketu(k, KOREN + ".security")
                     || k.isAssignableTo(EntityManagerFactory.class) || uPaketu(k, "org.springframework.jdbc")
                     || k.isAssignableTo(BeanFactory.class)
                     || (uPaketu(k, KOREN + ".entity") && !k.isEnum())

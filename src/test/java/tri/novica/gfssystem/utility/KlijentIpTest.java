@@ -8,26 +8,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class KlijentIpTest {
 
     @Test
-    void prviElementXForwardedFor() {
+    void koristiAdresuVeze() {
         MockHttpServletRequest r = new MockHttpServletRequest();
-        r.setRemoteAddr("172.18.0.3");
-        r.addHeader("X-Forwarded-For", " 203.0.113.9 , 10.0.0.1");
+        r.setRemoteAddr("203.0.113.9");
         assertEquals("203.0.113.9", KlijentIp.iz(r));
     }
 
     @Test
-    void bezZaglavljaAdresaVeze() {
+    void neVerujeXForwardedForZaglavlju() {
+        // pravu adresu postavlja RemoteIpValve u Tomcat-u (getRemoteAddr); zaglavlje koje klijent šalje se ovde ne čita
         MockHttpServletRequest r = new MockHttpServletRequest();
-        r.setRemoteAddr("172.18.0.3");
-        assertEquals("172.18.0.3", KlijentIp.iz(r));
-        r.addHeader("X-Forwarded-For", "   ");
-        assertEquals("172.18.0.3", KlijentIp.iz(r));
+        r.setRemoteAddr("203.0.113.9");
+        r.addHeader("X-Forwarded-For", "6.6.6.6, 10.0.0.1");
+        assertEquals("203.0.113.9", KlijentIp.iz(r));
     }
 
     @Test
     void ogranicenoNa64Znaka() {
         MockHttpServletRequest r = new MockHttpServletRequest();
-        r.addHeader("X-Forwarded-For", "a".repeat(500));
+        r.setRemoteAddr("a".repeat(500));
         assertEquals("a".repeat(64), KlijentIp.iz(r));
     }
 }

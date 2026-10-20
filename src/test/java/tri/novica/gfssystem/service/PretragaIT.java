@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * proverava samo redove koje sam ubaci.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class PretragaIT {
 

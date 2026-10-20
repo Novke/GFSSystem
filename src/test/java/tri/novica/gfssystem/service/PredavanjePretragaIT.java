@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * unazad. Provere su ograničene na redove koje test sam ubaci, pa ne zavise od drugih podataka u bazi.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class PredavanjePretragaIT {
 
