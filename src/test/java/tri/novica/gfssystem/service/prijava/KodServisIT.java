@@ -86,7 +86,7 @@ class KodServisIT {
 
     String nepostojeci() {
         String i = TestStudenti.noviIndeks();
-        kljucevi.add(KodServis.kljucIndeksa(i));
+        kljucevi.add(servis.kljucIndeksa(i));
         return i;
     }
 
@@ -159,12 +159,131 @@ class KodServisIT {
         assertEquals(List.of(), aktivni(bezMejla));
     }
 
+    /** Akcenat umesto slova ("Ť7-...") i pun širina ("Ｔ７－..."): MySQL ai_ci ih izjednačava sa pravim indeksom. */
+    static String saAkcentom(String indeks) {
+        return "Ť" + indeks.substring(1);
+    }
+
+    static String punaSirina(String indeks) {
+        StringBuilder b = new StringBuilder();
+        for (char c : indeks.toCharArray()) {
+            b.append(c >= '!' && c <= '~' ? (char) (c - '!' + '\uFF01') : c);
+        }
+        return b.toString();
+    }
+
+    /**
+     * Review B7 #1: varijanta indeksa koju baza poredi kao isti (akcenat, puna širina) ponaša se kao nepostojeći indeks:
+     * lažna maska te varijante, bez mejla i koda, sopstveni brojač; ni tačan kod ne prolazi.
+     */
+    @Test
+    void varijanteIndeksaSePonasajuKaoNepostojeci() throws Exception {
+        Student s = studenti.napravi("pera@example.test");
+        servis.posalji(s.getIndeks(), noviIp());
+        String kod = kodIz(mejl.cekaj(1).getFirst());
+        for (String varijanta : List.of(saAkcentom(s.getIndeks()), punaSirina(s.getIndeks()))) {
+            String n = tri.novica.gfssystem.utility.IndeksUtil.normalizuj(varijanta);
+            kljucevi.add(servis.kljucIndeksa(n));
+            // provera da je test smislen: baza ovu varijantu zaista izjednačava sa pravim indeksom
+            assertEquals(1, jdbc.queryForObject(
+                    "select count(*) from studenti where id = ? and UPPER(REPLACE(indeks,' ','')) = ?",
+                    Integer.class, s.getId(), n), varijanta);
+            assertEquals(new KodOdgovor(PORUKA, maska.lazna(n)), servis.posalji(varijanta, noviIp()), varijanta);
+            assertEquals(401, greska(() -> servis.proveri(varijanta, kod, noviIp())).getCode(), varijanta);
+            assertEquals(1L, pokusaji.broj(VrstaPokusaja.KOD_SLANJE_STUDENT, servis.kljucIndeksa(n), Duration.ofHours(1)));
+        }
+        Thread.sleep(300);
+        assertEquals(1, mejl.poslate().size());
+        assertEquals(1, brojSlanja(s));
+        assertEquals(1, aktivni(s).size());
+        // pravi indeks i dalje radi, kod nije potrošen
+        assertEquals(s.getId(), servis.proveri(s.getIndeks(), kod, noviIp()));
+    }
+
+    /** Review B7 #6: ključ brojača za indeks je HMAC ključem iz baze, ne goli SHA-256 (koji se lako obrne). */
+    @Test
+    void kljucBrojacaZaIndeksJeHmac() {
+        String nema = nepostojeci();
+        String k = servis.kljucIndeksa(nema);
+        assertTrue(k.matches("^i:[0-9a-f]{64}$"), k);
+        assertNotEquals("i:" + tri.novica.gfssystem.service.uzivo.TokenHash.od(nema), k);
+        assertEquals(k, servis.kljucIndeksa(nema));
+        servis.posalji(nema, noviIp());
+        assertEquals(1L, pokusaji.broj(VrstaPokusaja.KOD_SLANJE_STUDENT, k, Duration.ofHours(1)));
+    }
+
+    /** Review B7 #2: nepostojeći indeks se serijalizuje isto kao postojeći, pa navala ne otkriva da indeks ne postoji. */
+    @Test
+    void paralelnaSlanjaZaNepostojeciIndeksDaju3Od5() throws Exception {
+        List<Object> ishodi = paralelno(nepostojeci(), 5);
+        assertEquals(3, Collections.frequency(ishodi, PORUKA), ishodi.toString());
+        assertEquals(2, Collections.frequency(ishodi, 429), ishodi.toString());
+        assertEquals(0, drzaneBrave());
+    }
+
+    /** Brava po indeksu ({@code GET_LOCK}) se otpušta posle svakog ishoda: uspeh, bez naloga, limit (429). */
+    @Test
+    void bravaSeOtpustaPosleSvakogIshoda() {
+        Student s = studenti.napravi("pera@example.test");
+        for (int i = 0; i < 3; i++) servis.posalji(s.getIndeks(), noviIp());
+        assertEquals(0, drzaneBrave());
+        assertEquals(429, greska(() -> servis.posalji(s.getIndeks(), noviIp())).getCode());
+        assertEquals(0, drzaneBrave());
+        servis.posalji(nepostojeci(), noviIp());
+        assertEquals(0, drzaneBrave());
+    }
+
+    /** Korisničke brave {@code gfs-kod:*} koje sada drži bilo koja veza (performance_schema). */
+    int drzaneBrave() {
+        return jdbc.queryForObject("""
+                select count(*) from performance_schema.metadata_locks
+                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like 'gfs-kod:%'""", Integer.class);
+    }
+
+    /** Review B7 #3: posalji i proveri ne odgovaraju pre donje granice trajanja, ni za jedan ishod. */
+    @Test
+    void minimalnoTrajanjeVaziZaSveIshode() {
+        Student s = studenti.napravi("pera@example.test");
+        servis.minimalnoTrajanje(Duration.ofMillis(250));
+        try {
+            String ip = noviIp();
+            assertTrajeBar(250, () -> servis.posalji(s.getIndeks(), ip));
+            mejl.cekaj(1);
+            assertTrajeBar(250, () -> servis.posalji(nepostojeci(), ip));
+            servis.posalji(s.getIndeks(), ip);
+            servis.posalji(s.getIndeks(), ip);
+            assertTrajeBar(250, () -> greska(() -> servis.posalji(s.getIndeks(), ip)));   // 429
+            assertTrajeBar(250, () -> greska(() -> servis.proveri(nepostojeci(), "123456", ip)));   // 401
+            String aktivan = aktivanKod(s, mejl.cekaj(3));
+            String pogresan = aktivan.equals("000000") ? "111111" : "000000";
+            assertTrajeBar(250, () -> greska(() -> servis.proveri(s.getIndeks(), pogresan, ip)));   // 401
+            assertTrajeBar(250, () -> assertEquals(s.getId(), servis.proveri(s.getIndeks(), aktivan, ip)));
+        } finally {
+            servis.minimalnoTrajanje(Duration.ZERO);
+        }
+    }
+
+    /** Kod iz mejlova koji odgovara jedinom aktivnom kodu studenta (mejlovi mogu stići drugim redom, 2 niti). */
+    String aktivanKod(Student s, List<MejlPoruka> poruke) {
+        KodZaPrijavu k = aktivni(s).getFirst();
+        return poruke.stream().map(KodServisIT::kodIz)
+                .filter(kod -> tri.novica.gfssystem.service.uzivo.TokenHash.od(k.getSo() + kod).equals(k.getKodHes()))
+                .findFirst().orElseThrow();
+    }
+
+    static void assertTrajeBar(long ms, Runnable r) {
+        long t0 = System.nanoTime();
+        r.run();
+        long trajalo = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(trajalo >= ms, "trajalo " + trajalo + " ms, granica " + ms);
+    }
+
     /** Indeks od samih neprekidivih razmaka prolazi {@code @NotBlank}, ali se normalizuje u prazan: ne sme pogoditi nikog. */
     @Test
     void prazanPosleNormalizacijeNePogadjaStudentaSaPraznimIndeksom() throws Exception {
         Student prazan = studenti.napravi("", 1990 + (int) (Math.random() * 30), "prazan@example.test");
         String nbsp = "\u00A0\u202F";
-        kljucevi.add(KodServis.kljucIndeksa(""));
+        kljucevi.add(servis.kljucIndeksa(""));
         KodOdgovor o = servis.posalji(nbsp, noviIp());
         assertEquals(new KodOdgovor(PORUKA, maska.lazna("")), o);
         assertEquals(401, greska(() -> servis.proveri(nbsp, "123456", noviIp())).getCode());
@@ -394,9 +513,9 @@ class KodServisIT {
         // studentov limit je potrošen, nastavnik ipak šalje
         servis.posaljiOdNastavnika(s.getId());
         List<MejlPoruka> p = mejl.cekaj(4);
-        assertEquals("pera@example.test", p.get(3).za());
+        assertTrue(p.stream().allMatch(m -> m.za().equals("pera@example.test")));
         assertEquals(1, aktivni(s).size());
-        assertEquals(s.getId(), servis.proveri(s.getIndeks(), kodIz(p.get(3)), noviIp()));
+        assertEquals(s.getId(), servis.proveri(s.getIndeks(), aktivanKod(s, p), noviIp()));
         assertEquals(3, brojSlanja(s));
 
         for (int i = 1; i < 20; i++) servis.posaljiOdNastavnika(s.getId());

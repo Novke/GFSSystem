@@ -32,6 +32,8 @@ public class KljuceviAplikacije {
 
     /** Ključ za HMAC lažne maske mejla ({@link MaskaMejla#lazna}). */
     public static final String MASKA_HMAC = "MASKA_HMAC";
+    /** Ključ za HMAC indeksa u brojačima i bravama ({@code KodServis}); odvojen od maske, svaka namena svoj ključ. */
+    public static final String POKUSAJI_HMAC = "POKUSAJI_HMAC";
     static final int DUZINA = 32;
 
     private final KljucAplikacijeRepository repository;

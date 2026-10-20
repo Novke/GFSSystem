@@ -80,6 +80,21 @@ public final class Kolacici {
         return vrednosti;
     }
 
+    /** Broj nepraznih vrednosti kolačića {@code ime}, bez gornje granice (da se vidi da li je {@link #procitajSve} skratio). */
+    public static int brojVrednosti(HttpServletRequest req, String ime) {
+        Cookie[] kolacici = req.getCookies();
+        if (kolacici == null) {
+            return 0;
+        }
+        int n = 0;
+        for (Cookie k : kolacici) {
+            if (ime.equals(k.getName()) && k.getValue() != null && !k.getValue().isEmpty()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     private static void dodaj(HttpServletRequest req, HttpServletResponse res, String ime, String vrednost,
                               Duration trajanje, String sameSite) {
         if (!SAME_SITE.contains(sameSite)) {

@@ -11,6 +11,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.entity.prijava.NacinPrijave;
 import tri.novica.gfssystem.repository.StudentRepository;
@@ -43,7 +46,12 @@ class NalogIdentitetIT {
 
     @AfterEach
     void ocisti() {
+        SecurityContextHolder.clearContext();
         studenti.obrisi();
+    }
+
+    static void kao(org.springframework.security.core.Authentication a) {
+        SecurityContextHolder.getContext().setAuthentication(a);
     }
 
     String token(Student s) {
@@ -86,6 +94,29 @@ class NalogIdentitetIT {
         Cookie podmetnut = new Cookie(Kolacici.STUDENT, new TokenGenerator().novi());
         Cookie pravi = new Cookie(Kolacici.STUDENT, token(s));
         assertEquals(Optional.of(s.getId()), identitet.studentId(sa(podmetnut, pravi)));
+    }
+
+    /** Review B7 #5: u zahtevu kroz lanac identitet je ono što je filter već utvrdio (bez novog upita i produženja). */
+    @Test
+    void studentIzLancaBezPonovneProvere() {
+        kao(new StudentAutentikacija(42L, 7L));
+        assertEquals(Optional.of(42L), identitet.studentId(sa()));
+    }
+
+    /** Nastavnik ima prednost (spec 2.2): i uz važeći studentski kolačić zahtev nije studentski. */
+    @Test
+    void nastavnikImaPrednost() {
+        Student s = studenti.napravi("pera@example.test");
+        kao(new NastavnikAutentikacija(1L));
+        assertEquals(Optional.empty(), identitet.studentId(sa(new Cookie(Kolacici.STUDENT, token(s)))));
+    }
+
+    /** Lanac je prošao, a filter nije prepoznao kolačić (anoniman zahtev): ne proverava se ponovo. */
+    @Test
+    void anonimanIzLancaJePrazan() {
+        Student s = studenti.napravi("pera@example.test");
+        kao(new AnonymousAuthenticationToken("k", "anonymousUser", AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS")));
+        assertEquals(Optional.empty(), identitet.studentId(sa(new Cookie(Kolacici.STUDENT, token(s)))));
     }
 
     @Test

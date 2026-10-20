@@ -122,4 +122,14 @@ class KolacicTest {
         assertEquals(Kolacici.MAX_ISTOIMENIH, v.size());
         assertEquals("v0", v.getFirst());
     }
+
+    @Test
+    void brojVrednostiBrojiSveNeprazne() {
+        MockHttpServletRequest req = new MockHttpServletRequest();
+        assertEquals(0, Kolacici.brojVrednosti(req, Kolacici.STUDENT));
+        Cookie[] mnogo = new Cookie[8];
+        for (int i = 0; i < mnogo.length; i++) mnogo[i] = new Cookie(Kolacici.STUDENT, i == 3 ? "" : "v" + i);
+        req.setCookies(mnogo);
+        assertEquals(7, Kolacici.brojVrednosti(req, Kolacici.STUDENT));
+    }
 }

@@ -200,6 +200,17 @@ class NalogPublicRestIT {
         return o.propertyNames().stream().collect(Collectors.toSet());
     }
 
+    /** Brava po indeksu ({@code GET_LOCK}) se otpušta i kad zahtev ide kroz MVC (open-in-view drži istu vezu). */
+    @Test
+    void bravaPoIndeksuSeOtpustaKrozHttp() throws Exception {
+        Student s = studenti.napravi("ana@example.test");
+        assertEquals(200, kod(s.getIndeks()).getResponse().getStatus());
+        assertEquals(200, kod(TestStudenti.noviIndeks()).getResponse().getStatus());
+        assertEquals(0, jdbc.queryForObject("""
+                select count(*) from performance_schema.metadata_locks
+                where OBJECT_TYPE = 'USER LEVEL LOCK' and OBJECT_NAME like 'gfs-kod:%'""", Integer.class));
+    }
+
     @Test
     void bezKolacica() throws Exception {
         mvc.perform(get("/public/nalog/stanje"))
@@ -352,6 +363,31 @@ class NalogPublicRestIT {
                 .andExpect(jsonPath("$.prijavljen").value(false))
                 .andReturn().getResponse();
         assertTrue(obrisan(oba, Kolacici.STUDENT), "nijedan ne važi: kolačić se briše");
+    }
+
+    /**
+     * Review B7 #4: filter proba najviše 5 istoimenih vrednosti. Kad ih ima više, pravi je možda bio šesti, pa se kolačić
+     * ne briše (brisanje bi odjavilo studenta zbog podmetnutih); sa tačno 5 nevažećih se briše.
+     */
+    @Test
+    void previseIstoimenihVrednostiNeBriseKolacic() throws Exception {
+        Cookie[] sest = new Cookie[6];
+        for (int i = 0; i < sest.length; i++) sest[i] = student(new TokenGenerator().novi());
+        MockHttpServletResponse r = mvc.perform(get("/public/nalog/stanje").cookie(sest))
+                .andExpect(jsonPath("$.prijavljen").value(false)).andReturn().getResponse();
+        assertFalse(obrisan(r, Kolacici.STUDENT), r.getHeaders(HttpHeaders.SET_COOKIE).toString());
+
+        Cookie[] pet = java.util.Arrays.copyOf(sest, 5);
+        MockHttpServletResponse r5 = mvc.perform(get("/public/nalog/stanje").cookie(pet))
+                .andReturn().getResponse();
+        assertTrue(obrisan(r5, Kolacici.STUDENT));
+
+        Cookie[] nastavnicki = new Cookie[6];
+        for (int i = 0; i < nastavnicki.length; i++) {
+            nastavnicki[i] = new Cookie(Kolacici.NASTAVNIK, new TokenGenerator().novi());
+        }
+        MockHttpServletResponse rn = mvc.perform(get("/auth/ja").cookie(nastavnicki)).andReturn().getResponse();
+        assertFalse(obrisan(rn, Kolacici.NASTAVNIK));
     }
 
     @Test

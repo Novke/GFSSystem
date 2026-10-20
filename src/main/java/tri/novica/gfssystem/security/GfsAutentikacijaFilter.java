@@ -81,10 +81,7 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
                 return new NastavnikAutentikacija(s.getId());
             }
         }
-        if (!tokeni.isEmpty()) {
-            log.debug("Nevažeći nastavnički kolačić, briše se, ip={}", KlijentIp.iz(req));
-            Kolacici.obrisi(req, res, Kolacici.NASTAVNIK);
-        }
+        obrisiAkoNijedanNeVazi(req, res, Kolacici.NASTAVNIK, tokeni);
         return null;
     }
 
@@ -101,10 +98,25 @@ public class GfsAutentikacijaFilter extends OncePerRequestFilter {
                 return new StudentAutentikacija(u.getStudent().getId(), u.getId());
             }
         }
-        if (!tokeni.isEmpty()) {
-            log.debug("Nevažeći studentski kolačić, briše se, ip={}", KlijentIp.iz(req));
-            Kolacici.obrisi(req, res, Kolacici.STUDENT);
-        }
+        obrisiAkoNijedanNeVazi(req, res, Kolacici.STUDENT, tokeni);
         return null;
+    }
+
+    /**
+     * Nijedna probana vrednost ne važi: host-only kolačić se briše. Ali ne kad je vrednosti bilo više nego što se proba
+     * ({@link Kolacici#MAX_ISTOIMENIH}): pravi kolačić je možda bio među neprobanim, a brisanje bi odjavilo korisnika zbog
+     * podmetnutih vrednosti.
+     */
+    private static void obrisiAkoNijedanNeVazi(HttpServletRequest req, HttpServletResponse res, String ime,
+                                               List<String> probani) {
+        if (probani.isEmpty()) {
+            return;
+        }
+        if (Kolacici.brojVrednosti(req, ime) > probani.size()) {
+            log.info("Previše istoimenih kolačića {}, nijedan probani ne važi; ne briše se, ip={}", ime, KlijentIp.iz(req));
+            return;
+        }
+        log.debug("Nevažeći kolačić {}, briše se, ip={}", ime, KlijentIp.iz(req));
+        Kolacici.obrisi(req, res, ime);
     }
 }
