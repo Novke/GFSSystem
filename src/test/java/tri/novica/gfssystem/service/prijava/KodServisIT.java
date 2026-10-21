@@ -328,10 +328,10 @@ class KodServisIT {
     }
 
     @Test
-    void jedanaestiZahtevSaIstogIpaJe429IZaNepostojeci() {
+    void zahtevPrekoLimitaSaIstogIpaJe429IZaNepostojeci() {
         String ip = noviIp();
         Student s = studenti.napravi("zika@example.test");
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < KodServis.LIMIT_SLANJA_IP; i++) {
             servis.posalji(nepostojeci(), ip);
         }
         SystemException e1 = greska(() -> servis.posalji(nepostojeci(), ip));
@@ -340,7 +340,7 @@ class KodServisIT {
         assertEquals(PREVISE, e1.getMessage());
         assertEquals(429, e2.getCode());
         assertEquals(PREVISE, e2.getMessage());
-        assertEquals(10, pokusaji.broj(VrstaPokusaja.KOD_SLANJE_IP, ip, Duration.ofHours(1)));
+        assertEquals(KodServis.LIMIT_SLANJA_IP, pokusaji.broj(VrstaPokusaja.KOD_SLANJE_IP, ip, Duration.ofHours(1)));
         // odbijen zahtev ne pravi kod i ne troši studentov limit
         assertEquals(0, brojSlanja(s));
         assertEquals(List.of(), aktivni(s));
