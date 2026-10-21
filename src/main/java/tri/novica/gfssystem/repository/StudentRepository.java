@@ -1,7 +1,11 @@
 package tri.novica.gfssystem.repository;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -40,6 +44,31 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
         WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina AND s.id <> :izuzetId""")
     boolean postojiDrugiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina,
                                 @Param("izuzetId") Long izuzetId);
+
+    /**
+     * Studenti sa normalizovanim indeksom (velika slova, bez razmaka, kao {@code IndeksUtil.normalizuj}), najnoviji upis
+     * prvi ({@code godina} DESC, pa {@code id} DESC): isti indeks se ponavlja kroz godine upisa.
+     */
+    @Query("""
+        SELECT s FROM Student s
+        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks
+        ORDER BY s.godina DESC, s.id DESC""")
+    List<Student> findAllPoNormalizovanomIndeksu(@Param("indeks") String normalizovanIndeks, Pageable pageable);
+
+    /** Svi studenti sa normalizovanim indeksom, najnoviji upis prvi (vidi gornji upit). */
+    default List<Student> findAllPoNormalizovanomIndeksu(String normalizovanIndeks) {
+        return findAllPoNormalizovanomIndeksu(normalizovanIndeks, Pageable.unpaged());
+    }
+
+    /** Student sa normalizovanim indeksom iz najnovijeg upisa (nalog studenta, prijava kodom). */
+    default Optional<Student> findNajnovijiPoIndeksu(String normalizovanIndeks) {
+        return findAllPoNormalizovanomIndeksu(normalizovanIndeks, PageRequest.of(0, 1)).stream().findFirst();
+    }
+
+    /** Zaključava red studenta (SELECT ... FOR UPDATE) do kraja transakcije: kodovi i limiti jednog studenta idu redom. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Student s WHERE s.id = :id")
+    Optional<Student> findByIdForUpdate(@Param("id") Long id);
 
     long countByGrupaId(Long grupaId);
 

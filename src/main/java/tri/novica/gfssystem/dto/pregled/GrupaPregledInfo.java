@@ -14,7 +14,9 @@ import java.util.List;
  *                            predavanja 0 (grupa bez predavanja i bez prisustva drugde, ili bez studenata)
  * @param otvorenOnboarding   najnovija otvorena sesija (aktivna, nije istekla, nije popunjena) ili null
  * @param studenti            studenti grupe po broju indeksa
+ * @param waLink              link za poziv u WhatsApp grupu ({@code https://chat.whatsapp.com/...}) ili null
  */
 public record GrupaPregledInfo(GrupaInfo grupa, int brojStudenata, long brojPredavanja, Double prosecnaPrisutnost,
-                               OnboardingSesijaInfo otvorenOnboarding, List<GrupaStudentStatInfo> studenti) {
+                               OnboardingSesijaInfo otvorenOnboarding, List<GrupaStudentStatInfo> studenti,
+                               String waLink) {
 }

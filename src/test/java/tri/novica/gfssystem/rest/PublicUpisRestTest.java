@@ -70,9 +70,11 @@ class PublicUpisRestTest {
     }
 
     @Test
-    void ipIdeIzXForwardedFor() throws Exception {
-        when(service.podnesi(eq(T), any(), eq("203.0.113.9"))).thenReturn(new tri.novica.gfssystem.dto.onboarding.PodnetaPrijavaInfo(5L));
-        mvc.perform(post("/public/upis/" + T).header("X-Forwarded-For", "203.0.113.9, 172.18.0.3")
+    void ipJeAdresaVeze() throws Exception {
+        // MockMvc nema Tomcat, pa RemoteIpValve ne radi: pravi IP je getRemoteAddr, X-Forwarded-For se ne čita (vidi ProksiZagljavljaIT)
+        when(service.podnesi(eq(T), any(), eq("203.0.113.9"))).thenReturn(new tri.novica.gfssystem.dto.onboarding.PodnetaPrijavaInfo(5L, null));
+        mvc.perform(post("/public/upis/" + T).header("X-Forwarded-For", "6.6.6.6, 172.18.0.3")
+                .with(r -> { r.setRemoteAddr("203.0.113.9"); return r; })
                 .contentType(MediaType.APPLICATION_JSON).content(TELO))
            .andExpect(status().isCreated())
            .andExpect(jsonPath("$.id").value(5));

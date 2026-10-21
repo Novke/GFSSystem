@@ -57,4 +57,22 @@ class PitanjeSnimakTest {
         assertFalse(json.contains("imaTacanOdgovor"));
         assertEquals(s, mapper.readValue(json, PitanjeSnimak.class));
     }
+
+    /** Spec 16.1, odluka 6 faze 5: server ne tumači formule, snimak runde čuva {@code $...$} i {@code \$} doslovno. */
+    @Test void snimakCuvaFormuleDoslovno() {
+        String tekst = "Koliko je $1011_2$ dekadno? \\$5";
+        Slajd s = slajd();
+        s.getPitanje().setTekst(tekst);
+        s.getPitanje().setOpcije(new ArrayList<>(List.of(opcija(1, 1, "$11$", true), opcija(2, 2, "$13$", false))));
+
+        PitanjeSnimak snimak = PitanjeSnimak.od(s);
+        assertEquals(tekst, snimak.tekst());
+        assertEquals(List.of("$11$", "$13$"), snimak.opcije().stream().map(OpcijaSnimak::tekst).toList());
+
+        JsonMapper mapper = JsonMapper.builder().build();
+        PitanjeSnimak procitan = mapper.readValue(mapper.writeValueAsString(snimak), PitanjeSnimak.class);
+        assertEquals(tekst, procitan.tekst());
+        assertEquals(List.of("$11$", "$13$"), procitan.opcije().stream().map(OpcijaSnimak::tekst).toList());
+        assertEquals(snimak, procitan);
+    }
 }

@@ -202,6 +202,14 @@ public class DomaciService {
         return new PagedModel<>(strana.map(d -> uListItem(d, uradjeni, studenti)));
     }
 
+    /**
+     * Tekstovi domaćih predmeta kao izvor za banku (MCP {@code domaci_tekstovi}): id, naslov, tekst i datum, najnoviji
+     * prvi (isti datum: veći id prvi). Nepostojeći predmet daje praznu stranu.
+     */
+    public Page<DomaciTekst> tekstoviPredmeta(Long predmetId, Pageable pageable) {
+        return domaciRepository.tekstovi(predmetId, pageable);
+    }
+
     /** Ručno mapiranje (ModelMapper je STRICT, a brojači nisu polja entiteta). */
     private static DomaciListItem uListItem(Domaci d, Map<Long, Long> uradjeni, Map<Long, Long> studenti) {
         Grupa g = d.getGrupa();

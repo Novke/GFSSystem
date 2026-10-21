@@ -18,11 +18,15 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
 /**
  * {@link StanjeService#nastavnicko}, {@code rezultati} i {@code lista} nad mock repozitorijumima: S2 (JEDAN_TACAN) je
@@ -36,6 +40,8 @@ class NastavnickoStanjeTest {
     static final LocalDateTime T0 = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final Long IZ = 5L;
 
+    @Mock ZadaciSlajdova zadaci;
+    @Mock ZadatakDodelaRepository dodelaRepository;
     @Mock IzvodjenjeRepository izvodjenjeRepository;
     @Mock SlajdRepository slajdRepository;
     @Mock PitanjeRundaRepository rundaRepository;
@@ -114,7 +120,7 @@ class NastavnickoStanjeTest {
         when(odgovorRepository.findAllByRundaIzvodjenjeId(IZ)).thenReturn(odgovori);
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, povezanost, jsonMapper, new PlatnoJson(), clock);
+                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {
@@ -211,6 +217,96 @@ class NastavnickoStanjeTest {
                 st.ucesnici());
         assertEquals(1, st.brojPovezanih());
         assertEquals(List.of(new RangStavka(1, 32L, "Bojan", 800), new RangStavka(2, 31L, "Ana", 0)), st.rangLista());
+    }
+
+    static ZadatakSlajdaInfo opisZadatka(long grupaId) {
+        return new ZadatakSlajdaInfo(grupaId, 120, 2, "Grupa " + grupaId, List.of(), true, 3, List.of(), false, List.of(),
+                List.of());
+    }
+
+    static void uZadatak(Slajd s) {
+        s.setTip(TipSlajda.ZADATAK);
+        s.setPitanje(null);
+    }
+
+    @Test
+    void zadatakSlajdoviSeOpisujuJednomPoSnimku() {
+        uZadatak(s2);
+        uZadatak(s3);
+        ZadatakSlajdaInfo z12 = opisZadatka(12L);
+        ZadatakSlajdaInfo z13 = opisZadatka(13L);
+        when(zadaci.za(eq(7L), anyCollection())).thenReturn(Map.of(12L, z12, 13L, z13));
+
+        StanjeService.Snimci snimci = service.snimci(IZ);
+
+        // tri snimka (javno, lična, nastavničko) iz jednog učitavanja: jedan batch opis za oba slajda, nijedan pojedinačni
+        verify(zadaci, times(1)).za(eq(7L), argThat((java.util.Collection<Slajd> c) -> c.size() == 2
+                && c.contains(s2) && c.contains(s3)));
+        verify(zadaci, never()).za(any(Slajd.class));
+        verifyNoMoreInteractions(zadaci);
+        assertSame(z12, snimci.nastavnicko().trenutniSlajd().zadatak());
+        assertSame(z13, snimci.nastavnicko().sledeciSlajd().zadatak());
+    }
+
+    @Test
+    void samoSledeciZadatakSeOpisujeSamoNjega() {
+        uZadatak(s3);
+        ZadatakSlajdaInfo z13 = opisZadatka(13L);
+        when(zadaci.za(eq(7L), anyCollection())).thenReturn(Map.of(13L, z13));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        verify(zadaci, times(1)).za(eq(7L), argThat((java.util.Collection<Slajd> c) -> c.size() == 1 && c.contains(s3)));
+        assertNull(st.trenutniSlajd().zadatak());
+        assertSame(z13, st.sledeciSlajd().zadatak());
+    }
+
+    @Test
+    void uPrijaviSeOpisujePrviSlajdKaoSledeci() {
+        uZadatak(s1);
+        iz.setPrikaz(Prikaz.PRIJAVA);
+        iz.setTrenutniSlajdId(null);
+        iz.setFaza(null);
+        iz.setTrenutnaRundaId(null);
+        ZadatakSlajdaInfo z11 = opisZadatka(11L);
+        when(zadaci.za(eq(7L), anyCollection())).thenReturn(Map.of(11L, z11));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        assertNull(st.trenutniSlajd());
+        assertSame(z11, st.sledeciSlajd().zadatak());
+    }
+
+    @Test
+    void bezZadatakSlajdaOpisZadatakaSeNeTrazi() {
+        service.snimci(IZ);
+        service.nastavnicko(IZ);
+        service.javno(IZ);
+
+        verifyNoInteractions(zadaci);
+    }
+
+    @Test
+    void snimakNosiPrelazTrenutnogISledecegSlajda() {
+        s2.setPrelaz(new PrelazSlajda(TipPrelaza.GURANJE, SmerPrelaza.LEVO, 700));
+        s3.setPrelaz(new PrelazSlajda(TipPrelaza.FADE, null, 300));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        assertNotNull(st.trenutniSlajd().prelaz());
+        assertEquals(new Prelaz(TipPrelaza.GURANJE, SmerPrelaza.LEVO, 700), st.trenutniSlajd().prelaz());
+        assertEquals(new Prelaz(TipPrelaza.FADE, null, 300), st.sledeciSlajd().prelaz());
+    }
+
+    @Test
+    void slajdBezPrelazaUSnimkuImaPrelazNull() {
+        // Hibernate vraća null za @Embedded kad su sve kolone null; i prazan embeddable (efekat null) je bez prelaza
+        s3.setPrelaz(new PrelazSlajda(null, null, null));
+
+        NastavnickoStanje st = service.nastavnicko(IZ);
+
+        assertNull(st.trenutniSlajd().prelaz());
+        assertNull(st.sledeciSlajd().prelaz());
     }
 
     @Test

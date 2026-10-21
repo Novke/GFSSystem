@@ -1,0 +1,8 @@
+\documentclass{article}
+\begin{document}
+% Nijedna strana, a dokument sam napiše dokument.pdf (relativna putanja, openout_any=p to dozvoljava):
+% servis ne sme taj fajl da vrati kao PDF ni da ga pretvori u SVG.
+\immediate\openout15=dokument.pdf
+\immediate\write15{lazni pdf}
+\immediate\closeout15
+\end{document}

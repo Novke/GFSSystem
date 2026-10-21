@@ -26,6 +26,8 @@ import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.security.PrijavaTestUtil;
+import tri.novica.gfssystem.service.prijava.NastavnikSesijaServis;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 
 import java.lang.reflect.Type;
@@ -48,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * ulozi, "ni ranije" (u CEKA ni tekst ni opcije, sa DUGMAD i bez Detalja tekst nikad ne stiže), odgovor i lično
  * stanje, nastavničko stanje posle odgovora, odbijeni odgovori na {@code /user/queue/greske}, ponovno povezivanje
  * ("primljen" ostaje), TACAN i kraj. Bez {@code @Transactional}: sve se zaista commit-uje, test briše svoje podatke.
+ * Nastavnik (REST i {@code /ws}) ide kroz bezbednosni lanac sa kolačićem {@code gfs_nastavnik}; svaki upis nosi
+ * {@code Origin} sa liste (provera porekla), i javni ({@code /public/uzivo/.../prijava}).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class UzivoWebSocketIT {
@@ -62,8 +66,13 @@ class UzivoWebSocketIT {
     @Autowired PredmetRepository predmetRepository;
     @Autowired PrezentacijaService prezentacijaService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired NastavnikSesijaServis nastavnici;
 
+    /** Nastavnik: kolačić sesije i Origin. */
     RestClient rest;
+    /** Telefon studenta: samo Origin (bez nastavničkog kolačića). */
+    RestClient javni;
+    String nastavnik;
     WebSocketStompClient stomp;
     ThreadPoolTaskScheduler klijentSat;
     final List<Klijent> klijenti = new ArrayList<>();
@@ -72,7 +81,11 @@ class UzivoWebSocketIT {
 
     @BeforeEach
     void setUp() {
-        rest = RestClient.create("http://localhost:" + port);
+        nastavnik = PrijavaTestUtil.nastavnickiKolacic(nastavnici);
+        rest = RestClient.builder().baseUrl("http://localhost:" + port)
+                .defaultHeader(HttpHeaders.ORIGIN, ORIGIN).defaultHeader(HttpHeaders.COOKIE, nastavnik).build();
+        javni = RestClient.builder().baseUrl("http://localhost:" + port)
+                .defaultHeader(HttpHeaders.ORIGIN, ORIGIN).build();
         klijentSat = new ThreadPoolTaskScheduler();
         klijentSat.setPoolSize(1);
         klijentSat.setThreadNamePrefix("it-stomp-");
@@ -137,7 +150,13 @@ class UzivoWebSocketIT {
         assertRukovanjeOdbijeno("/public/ws;jsessionid=1", null);
         // tuđi origin ni sa važećim kolačićem
         assertRukovanjeOdbijeno("/public/ws", ana.kolacic(), "http://zlonamerni.example");
-        Klijent nastavnik = povezi("/ws", null);
+        // nastavnički ulaz bez sesije, sa lažnom sesijom i sa kolačićem učesnika ne; sa sesijom da
+        assertRukovanjeOdbijeno("/ws", null);
+        assertRukovanjeOdbijeno("/ws", "gfs_nastavnik=" + "x".repeat(32));
+        assertRukovanjeOdbijeno("/ws", ana.kolacic());
+        // studentski ulaz ne prihvata nastavničku sesiju umesto kolačića učesnika
+        assertRukovanjeOdbijeno("/public/ws", this.nastavnik);
+        Klijent nastavnik = povezi("/ws", this.nastavnik);
         String javno = "/topic/izvodjenja/" + id + "/javno";
         String nastavnickoOdr = "/topic/izvodjenja/" + id + "/nastavnik";
         nastavnik.pretplati(nastavnickoOdr);
@@ -301,13 +320,32 @@ class UzivoWebSocketIT {
 
     @Test
     void rukovanjeSaTudjimOriginomJeOdbijeno() throws Exception {
-        WebSocketHttpHeaders h = new WebSocketHttpHeaders();
+        // sa važećom sesijom, da odbija baš provera origin-a (bez sesije bi lanac odbio već sa 401)
+        WebSocketHttpHeaders h = zaglavlja(nastavnik);
         h.setOrigin("http://zlonamerni.example");
         ExecutionException e = assertThrows(ExecutionException.class, () -> stomp
                 .connectAsync("ws://localhost:" + port + "/ws", h, new StompHeaders(), new StompSessionHandlerAdapter() {
                 })
                 .get(5, TimeUnit.SECONDS));
         assertNotNull(e.getCause());
+    }
+
+    @Test
+    void nastavnickoRukovanjeBezSesijeJe401() {
+        // rukovanje je HTTP GET: lanac ga bez gfs_nastavnik odbija pre WebSocket-a (401 JSON)
+        assertEquals(401, statusRukovanja("/ws", null));
+        assertEquals(401, statusRukovanja("/ws", "gfs_nastavnik=" + "x".repeat(32)));
+        // studentski ulaz je javan u lancu: odbija ga tek provera kolačića učesnika (403), ne lanac (401)
+        assertEquals(403, statusRukovanja("/public/ws", null));
+        assertEquals(403, statusRukovanja("/public/ws", nastavnik));
+    }
+
+    /** Status običnog HTTP zahteva na ulaz (bez upgrade-a): dovoljno da se vidi ko ga odbija. */
+    int statusRukovanja(String ulaz, String kolacic) {
+        RestClient.RequestHeadersSpec<?> zahtev = RestClient.create("http://localhost:" + port).get().uri(ulaz)
+                .header(HttpHeaders.ORIGIN, ORIGIN);
+        if (kolacic != null) zahtev = zahtev.header(HttpHeaders.COOKIE, kolacic);
+        return zahtev.exchange((req, res) -> res.getStatusCode().value());
     }
 
     // ---------------------------------------------------------------- REST
@@ -331,7 +369,7 @@ class UzivoWebSocketIT {
     }
 
     Prijava prijavi(String kod, String ime) {
-        ResponseEntity<String> r = rest.post().uri("/public/uzivo/" + kod + "/prijava")
+        ResponseEntity<String> r = javni.post().uri("/public/uzivo/" + kod + "/prijava")
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("ime", ime))
                 .retrieve().toEntity(String.class);
         String setCookie = r.getHeaders().getFirst(HttpHeaders.SET_COOKIE);

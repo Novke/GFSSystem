@@ -9,4 +9,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class PodnetaPrijavaInfo {
     private Long id;
+    /** Link za WhatsApp grupu generacije, ili null; student ga vidi tek posle uspešne prijave (ne u {@code GET}). */
+    private String waLink;
 }

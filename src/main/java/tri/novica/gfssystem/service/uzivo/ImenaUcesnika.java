@@ -2,6 +2,7 @@ package tri.novica.gfssystem.service.uzivo;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.entity.uzivo.Ucesnik;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
@@ -21,6 +22,8 @@ public class ImenaUcesnika {
 
     public static final String NEISPRAVNO_IME = "Ime mora imati od 1 do 40 znakova.";
     static final int MAX = 40;
+    /** Ime učesnika za studenta bez imena, prezimena i indeksa. */
+    static final String STUDENT = "Student";
 
     private final UcesnikRepository ucesnikRepository;
 
@@ -39,6 +42,24 @@ public class ImenaUcesnika {
             throw new SystemException(NEISPRAVNO_IME, HttpStatus.BAD_REQUEST);
         }
         return ime;
+    }
+
+    /**
+     * Ime učesnika za prijavljenog studenta: "Ime Prezime" ({@link Normalizacija#ime}; nullable kolone su prazne),
+     * skraćeno na 40 kodnih tačaka; bez vidljivog znaka isto nad indeksom, a bez i njega {@code "Student"}. Nikad 400:
+     * student ne kuca ime, pa ga predugo ili prazno ime u bazi ne sme ostaviti van izvođenja.
+     */
+    public static String imeStudenta(Student s) {
+        String ime = skrati(Normalizacija.ime(prazno(s.getIme()) + " " + prazno(s.getPrezime())), MAX);
+        if (Normalizacija.imaVidljivZnak(ime)) {
+            return ime;
+        }
+        String indeks = skrati(Normalizacija.ime(s.getIndeks()), MAX);
+        return Normalizacija.imaVidljivZnak(indeks) ? indeks : STUDENT;
+    }
+
+    private static String prazno(String s) {
+        return s == null ? "" : s;
     }
 
     /**

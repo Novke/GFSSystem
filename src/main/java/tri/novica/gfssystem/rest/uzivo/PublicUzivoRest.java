@@ -13,15 +13,16 @@ import tri.novica.gfssystem.dto.uzivo.JavnoIzvodjenjeInfo;
 import tri.novica.gfssystem.dto.uzivo.PrijavaUcesnikaCmd;
 import tri.novica.gfssystem.dto.uzivo.UcesnikInfo;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.security.IdentitetStudenta;
 import tri.novica.gfssystem.service.uzivo.UcesnikService;
 import tri.novica.gfssystem.utility.KlijentIp;
 
 import java.time.Duration;
 
 /**
- * Javni (neautentifikovani) ulaz u izvođenje uživo: naziv po kodu, prijava imenom (postavlja kolačić) i provera
- * kolačića. nginx izuzima /api/public/ iz basic-auth-a; ovde ništa osim ovoga. {@code produces}: neprihvatljiv Accept
- * dobija 406 pre poziva servisa.
+ * Javni (neautentifikovani) ulaz u izvođenje uživo: naziv po kodu, prijava imenom ili kao prijavljen student
+ * ({@link IdentitetStudenta}; postavlja kolačić) i provera kolačića. nginx izuzima /api/public/ iz basic-auth-a; ovde
+ * ništa osim ovoga. {@code produces}: neprihvatljiv Accept dobija 406 pre poziva servisa.
  */
 @RestController
 @RequestMapping(path = "/public/uzivo", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -35,11 +36,12 @@ public class PublicUzivoRest {
     static final String NISI_PRIJAVLJEN = "Nisi prijavljen.";
 
     private final UcesnikService ucesnikService;
+    private final IdentitetStudenta identitet;
 
     @GetMapping("{kod}")
     @ResponseStatus(HttpStatus.OK)
-    public JavnoIzvodjenjeInfo info(@PathVariable String kod) {
-        return ucesnikService.info(kod);
+    public JavnoIzvodjenjeInfo info(@PathVariable String kod, HttpServletRequest request) {
+        return ucesnikService.info(kod, identitet.studentId(request).isPresent());
     }
 
     @GetMapping("{kod}/ja")
@@ -53,14 +55,16 @@ public class PublicUzivoRest {
     }
 
     /**
-     * Nova prijava (i sa telefona koji već ima kolačić drugog izvođenja: kolačić se prepisuje). {@code Secure} kad je
-     * spoljni zahtev bio HTTPS (nginx šalje {@code X-Forwarded-Proto}). U log idu id-jevi i IP, ne ime.
+     * Nova prijava (i sa telefona koji već ima kolačić drugog izvođenja: kolačić se prepisuje); prijavljen student ulazi
+     * kao on sam (ukucano ime se ignoriše), a bodovan run bez njega je 403. {@code Secure} kad je spoljni zahtev bio
+     * HTTPS (nginx šalje {@code X-Forwarded-Proto}). U log idu id-jevi, IP i {@code student=da|ne}, nikad ime ni id
+     * studenta.
      */
     @PostMapping("{kod}/prijava")
     @ResponseStatus(HttpStatus.CREATED)
     public UcesnikInfo prijava(@PathVariable String kod, @RequestBody PrijavaUcesnikaCmd cmd,
                                HttpServletRequest request, HttpServletResponse response) {
-        UcesnikService.Prijavljen p = ucesnikService.prijavi(kod, cmd.ime());
+        UcesnikService.Prijavljen p = ucesnikService.prijavi(kod, cmd.ime(), identitet.studentId(request));
         ResponseCookie kolacic = ResponseCookie.from(KOLACIC, p.token())
                 .httpOnly(true)
                 .sameSite("Lax")
@@ -69,8 +73,8 @@ public class PublicUzivoRest {
                 .secure("https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto")))
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, kolacic.toString());
-        log.info("Uživo prijava: izvodjenje={}, ucesnik={}, ip={}", p.info().izvodjenjeId(), p.info().ucesnikId(),
-                KlijentIp.iz(request));
+        log.info("Uživo prijava: izvodjenje={}, ucesnik={}, ip={}, student={}", p.info().izvodjenjeId(),
+                p.info().ucesnikId(), KlijentIp.iz(request), p.student() ? "da" : "ne");
         return p.info();
     }
 }

@@ -60,6 +60,12 @@ public class Izvodjenje {
     @Column(nullable = false) private boolean detaljiDozvoljeni;
     @Column(nullable = false) private boolean takmicenje;
     @Column(nullable = false) private long verzija;
+    /** Bodovan run: prisustvo i rešeni zadaci se upisuju u aktivnosti predavanja (učesnici su prijavljeni studenti). */
+    @Column(nullable = false) private boolean boduje;
+    /** Rešenje ZADATAK runde je uključeno na projektoru (komanda RESENJE). */
+    @Column(nullable = false) private boolean resenjePrikazano;
+    /** Broj varijanti za sledeće otvaranje ZADATAK slajda iz konzole: null = kao na slajdu, 0 = sve aktivne, n = toliko. */
+    private Integer zadatakBrojVarijanti;
 
     @Override
     public boolean equals(Object o) {

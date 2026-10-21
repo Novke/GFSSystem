@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * se vraća unazad. Provere broje samo redove koje test sam ubaci.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)   // poslovna logika; pristup proverava security/*IT
 @Transactional
 class BrisanjeIT {
 

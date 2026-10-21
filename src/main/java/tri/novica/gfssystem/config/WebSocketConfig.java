@@ -17,7 +17,7 @@ import tri.novica.gfssystem.validation.PlatnoPP;
 import java.util.Arrays;
 
 /**
- * STOMP preko čistog WebSocket-a (bez SockJS), spec 4.3. Dva ulaza: {@code /ws} nastavnik (iza basic-auth-a) i
+ * STOMP preko čistog WebSocket-a (bez SockJS), spec 4.3. Dva ulaza: {@code /ws} nastavnik (lanac traži sesiju nastavnika) i
  * {@code /public/ws} student (javno, samo sa kolačićem). Origin iz {@code gfs.front.url} (isti spisak kao REST CORS).
  * Broker u memoriji ({@code /topic}, {@code /queue}), heartbeat 10 s / 10 s. Snimci stanja jednoj sesiji stižu redom
  * kojim su poslati ({@code setPreservePublishOrder}). Dolazne poruke namerno nisu uređene

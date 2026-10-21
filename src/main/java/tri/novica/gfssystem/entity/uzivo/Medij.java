@@ -4,10 +4,12 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
-/** Otpremljena slika (slajd ili pitanje). Bajtovi su fajl {@code <gfs.mediji.dir>/<id>}, ovde su samo metapodaci. */
+/** Otpremljen fajl (slika slajda ili pitanja, prilog i render banke zadataka). Bajtovi su fajl {@code <gfs.mediji.dir>/<id>}, ovde su samo metapodaci. */
 @Entity
 @Table(name = "mediji")
 @Getter @Setter @NoArgsConstructor
@@ -22,6 +24,9 @@ public class Medij {
     private String mime;
     @Column(nullable = false)
     private long velicina;
+    /** Podrazumevano SLIKA, i u bazi ({@code DEFAULT 'SLIKA'}), pa stari redovi i stari upload rade nepromenjeno. */
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
+    private VrstaMedija vrsta = VrstaMedija.SLIKA;
     @Column(nullable = false)
     private LocalDateTime kreirano;
 

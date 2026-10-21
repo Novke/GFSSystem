@@ -13,7 +13,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.PageRequest;
 import tools.jackson.databind.node.ObjectNode;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
+import tri.novica.gfssystem.dto.uzivo.platno.Potez;
+import tri.novica.gfssystem.dto.uzivo.platno.Pozadina;
 import tri.novica.gfssystem.dto.uzivo.platno.TekstSloj;
 import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.entity.Grupa;
@@ -23,6 +26,7 @@ import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
@@ -53,6 +57,8 @@ class PrezentacijaServiceTest {
     @Mock PredavanjeRepository predavanjeRepository;
     @Mock MedijService medijService;
     @Mock MedijRepository medijRepository;
+    @Mock GrupaZadatakaRepository grupaZadatakaRepository;
+    @Mock ZadaciSlajdova zadaci;
     @Mock ObjectProvider<PrezentacijaPromene> promeneProvider;
     @Mock PrezentacijaPromene promene;
 
@@ -69,7 +75,8 @@ class PrezentacijaServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         service = new PrezentacijaService(prezentacijaRepository, slajdRepository, izvodjenjeRepository,
-                predmetRepository, predavanjeRepository, medijService, medijRepository, platnoJson, promeneProvider, CLOCK);
+                predmetRepository, predavanjeRepository, medijService, medijRepository, grupaZadatakaRepository, zadaci,
+                platnoJson, promeneProvider, CLOCK);
 
         predmet = new Predmet();
         predmet.setId(7L);
@@ -99,19 +106,20 @@ class PrezentacijaServiceTest {
         medij.setNaziv("tabla.png");
         medij.setMime("image/png");
         medij.setVelicina(1234);
-        when(medijService.postoji(SLIKA)).thenReturn(true);
+        when(medijService.vrsta(SLIKA)).thenReturn(Optional.of(VrstaMedija.SLIKA));
         when(medijRepository.getReferenceById(SLIKA)).thenReturn(medij);
         when(medijRepository.findById(SLIKA)).thenReturn(Optional.of(medij));
-        when(medijRepository.countByIdIn(anyCollection()))
-                .thenAnswer(inv -> (long) ((Collection<?>) inv.getArgument(0)).size());
+        when(medijRepository.vrste(anyCollection()))
+                .thenAnswer(inv -> Collections.nCopies(((Collection<?>) inv.getArgument(0)).size(), VrstaMedija.SLIKA));
 
         when(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(anyLong())).thenAnswer(inv -> slajdovi(inv.getArgument(0)));
         when(slajdRepository.findById(anyLong())).thenAnswer(inv -> nadjiUBazi(inv.getArgument(0)));
         when(slajdRepository.findPrezentacijaId(anyLong()))
                 .thenAnswer(inv -> nadjiUBazi(inv.getArgument(0)).map(s -> s.getPrezentacija().getId()));
         when(slajdRepository.countByPrezentacijaId(anyLong())).thenAnswer(inv -> (long) slajdovi(inv.getArgument(0)).size());
-        when(slajdRepository.countByPrezentacijaIdAndTip(anyLong(), any())).thenAnswer(inv ->
-                slajdovi(inv.getArgument(0)).stream().filter(s -> s.getTip() == inv.getArgument(1)).count());
+        when(slajdRepository.countByPrezentacijaIdAndTipIn(anyLong(), any())).thenAnswer(inv ->
+                slajdovi(inv.getArgument(0)).stream()
+                        .filter(s -> ((Collection<?>) inv.getArgument(1)).contains(s.getTip())).count());
         when(slajdRepository.save(any(Slajd.class))).thenAnswer(inv -> {
             Slajd s = inv.getArgument(0);
             dodeliId(s);
@@ -195,7 +203,7 @@ class PrezentacijaServiceTest {
     }
 
     static SlajdCmd infoCmd(String naslov) {
-        return new SlajdCmd(TipSlajda.INFO, naslov, null, null, null, false, null, null);
+        return new SlajdCmd(TipSlajda.INFO, naslov, null, null, null, false, null, null, null);
     }
 
     static PitanjeCmd pitanjeCmd(TipPitanja tip, List<OpcijaCmd> opcije) {
@@ -203,7 +211,7 @@ class PrezentacijaServiceTest {
     }
 
     static SlajdCmd pitanjeSlajdCmd(PitanjeCmd p) {
-        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p, null);
+        return new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false, p, null, null);
     }
 
     static void greska(int kod, String poruka, org.junit.jupiter.api.function.Executable e) {
@@ -588,10 +596,27 @@ class PrezentacijaServiceTest {
     }
 
     @Test
+    void medijKojiNijeSlikaJe400ZaSlajdPitanjeIPlatno() {
+        // render SVG i prilozi banke nisu slike slajda: re-render bi brisao fajl na koji slajd pokazuje
+        for (VrstaMedija vrsta : List.of(VrstaMedija.RENDER_SVG, VrstaMedija.PRILOG_SLIKA, VrstaMedija.PRILOG_PDF)) {
+            when(medijService.vrsta("banka")).thenReturn(Optional.of(vrsta));
+            greska(400, "Medij nije slika.",
+                    () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "banka", null, false, null, null, null), null));
+            PitanjeCmd p = new PitanjeCmd(TipPitanja.SKALA, "Ocena?", "banka", null, null, null, null, null, null, null, null,
+                    null, null);
+            greska(400, "Medij nije slika.", () -> service.dodajSlajd(1L, pitanjeSlajdCmd(p), null));
+            when(medijRepository.vrste(anyCollection())).thenReturn(List.of(VrstaMedija.SLIKA, vrsta));
+            greska(400, "Medij nije slika.", () -> service.dodajSlajd(1L, platnoCmd(null), null));
+        }
+        assertTrue(baza.isEmpty());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
     void nepostojecaSlikaJe400() {
-        when(medijService.postoji("nema")).thenReturn(false);
+        when(medijService.vrsta("nema")).thenReturn(Optional.empty());
         greska(400, "Slika nije pronađena.",
-                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "nema", null, false, null, null), null));
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, "nema", null, false, null, null, null), null));
         PitanjeCmd p = new PitanjeCmd(TipPitanja.SKALA, "Ocena?", "nema", null, null, null, null, null, null, null, null,
                 null, null);
         greska(400, "Slika nije pronađena.", () -> service.dodajSlajd(1L, pitanjeSlajdCmd(p), null));
@@ -600,7 +625,7 @@ class PrezentacijaServiceTest {
 
     @Test
     void dodajSlajdSaSlikomPostavljaReferencu() {
-        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, SLIKA, null, false, null, null), null);
+        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.INFO, null, null, SLIKA, null, false, null, null, null), null);
         assertEquals(SLIKA, d.slika().id());
         assertSame(medij, slajdovi(1L).get(0).getSlika());
     }
@@ -671,7 +696,7 @@ class PrezentacijaServiceTest {
         Slajd s = pitanjeUBazi(1, TipPitanja.ANKETA, "a", "b");
 
         SlajdDetails d = service.izmeniSlajd(s.getId(),
-                new SlajdCmd(TipSlajda.INFO, "Pauza", "Vraćamo se za 5 min", SLIKA, "b", true, null, null));
+                new SlajdCmd(TipSlajda.INFO, "Pauza", "Vraćamo se za 5 min", SLIKA, "b", true, null, null, null));
 
         assertEquals(TipSlajda.INFO, s.getTip());
         assertNull(s.getPitanje(), "orphanRemoval briše pitanje i njegove opcije");
@@ -885,7 +910,7 @@ class PrezentacijaServiceTest {
 
     SlajdCmd platnoCmd(String beleske) {
         return new SlajdCmd(TipSlajda.PLATNO, null, null, null, beleske, false, null,
-                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno()));
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno()), null);
     }
 
     Slajd platnoUBazi(int rb) {
@@ -903,7 +928,7 @@ class PrezentacijaServiceTest {
     void dodajSlajdPlatnoUpisujeNormalizovanDokument() {
         ObjectNode cvor = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
         ((ObjectNode) cvor.get("slojevi").get(0)).put("x", 12.345).put("popuna", "#ff00aa");
-        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, "ignorisi", null, null, null, false, null, cvor), null);
+        SlajdDetails d = service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, "ignorisi", null, null, null, false, null, cvor, null), null);
 
         Platno ocekivano = PlatnoPP.normalizuj(platnoJson.procitaj(cvor));
         assertEquals(platnoJson.zapisi(ocekivano), slajdovi(1L).get(0).getPlatno());
@@ -912,7 +937,7 @@ class PrezentacijaServiceTest {
         assertNull(d.naslov());
         assertEquals(12.35, ((TekstSloj) d.platno().slojevi().get(0)).x());
         // medij: slika sloja i crtež, jednim upitom
-        verify(medijRepository).countByIdIn(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ));
+        verify(medijRepository).vrste(Set.of(PlatnoTestPodaci.SLIKA, PlatnoTestPodaci.CRTEZ));
     }
 
     @Test
@@ -928,7 +953,7 @@ class PrezentacijaServiceTest {
     void izmeniSlajdUInfoBrisePlatno() {
         Slajd s = platnoUBazi(1);
         SlajdDetails d = service.izmeniSlajd(s.getId(), new SlajdCmd(TipSlajda.INFO, "Uvod", null, null, null, false, null,
-                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno())));
+                PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno()), null));
         assertNull(s.getPlatno());
         assertNull(d.platno());
         assertEquals(TipSlajda.INFO, s.getTip());
@@ -936,7 +961,7 @@ class PrezentacijaServiceTest {
 
     @Test
     void nepostojeciMedijUPlatnuJe400BezUpisa() {
-        when(medijRepository.countByIdIn(anyCollection())).thenReturn(1L);
+        when(medijRepository.vrste(anyCollection())).thenReturn(List.of(VrstaMedija.SLIKA));   // drugi id ne postoji
         greska(400, MedijService.NIJE_PRONADJENA, () -> service.dodajSlajd(1L, platnoCmd(null), null));
         assertTrue(baza.isEmpty());
         verify(slajdRepository, never()).save(any());
@@ -949,7 +974,7 @@ class PrezentacijaServiceTest {
         ObjectNode cvor = (ObjectNode) PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno());
         cvor.put("nepoznato", 1);
         SystemException e = assertThrows(SystemException.class,
-                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor), null));
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor, null), null));
         assertEquals(400, e.getCode());
         assertTrue(e.getMessage().startsWith("Neispravan dokument platna: "), e.getMessage());
         assertTrue(baza.isEmpty());
@@ -962,7 +987,7 @@ class PrezentacijaServiceTest {
                 ((tools.jackson.databind.node.ArrayNode) mnogo.get("slojevi")).add(mnogo.get("slojevi").get(3).deepCopy()
                         .withObject("").put("id", "x" + i));
             }
-            service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, mnogo), null);
+            service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, mnogo, null), null);
         });
         verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
     }
@@ -985,7 +1010,7 @@ class PrezentacijaServiceTest {
             ((tools.jackson.databind.node.ArrayNode) cvor.get("slojevi")).add(kopija);
         }
         greska(400, "Dokument platna je prevelik (najviše 1 MB).",
-                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor), null));
+                () -> service.dodajSlajd(1L, new SlajdCmd(TipSlajda.PLATNO, null, null, null, null, false, null, cvor, null), null));
         assertTrue(baza.isEmpty());
     }
 
@@ -1007,5 +1032,67 @@ class PrezentacijaServiceTest {
         assertEquals(1, kopije.size());
         assertEquals(s.getPlatno(), kopije.get(0).getPlatno());
         assertEquals(PlatnoTestPodaci.ispravno(), d.slajdovi().get(0).platno());
+    }
+
+    // --- potezi crteža (faza 5, B1) ---
+
+    static final Potez POTEZ = new Potez("#FF0000", 2.0, List.of(0.0, 0.0, 10.0, 5.0));
+
+    /** PLATNO sa TEKST t1, CRTEZ c1 (m1, 100 x 50, jedan potez) i CRTEZ c2 bez poteza, upisan pravo u kolonu. */
+    Slajd platnoSaCrtezimaUBazi() {
+        Platno platno = new Platno(1, new Pozadina("#FFFFFF", null), List.of(
+                PlatnoTestPodaci.tekst("t1"),
+                new CrtezSloj("c1", null, 10.0, 20.0, 100.0, 50.0, 0.0, 1.0, false, null, "m1", List.of(POTEZ)),
+                new CrtezSloj("c2", null, 0.0, 0.0, 300.0, 200.0, 0.0, 0.5, false, null, "m2", null)), List.of());
+        Slajd s = new Slajd();
+        s.setPrezentacija(prez);
+        s.setRb(1);
+        s.setTip(TipSlajda.PLATNO);
+        s.setPlatno(platnoJson.zapisi(platno));
+        dodeliId(s);
+        baza.add(s);
+        return s;
+    }
+
+    @Test
+    void poteziVracaSamoCrteze() {
+        Slajd s = platnoSaCrtezimaUBazi();
+        assertEquals(List.of(
+                new PoteziSloja("c1", "m1", 100.0, 50.0, List.of(POTEZ)),
+                new PoteziSloja("c2", "m2", 300.0, 200.0, null)), service.poteziSlajda(s.getId()));
+    }
+
+    @Test
+    void poteziInfoSlajdaSuPrazni() {
+        Slajd s = infoUBazi("Uvod", 1);
+        assertEquals(List.of(), service.poteziSlajda(s.getId()));
+        Slajd p = pitanjeUBazi(2, TipPitanja.JEDAN_TACAN, "a", "b");
+        assertEquals(List.of(), service.poteziSlajda(p.getId()));
+    }
+
+    @Test
+    void poteziPlatnaBezCrtezaSuPrazni() {
+        Slajd s = new Slajd();
+        s.setPrezentacija(prez);
+        s.setRb(1);
+        s.setTip(TipSlajda.PLATNO);
+        s.setPlatno(platnoJson.zapisi(PlatnoTestPodaci.sKlikovima(1)));
+        dodeliId(s);
+        baza.add(s);
+        assertEquals(List.of(), service.poteziSlajda(s.getId()));
+    }
+
+    @Test
+    void poteziNepostojecegSlajdaJe404() {
+        greska(404, PrezentacijaService.SLAJD_NIJE_PRONADJEN, () -> service.poteziSlajda(999L));
+    }
+
+    @Test
+    void poteziNeZakljucavaju() {
+        Slajd s = platnoSaCrtezimaUBazi();
+        service.poteziSlajda(s.getId());
+        verify(prezentacijaRepository, never()).findByIdForUpdate(anyLong());
+        verify(slajdRepository, never()).save(any());
+        verifyNoInteractions(promene, promeneProvider);
     }
 }

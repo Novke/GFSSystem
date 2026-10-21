@@ -31,6 +31,14 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # cela istorija: provera migracija poredi sa osnovom PR-a (origin/<base>)
+          fetch-depth: 0
+      - name: Verzije migracija su jedinstvene
+        # osnova PR-a (staging ili master, po filteru grana gore), za push staging
+        env:
+          OSNOVA: ${{ github.base_ref || 'staging' }}
+        run: bash scripts/provera-migracija.sh "origin/$OSNOVA"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,3 +48,5 @@ jobs:
         run: chmod +x mvnw && ./mvnw -B package
       - name: Provera Dockerfile-a
         run: docker build -t gfs-backend-ci .
+      - name: "Render servis (gfs-latex): build i smoke"
+        run: bash latex-render/test/smoke.sh
