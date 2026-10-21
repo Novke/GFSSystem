@@ -633,7 +633,7 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
   use, 5 wrong entries kill it, a new code voids the old ones; DB keeps `SHA-256(salt + code)`), `StudentskaPrijava` (devices),
   `MaskaMejla` (real mask, or a deterministic fake mask from an HMAC for unknown index / student without mail),
   `PokusajiServis` (counters in table `pokusaji`, survive a restart), `KljuceviAplikacije` (HMAC keys in `kljucevi_aplikacije`,
-  created on first use). Limits: send 3/h per student (also per unknown index) and 10/h per IP, wrong code 20/h per IP, "Ne stiže
+  created on first use). Limits: send 3/h per student (also per unknown index) and 50/h per IP (a classroom behind one NAT address), wrong code 20/h per IP, "Ne stiže
   mi kod" 1/h per index and 10/h per IP, card code 20/h in total, teacher mail 1/h per (kind, index) and 20/h in total,
   `PREVISE_KODOVA` at most 1 per 24 h per student. Over a limit: 429 `Previše pokušaja. Pokušaj ponovo kasnije.`.
   - **The answer must not reveal whether an account exists:** same body for a student, a student without mail and an unknown

@@ -87,7 +87,7 @@ public class KodServis {
     static final Duration TRAJANJE_KODA = Duration.ofMinutes(10);
     static final int MAX_POGRESNIH = 5;
     static final Duration SAT = Duration.ofHours(1);
-    static final int LIMIT_SLANJA_IP = 10;
+    static final int LIMIT_SLANJA_IP = 50;
     static final int LIMIT_SLANJA_STUDENT = 3;
     static final int LIMIT_GRESAKA_IP = 20;
     static final int LIMIT_SA_KARTICE = 20;
@@ -156,7 +156,7 @@ public class KodServis {
 
     /**
      * Šalje kod na mejl studenta sa indeksom (najnoviji upis); uvek isti odgovor (spec 5.1). 503 kad slanje nije podešeno,
-     * 429 preko 10/h po IP-u (broji se svaki zahtev, i za nepostojeći indeks) ili 3/h po indeksu.
+     * 429 preko 50/h po IP-u (broji se svaki zahtev, i za nepostojeći indeks) ili 3/h po indeksu.
      */
     public KodOdgovor posalji(String indeks, String ip) {
         long pocetak = System.nanoTime();
