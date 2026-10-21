@@ -242,7 +242,7 @@ class NalogBezOtvorenogEmIT {
         kodServis.minimalnoTrajanje(Duration.ZERO);
         String ip = "t7-" + UUID.randomUUID().toString().substring(0, 8);
         kljucevi.add(ip);
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < KodServis.LIMIT_SLANJA_IP; i++) {
             String indeks = TestStudenti.noviIndeks();
             kljucevi.add(kodServis.kljucIndeksa(indeks));
             kodServis.posalji(indeks, ip);
