@@ -214,7 +214,7 @@ class OnboardingServiceTest {
         assertEquals("GD12", st.getIndeks());
         assertEquals(2026, st.getGodina());
         assertEquals("ana@example.com", st.getEmail());
-        assertEquals("064123456", st.getBrojTelefona());
+        assertEquals("+38164123456", st.getBrojTelefona()); // E.164 (Telefon.uE164)
         assertEquals(LocalDate.of(2007, 3, 1), st.getDatumRodjenja());
         assertEquals("Subotica", st.getOpstina());
         assertSame(grupa, st.getGrupa());
@@ -353,5 +353,34 @@ class OnboardingServiceTest {
         ArgumentCaptor<Prijava> c = ArgumentCaptor.forClass(Prijava.class);
         verify(prijavaRepository).save(c.capture());
         assertEquals("GD12", c.getValue().getIndeks());
+    }
+
+    @Test
+    void indeksSeCuvaKanonskiATelefonUE164() {
+        sesija(true, SADA.plusDays(7));
+        service.podnesi(TOKEN, forma("gd 012/2026", 2026), "ip");
+        ArgumentCaptor<Prijava> c = ArgumentCaptor.forClass(Prijava.class);
+        verify(prijavaRepository).save(c.capture());
+        assertEquals("GD12", c.getValue().getIndeks());
+        assertEquals(2026, c.getValue().getGodina());
+        assertEquals("+381641234567", c.getValue().getBrojTelefona());
+        verify(studentRepository).postojiStudent("GD12", 2026);
+    }
+
+    @Test
+    void godinaVanOpsegaIBrojKojiNijeTelefonSeOdbijaju() {
+        sesija(true, SADA.plusDays(7));
+        int max = tri.novica.gfssystem.validation.PrijavaPP.maxGodina(CLOCK);
+        assertEquals(2027, max);
+        for (int g : new int[]{1999, max + 1}) {
+            SystemException ex = assertThrows(SystemException.class, () -> service.podnesi(TOKEN, forma("GD12", g), "ip"));
+            assertEquals(400, ex.getCode());
+            assertTrue(ex.getMessage().startsWith("Godina upisa mora biti između 2000 i " + max + "."), ex.getMessage());
+        }
+        PodnesiPrijavuCmd losTelefon = new PodnesiPrijavuCmd("Ana", "Anić", "GD12", 2026, "ana@example.com", "064-abc",
+                LocalDate.of(2007, 3, 1), "Subotica");
+        SystemException ex = assertThrows(SystemException.class, () -> service.podnesi(TOKEN, losTelefon, "ip"));
+        assertTrue(ex.getMessage().contains("Broj telefona nije ispravan."), ex.getMessage());
+        verify(prijavaRepository, never()).save(any());
     }
 }

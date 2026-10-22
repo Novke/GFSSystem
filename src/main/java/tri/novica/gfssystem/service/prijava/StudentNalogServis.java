@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import tri.novica.gfssystem.dto.prijava.KodZaDiktiranjeInfo;
 import tri.novica.gfssystem.dto.prijava.MoodleVezaInfo;
 import tri.novica.gfssystem.dto.prijava.StudentNalogInfo;
 import tri.novica.gfssystem.entity.Student;
@@ -60,13 +61,13 @@ public class StudentNalogServis {
      * update ({@code clearAutomatically}) koji sme tek kad je slanje potvrđeno. Neuspelo slanje (nema mejla, 429, 503)
      * ne rešava ništa. Greška pri rešavanju se samo loguje: kod je već poslat, pa nastavnik ne dobija grešku.
      * <p>
-     * Indeks koji ne prolazi javnu belu listu ne može da se unese u formu za prijavu, pa mu kod ne bi koristio: samo upozorenje u logu.
+     * Indeks koji nije u obliku forme u tri dela ne može da se unese u formu za prijavu, pa mu kod ne bi koristio: samo upozorenje u logu.
      */
     @Transactional(propagation = Propagation.NEVER)
     public void posaljiKod(Long studentId) {
         Student s = nadji(studentId);
-        String indeks = IndeksUtil.normalizuj(s.getIndeks());
-        if (indeks == null || !KodServis.BELA_LISTA_INDEKSA.matcher(indeks).matches()) {
+        String indeks = IndeksUtil.kanonski(s.getIndeks(), s.getGodina());
+        if (!IndeksUtil.jeJavniOblik(indeks)) {
             log.warn("Kod sa kartice za studenta čiji je indeks mimo bele liste, prijava kodom mu nije moguća, student={}", studentId);
         }
         kodovi.posaljiOdNastavnika(studentId);
@@ -76,6 +77,33 @@ public class StudentNalogServis {
         } catch (RuntimeException e) {
             log.error("Obaveštenja studenta nisu rešena posle koda sa kartice, student={}: {}", studentId, e.getClass().getSimpleName());
         }
+    }
+
+    /** Upozorenje uz kod za diktiranje kad indeks studenta nije u obliku forme u tri dela. */
+    static final String UPOZORENJE_INDEKS = "Indeks ovog studenta ne može da se unese u formu za prijavu (smer i broj od 1 do 3 cifre). "
+            + "Ispravi indeks na kartici studenta, pa izdaj nov kod.";
+
+    /**
+     * Kod za diktiranje (plan C, {@link KodServis#kodZaDiktiranje}): bez mejla, i studentu bez mejla; posle izdavanja rešava
+     * otvorena obaveštenja studenta (kao {@link #posaljiKod}, isti redosled i isto pravilo: greška pri rešavanju se samo
+     * loguje). Vraća kod jednom, sa indeksom i godinom koje student unosi; vrednost koda nikad ne ide u log.
+     */
+    @Transactional(propagation = Propagation.NEVER)
+    public KodZaDiktiranjeInfo kodZaDiktiranje(Long studentId) {
+        Student s = nadji(studentId);
+        String indeks = IndeksUtil.kanonski(s.getIndeks(), s.getGodina());
+        boolean unosiv = IndeksUtil.jeJavniOblik(indeks);
+        if (!unosiv) {
+            log.warn("Kod za diktiranje za studenta čiji indeks nije u obliku forme, student={}", studentId);
+        }
+        KodServis.DiktiranKod d = kodovi.kodZaDiktiranje(studentId);
+        try {
+            int resenih = obavestenja.resiZaStudenta(studentId);
+            log.info("Obaveštenja studenta rešena kodom za diktiranje, student={}, resenih={}", studentId, resenih);
+        } catch (RuntimeException e) {
+            log.error("Obaveštenja studenta nisu rešena posle koda za diktiranje, student={}: {}", studentId, e.getClass().getSimpleName());
+        }
+        return new KodZaDiktiranjeInfo(d.kod(), d.istice(), indeks, s.getGodina(), unosiv ? null : UPOZORENJE_INDEKS);
     }
 
     /** Opoziva sve važeće uređaje studenta; vraća koliko ih je bilo. */

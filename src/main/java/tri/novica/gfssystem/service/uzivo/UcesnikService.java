@@ -70,12 +70,15 @@ public class UcesnikService {
 
     /**
      * Naziv prezentacije aktivnog izvođenja, da li je prijava studenta obavezna (bodovan run) i da li zahtev nosi
-     * prijavljenog studenta ({@code imaIdentitet}); nepoznat ili završen kod -> 404.
+     * prijavljenog studenta ({@code imaIdentitet}), i godina upisa grupe predavanja izvođenja (predlog godine na
+     * {@code /nalog}; null bez predavanja ili grupe); nepoznat ili završen kod -> 404.
      */
     @Transactional(readOnly = true)
     public JavnoIzvodjenjeInfo info(String kod, boolean imaIdentitet) {
         Izvodjenje iz = aktivno(kod);
-        return new JavnoIzvodjenjeInfo(iz.getPrezentacija().getNaziv(), iz.isBoduje(), imaIdentitet);
+        Integer godinaUpisa = iz.getPredavanje() == null || iz.getPredavanje().getGrupa() == null ? null
+                : iz.getPredavanje().getGrupa().getGodinaUpisa();
+        return new JavnoIzvodjenjeInfo(iz.getPrezentacija().getNaziv(), iz.isBoduje(), imaIdentitet, godinaUpisa);
     }
 
     /** Učesnik kome pripada token, ako je to učesnik ovog (aktivnog) izvođenja i nije izbačen. */

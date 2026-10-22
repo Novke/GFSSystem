@@ -1,8 +1,11 @@
 package tri.novica.gfssystem.rest.prijava;
 
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import tri.novica.gfssystem.dto.prijava.KodZaDiktiranjeInfo;
 import tri.novica.gfssystem.dto.prijava.OpozvanoInfo;
 import tri.novica.gfssystem.dto.prijava.StudentNalogInfo;
 import tri.novica.gfssystem.service.prijava.StudentNalogServis;
@@ -29,6 +32,17 @@ public class StudentNalogRest {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void posaljiKod(@PathVariable Long id) {
         servis.posaljiKod(id);
+    }
+
+    /**
+     * Kod koji nastavnik izdiktira studentu (bez mejla): isti kod i ista pravila kao kod sa mejla. Vraća se jednom,
+     * {@code Cache-Control: no-store}; rešava otvorena obaveštenja studenta.
+     */
+    @PostMapping("kod-za-diktiranje")
+    @ResponseStatus(HttpStatus.OK)
+    public KodZaDiktiranjeInfo kodZaDiktiranje(@PathVariable Long id, HttpServletResponse res) {
+        res.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        return servis.kodZaDiktiranje(id);
     }
 
     @PostMapping("opozovi-uredjaje")

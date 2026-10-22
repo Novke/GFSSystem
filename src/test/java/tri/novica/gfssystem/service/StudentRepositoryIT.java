@@ -10,6 +10,8 @@ import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.repository.StudentRepository;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -78,5 +80,36 @@ class StudentRepositoryIT {
         assertTrue(repository.postojiStudent("SRX4", 2025));
         assertTrue(repository.postojiDrugiStudent("SRX4", 2025, s.getId() + 1000));
         assertFalse(repository.postojiDrugiStudent("SRX4", 2025, s.getId()));
+    }
+
+    @Test
+    void kanonskiOblikPoredi() {
+        Student sufiks = student("srx007/2025", 2025);
+        Student drugaGodina = student("SRX7", 2024);
+
+        assertEquals(List.of(sufiks.getId()),
+                repository.findAllPoIndeksuIGodini("SRX7", 2025).stream().map(Student::getId).toList());
+        assertEquals(List.of(drugaGodina.getId()),
+                repository.findAllPoIndeksuIGodini("SRX7", 2024).stream().map(Student::getId).toList());
+        assertTrue(repository.findAllPoIndeksuIGodini("SRX7", 2026).isEmpty());
+        assertTrue(repository.findAllPoIndeksuIGodini("SRX70", 2025).isEmpty());
+        assertTrue(repository.findAllPoIndeksuIGodini(null, 2025).isEmpty());
+    }
+
+    @Test
+    void sufiksDrugeGodineSeNeSkida() {
+        student("SRX8/2024", 2025);
+
+        assertFalse(repository.postojiStudent("SRX8", 2025));
+        assertTrue(repository.postojiStudent("SRX8/2024", 2025));
+    }
+
+    @Test
+    void viseIstihNajnovijiIdPrvi() {
+        Student prvi = student("SRX9", 2025);
+        Student drugi = student("srx 09", 2025);
+
+        assertEquals(List.of(drugi.getId(), prvi.getId()),
+                repository.findAllPoIndeksuIGodini("SRX9", 2025).stream().map(Student::getId).toList());
     }
 }
