@@ -26,7 +26,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.prijava.ObavestenjeRepository;
 import tri.novica.gfssystem.repository.prijava.StudentskiUredjajRepository;
-import tri.novica.gfssystem.service.mejl.MejlPoruka;
+import tri.novica.gfssystem.service.mejl.MejlPoruke;
 import tri.novica.gfssystem.service.mejl.MejlServis;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.IndeksUtil;
@@ -92,6 +92,7 @@ public class ObavestenjeServis {
     private final PokusajiServis pokusaji;
     private final KodServis kodovi;
     private final MejlServis mejl;
+    private final MejlPoruke poruke;
     private final NastavnikSvojstva nastavnik;
     private final ApplicationEventPublisher dogadjaji;
     private final Clock clock;
@@ -101,7 +102,7 @@ public class ObavestenjeServis {
 
     public ObavestenjeServis(ObavestenjeRepository obavestenja, StudentRepository studenti,
                              StudentskiUredjajRepository uredjaji, PokusajiServis pokusaji, KodServis kodovi,
-                             MejlServis mejl, NastavnikSvojstva nastavnik, ApplicationEventPublisher dogadjaji,
+                             MejlServis mejl, MejlPoruke poruke, NastavnikSvojstva nastavnik, ApplicationEventPublisher dogadjaji,
                              PlatformTransactionManager transakcije, Clock clock) {
         this.obavestenja = obavestenja;
         this.studenti = studenti;
@@ -109,6 +110,7 @@ public class ObavestenjeServis {
         this.pokusaji = pokusaji;
         this.kodovi = kodovi;
         this.mejl = mejl;
+        this.poruke = poruke;
         this.nastavnik = nastavnik;
         this.dogadjaji = dogadjaji;
         this.clock = clock;
@@ -119,9 +121,14 @@ public class ObavestenjeServis {
 
     // ------------------------------------------------------------------ "Ne stiže mi kod"
 
-    /** Isto kao {@link #neStizeKod(String, String, List)} sa najviše jednim tokenom uređaja. */
+    /** Isto kao {@link #neStizeKod(String, Integer, String, List)}, stari zahtev bez godine, najviše jedan token uređaja. */
     public void neStizeKod(String indeks, String ip, Optional<String> studentskiToken) {
-        neStizeKod(indeks, ip, studentskiToken.map(List::of).orElse(List.of()));
+        neStizeKod(indeks, null, ip, studentskiToken.map(List::of).orElse(List.of()));
+    }
+
+    /** Stari zahtev bez godine (PRIVREMENO, vidi {@link KodServis}). */
+    public void neStizeKod(String indeks, String ip, List<String> studentskiTokeni) {
+        neStizeKod(indeks, null, ip, studentskiTokeni);
     }
 
     /**
@@ -131,7 +138,7 @@ public class ObavestenjeServis {
      * zahteva (više njih kad sestrinski poddomen podmetne svoj): {@code uredjaj} je {@code ZAPAMCEN} kad bar jedan
      * pripada uređaju tog studenta (i opozvanom), inače {@code NEPOZNAT}.
      */
-    public void neStizeKod(String indeks, String ip, List<String> studentskiTokeni) {
+    public void neStizeKod(String indeks, Integer godina, String ip, List<String> studentskiTokeni) {
         long pocetak = System.nanoTime();
         // 429 po IP-u ne zavisi od indeksa, pa ide bez donje granice (kao u KodServis.posalji)
         if (pokusaji.dostignut(VrstaPokusaja.POMOC_IP, ip, LIMIT_POMOC_IP, SAT)) {
@@ -141,7 +148,7 @@ public class ObavestenjeServis {
         try {
             pokusaji.zabelezi(VrstaPokusaja.POMOC_IP, ip);
             // HMAC ključ se pravi pri prvom pozivu, van zaključane transakcije
-            KodServis.Indeks i = kodovi.indeks(indeks);
+            KodServis.Indeks i = kodovi.indeks(indeks, godina);
             zakljucano.executeWithoutResult(tx -> pomocZakljucano(i, ip, studentskiTokeni));
         } finally {
             kodovi.sacekajDoGranice(pocetak);
@@ -151,12 +158,12 @@ public class ObavestenjeServis {
     private void pomocZakljucano(KodServis.Indeks i, String ip, List<String> tokeni) {
         if (!kodovi.uzmiBravu("gfs-pomoc:", i)) {
             // drugi zahtev za isti indeks drži bravu duže od 10 s: njegovo obaveštenje pokriva i ovaj zahtev
-            log.info("Pomoć za kod preskočena (brava indeksa zauzeta), indeks={}, ip={}", KodServis.trag(i.n()), ip);
+            log.info("Pomoć za kod preskočena (brava indeksa zauzeta), indeks={}, ip={}", i.trag(), ip);
             return;
         }
         String kljuc = KodServis.kljucIndeksaIzHmac(i.hmac());
         if (pokusaji.dostignut(VrstaPokusaja.POMOC_INDEKS, kljuc, LIMIT_POMOC_INDEKS, SAT)) {
-            log.info("Pomoć za kod preskočena (limit po indeksu), indeks={}, ip={}", KodServis.trag(i.n()), ip);
+            log.info("Pomoć za kod preskočena (limit po indeksu), indeks={}, ip={}", i.trag(), ip);
             return;
         }
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.POMOC_INDEKS, kljuc);
@@ -165,13 +172,14 @@ public class ObavestenjeServis {
 
         Map<String, Object> podaci = new LinkedHashMap<>();
         podaci.put("indeks", i.n());
+        podaci.put("godina", i.godina());
         podaci.put("imaMejl", student.map(s -> s.getEmail() != null && !s.getEmail().isBlank()).orElse(false));
         podaci.put("ip", ip);
         podaci.put("uredjaj", zapamcen ? "ZAPAMCEN" : "NEPOZNAT");
         Obavestenje o = snimi(VrstaObavestenja.NE_STIZE_KOD, student.orElse(null), podaci);
         log.info("Obaveštenje 'ne stiže kod' napravljeno, obavestenje={}, student={}, indeks={}, ip={}", o.getId(),
-                student.map(Student::getId).orElse(null), KodServis.trag(i.n()), ip);
-        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, KodServis.trag(i.n()), student.orElse(null), cekanjeBraveMejlS);
+                student.map(Student::getId).orElse(null), i.trag(), ip);
+        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, i.trag(), student.orElse(null), cekanjeBraveMejlS);
     }
 
     /** Da li bar jedan token pripada uređaju studenta (opozvan i istekao se računaju: pamti se da je uređaj bio njegov). */
@@ -204,16 +212,18 @@ public class ObavestenjeServis {
                     sada.minus(DAN))) {
                 return;
             }
-            String n = IndeksUtil.normalizuj(student.get().getIndeks());
+            Student st = student.get();
+            String n = IndeksUtil.kanonski(st.getIndeks(), st.getGodina());
             Map<String, Object> podaci = new LinkedHashMap<>();
             podaci.put("indeks", n == null ? "" : n);
+            podaci.put("godina", st.getGodina());
             podaci.put("ip", ip);
             Obavestenje o = snimi(VrstaObavestenja.PREVISE_KODOVA, student.get(), podaci);
             log.info("Obaveštenje 'previše kodova' napravljeno, obavestenje={}, student={}, ip={}", o.getId(), studentId, ip);
-            String normalizovan = n == null ? "" : n;
+            String identitet = KodServis.Indeks.identitet(n == null ? "" : n, st.getGodina());
             // red studenta je zaključan: brava mejla se čeka kratko (najviše 1 s), da zastoj na njoj ne drži taj red
-            mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, kodovi.kljucIndeksa(normalizovan),
-                    KodServis.trag(normalizovan), student.get(),
+            mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, kodovi.kljucIndeksa(identitet),
+                    KodServis.trag(identitet), student.get(),
                     Math.min(CEKANJE_BRAVE_MEJL_PREVISE_S, cekanjeBraveMejlS));
         });
     }
@@ -281,9 +291,15 @@ public class ObavestenjeServis {
         }
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc);
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU_UKUPNO, UKUPNO);
-        dogadjaji.publishEvent(new MejlPoruka(adresa,
+        dogadjaji.publishEvent(poruke.nastavniku(adresa,
                 vrsta == VrstaObavestenja.NE_STIZE_KOD ? NASLOV_POMOC : NASLOV_PREVISE,
-                telo(vrsta, student == null ? null : student.getIndeks(), student == null ? null : student.getId())));
+                telo(vrsta, student == null ? null : indeksSaGodinom(student), student == null ? null : student.getId())));
+    }
+
+    /** Upisan indeks studenta sa godinom upisa, za mejl ({@code GD5/2026}). */
+    static String indeksSaGodinom(Student s) {
+        String n = IndeksUtil.kanonski(s.getIndeks(), s.getGodina());
+        return n == null ? "" : n + "/" + s.getGodina();
     }
 
     /** {@code indeks} i {@code studentId} su iz baze, ili oba {@code null} kad nema studenta (tada ništa ukucano). */
@@ -373,6 +389,7 @@ public class ObavestenjeServis {
         String ime = s == null ? null : ((s.getIme() == null ? "" : s.getIme()) + " "
                 + (s.getPrezime() == null ? "" : s.getPrezime())).trim();
         return new ObavestenjeInfo(o.getId(), o.getVrsta(), s == null ? null : s.getId(), ime, indeks, podaci,
-                o.getKreirano(), o.getProcitano(), o.getReseno());
+                o.getKreirano(), o.getProcitano(), o.getReseno(),
+                s != null ? Integer.valueOf(s.getGodina()) : podaci.get("godina") instanceof Number g ? g.intValue() : null);
     }
 }

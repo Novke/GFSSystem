@@ -116,7 +116,7 @@ class KodServisIT {
 
         MejlPoruka p = mejl.cekaj(1).getFirst();
         assertEquals("pera.peric@example.test", p.za());
-        assertEquals("GFS: kod za prijavu", p.naslov());
+        assertEquals("Kod za prijavu u GFS", p.naslov());
         assertTrue(p.telo().contains("važi 10 minuta"), p.telo());
         String kod = kodIz(p);
 
@@ -532,5 +532,106 @@ class KodServisIT {
         assertEquals(409, e.getCode());
         assertEquals("Student nema mejl.", e.getMessage());
         assertEquals(404, greska(() -> servis.posaljiOdNastavnika(-1L)).getCode());
+    }
+
+    // ---------------------------------------------------------------- indeks u tri dela: (indeks, godina)
+
+    /** Slučajan broj indeksa i par godina koje test koristi samo za sebe (sintetički podaci). */
+    int slucajanBroj() {
+        return 1 + new java.util.Random().nextInt(999);
+    }
+
+    @Test
+    void parIndeksGodinaNalaziStudentaTacnoTeGeneracije() {
+        int n = slucajanBroj();
+        // isti broj u dve generacije; jedan zapisan sa vodećom nulom, drugi sa sufiksom godine (stari oblik)
+        Student stariji = studenti.napravi(String.format("GD%03d", n), 2003, "stariji@example.test");
+        Student mladji = studenti.napravi("GD" + n + "/2004", 2004, "mladji@example.test");
+        kljucevi.add(servis.kljucIndeksa("GD" + n + "/2005"));
+
+        servis.posalji("GD" + n, 2003, noviIp());
+        assertEquals("stariji@example.test", mejl.cekaj(1).getFirst().za());
+        servis.posalji("gd 0" + n, 2004, noviIp());
+        assertEquals("mladji@example.test", mejl.cekaj(2).get(1).za());
+        // nepoznata generacija: isti odgovor kao za nepostojeći indeks, bez mejla
+        KodOdgovor o = servis.posalji("GD" + n, 2005, noviIp());
+        assertEquals(PORUKA, o.poruka());
+        assertEquals(2, mejl.poslate().size());
+
+        String kodMladjeg = kodIz(mejl.poslate().get(1));
+        String kodStarijeg = kodIz(mejl.poslate().get(0));
+        if (!kodMladjeg.equals(kodStarijeg)) {
+            assertEquals(401, greska(() -> servis.proveri("GD" + n, 2003, kodMladjeg, noviIp())).getCode());
+        }
+        assertEquals(mladji.getId(), servis.proveri("GD" + n, 2004, kodMladjeg, noviIp()));
+        assertEquals(stariji.getId(), servis.proveri("GD" + n, 2003, kodStarijeg, noviIp()));
+    }
+
+    @Test
+    void noviOblikPrihvataSamoSmerIBroj() {
+        Student s = studenti.napravi("pera@example.test"); // "T7-.../2025": nije javni oblik GD + broj
+        String bezGodine = s.getIndeks().replace("/2025", "");
+        kljucevi.add(servis.kljucIndeksa(bezGodine + "/2025"));
+        servis.posalji(bezGodine, 2025, noviIp());
+        assertEquals(0, mejl.poslate().size());
+        // stari oblik (jedno polje sa godinom) i dalje radi, privremeno
+        servis.posalji(s.getIndeks(), noviIp());
+        assertEquals("pera@example.test", mejl.cekaj(1).getFirst().za());
+    }
+
+    // ---------------------------------------------------------------- kod za diktiranje (plan C)
+
+    @Test
+    void kodZaDiktiranjeRadiBezMejlaIBezSmtpa() {
+        mejl.dostupan(false);
+        Student s = studenti.napravi(null);
+        KodServis.DiktiranKod d = servis.kodZaDiktiranje(s.getId());
+        assertTrue(d.kod().matches("\\d{6}"));
+        assertEquals(LocalDateTime.now(clock).plusMinutes(10), d.istice());
+        assertFalse(d.toString().contains(d.kod()));
+        assertEquals(0, mejl.poslate().size());
+        assertEquals("NASTAVNIK", jdbc.queryForObject(
+                "select nacin from kodovi_za_prijavu where student_id = ?", String.class, s.getId()));
+        assertEquals(s.getId(), servis.proveri(s.getIndeks(), d.kod(), noviIp()));
+        assertEquals(401, greska(() -> servis.proveri(s.getIndeks(), d.kod(), noviIp())).getCode());
+        assertEquals(404, greska(() -> servis.kodZaDiktiranje(-1L)).getCode());
+    }
+
+    @Test
+    void ponovnoSlanjeMejlaNePonistavaIzdiktiranKod() {
+        Student s = studenti.napravi("pera@example.test");
+        KodServis.DiktiranKod d = servis.kodZaDiktiranje(s.getId());
+        servis.posalji(s.getIndeks(), noviIp());
+        servis.posalji(s.getIndeks(), noviIp());
+        String mejlKod = kodIz(mejl.cekaj(2).get(1));
+        // aktivni: poslednji kod sa mejla i kod za diktiranje
+        assertEquals(2, aktivni(s).size());
+        // nov kod za diktiranje poništava samo prethodni kod za diktiranje
+        KodServis.DiktiranKod d2 = servis.kodZaDiktiranje(s.getId());
+        assertEquals(2, aktivni(s).size());
+        if (!d.kod().equals(d2.kod()) && !d.kod().equals(mejlKod)) {
+            assertEquals(401, greska(() -> servis.proveri(s.getIndeks(), d.kod(), noviIp())).getCode());
+        }
+        // uspeh jednim kodom poništava sve ostale
+        assertEquals(s.getId(), servis.proveri(s.getIndeks(), d2.kod(), noviIp()));
+        assertEquals(List.of(), aktivni(s));
+        if (!mejlKod.equals(d2.kod())) {
+            assertEquals(401, greska(() -> servis.proveri(s.getIndeks(), mejlKod, noviIp())).getCode());
+        }
+    }
+
+    @Test
+    void kodZaDiktiranjeImaUkupanLimitPoSatu() {
+        jdbc.update("delete from pokusaji where vrsta = 'KOD_DIKTIRAN'");
+        try {
+            Student s = studenti.napravi(null);
+            for (int i = 0; i < KodServis.LIMIT_DIKTIRANIH; i++) servis.kodZaDiktiranje(s.getId());
+            SystemException e = greska(() -> servis.kodZaDiktiranje(s.getId()));
+            assertEquals(429, e.getCode());
+            assertEquals(PREVISE, e.getMessage());
+            assertEquals(1, aktivni(s).size());
+        } finally {
+            jdbc.update("delete from pokusaji where vrsta = 'KOD_DIKTIRAN'");
+        }
     }
 }

@@ -444,7 +444,7 @@ class PrijavaSemaIT {
     @Test
     void vrstePokusajaSuIzPlana() {
         assertEquals(List.of("NASTAVNIK_GRESKA_IP", "KOD_SLANJE_IP", "KOD_SLANJE_STUDENT", "KOD_GRESKA_IP", "POMOC_IP",
-                        "POMOC_INDEKS", "KOD_SA_KARTICE", "MEJL_NASTAVNIKU", "MEJL_NASTAVNIKU_UKUPNO"),
+                        "POMOC_INDEKS", "KOD_SA_KARTICE", "KOD_DIKTIRAN", "MEJL_NASTAVNIKU", "MEJL_NASTAVNIKU_UKUPNO"),
                 java.util.Arrays.stream(VrstaPokusaja.values()).map(Enum::name).toList());
     }
 
@@ -590,7 +590,6 @@ class PrijavaSemaIT {
 
         assertEquals(List.of(noviji.getId(), srednji.getId(), stariji.getId()),
                 studentRepository.findAllPoNormalizovanomIndeksu("PRX9").stream().map(Student::getId).toList());
-        assertEquals(noviji.getId(), studentRepository.findNajnovijiPoIndeksu("PRX9").orElseThrow().getId());
-        assertTrue(studentRepository.findNajnovijiPoIndeksu("PRX0").isEmpty());
+        assertTrue(studentRepository.findAllPoNormalizovanomIndeksu("PRX0").isEmpty());
     }
 }

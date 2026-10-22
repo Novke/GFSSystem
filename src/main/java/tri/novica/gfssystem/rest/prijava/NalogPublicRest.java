@@ -27,7 +27,8 @@ import java.util.Map;
 /**
  * Studentski nalog bez lozinke (spec 5.1), javno na internetu ({@code /api/public/nalog/*}): {@code kod}, {@code prijava}
  * i {@code stanje} su ANONIMNO, {@code ja}, {@code odjava} i {@code odjava-svuda} traže studentski kolačić (STUDENT u
- * {@code PristupMatrica}, lanac vraća 401 bez njega). Ništa nastavničko ovde.
+ * {@code PristupMatrica}, lanac vraća 401 bez njega). Ništa nastavničko ovde. Telo {@code kod}, {@code prijava} i
+ * {@code pomoc} nosi indeks ({@code GD5}) i godinu upisa; student se traži tačno po tom paru ({@code KodServis}).
  */
 @RestController
 @RequestMapping("/public/nalog")
@@ -48,7 +49,7 @@ public class NalogPublicRest {
     @ResponseStatus(HttpStatus.OK)
     public KodOdgovor kod(@Valid @RequestBody KodCmd cmd, HttpServletRequest req) {
         nijeNastavnik();
-        return kodovi.posalji(cmd.indeks(), KlijentIp.iz(req));
+        return kodovi.posalji(cmd.indeks(), cmd.godina(), KlijentIp.iz(req));
     }
 
     /** Tačan kod: nov uređaj i kolačić {@code gfs_student}; uređaj kojim je ovaj pregledač već bio prijavljen se odjavljuje.
@@ -57,7 +58,7 @@ public class NalogPublicRest {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void prijava(@Valid @RequestBody PrijavaKodomCmd cmd, HttpServletRequest req, HttpServletResponse res) {
         nijeNastavnik();
-        Long studentId = kodovi.proveri(cmd.indeks(), cmd.kod(), KlijentIp.iz(req));
+        Long studentId = kodovi.proveri(cmd.indeks(), cmd.godina(), cmd.kod(), KlijentIp.iz(req));
         StudentAutentikacija.trenutna().ifPresent(s -> prijava.odjaviUredjaj(s.uredjajId()));
         prijava.prijavi(studentId, NacinPrijave.KOD, req, res);
     }
@@ -69,7 +70,7 @@ public class NalogPublicRest {
     @PostMapping("pomoc")
     @ResponseStatus(HttpStatus.OK)
     public Map<String, String> pomoc(@Valid @RequestBody PomocCmd cmd, HttpServletRequest req) {
-        obavestenja.neStizeKod(cmd.indeks(), KlijentIp.iz(req), Kolacici.procitajSve(req, Kolacici.STUDENT));
+        obavestenja.neStizeKod(cmd.indeks(), cmd.godina(), KlijentIp.iz(req), Kolacici.procitajSve(req, Kolacici.STUDENT));
         return Map.of("poruka", "Javili smo nastavniku.");
     }
 

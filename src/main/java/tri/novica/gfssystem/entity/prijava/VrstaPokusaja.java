@@ -19,6 +19,8 @@ public enum VrstaPokusaja {
     POMOC_INDEKS,
     /** Kod poslat sa kartice studenta (nastavnik), ukupno. */
     KOD_SA_KARTICE,
+    /** Kod za diktiranje sa kartice studenta (nastavnik), ukupno. */
+    KOD_DIKTIRAN,
     /** Mejl nastavniku, po (vrsta obaveštenja, indeks). */
     MEJL_NASTAVNIKU,
     /** Mejl nastavniku, ukupno. */

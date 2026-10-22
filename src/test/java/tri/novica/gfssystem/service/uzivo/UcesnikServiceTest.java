@@ -232,6 +232,18 @@ class UcesnikServiceTest {
     }
 
     @Test
+    void infoNosiGodinuUpisaGrupePredavanja() {
+        tri.novica.gfssystem.entity.Grupa g = new tri.novica.gfssystem.entity.Grupa();
+        g.setGodinaUpisa(2025);
+        tri.novica.gfssystem.entity.Predavanje p = new tri.novica.gfssystem.entity.Predavanje();
+        p.setGrupa(g);
+        iz.setPredavanje(p);
+        assertEquals(new JavnoIzvodjenjeInfo("Statika 1", false, false, 2025), service.info(KOD, false));
+        p.setGrupa(null);
+        assertNull(service.info(KOD, false).godinaUpisa());
+    }
+
+    @Test
     void bodovanBezIdentiteta403PreProvereImena() {
         iz.setBoduje(true);
         // neispravno ime ne daje 400: student i ne treba da kuca ime
