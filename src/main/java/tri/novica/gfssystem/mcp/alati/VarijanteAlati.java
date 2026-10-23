@@ -50,7 +50,8 @@ public class VarijanteAlati {
 
     @McpTool(name = "napravi_varijantu", description = "Nova varijanta na kraj lista banke (grupa bez podgrupa, sa "
             + "`tezina`; i u Novicinoj grupi): uvek `NACRT` sa izvorom `CLAUDE` i tvojom serijom, odobrava je samo Novica. "
-            + "`odgovori` pokrivaju svako polje šeme grupe (vodič `banka`). Server renderuje odmah: greška rendera nije "
+            + "`odgovori` pokrivaju svako polje šeme grupe, a `nivo` (1-3, obavezan) kaže koliko je varijanta teška unutar "
+            + "svog tipa (vodič `banka`). Server renderuje odmah: greška rendera nije "
             + "neuspeh poziva nego `renderStatus: \"GRESKA\"` sa `renderGreska` (linija u tvom tekstu i poruka) i `renderDeo` "
             + "(`tekst` ili `resenje`); popravi je sa `izmeni_varijantu`. Uz `slika` vraća PNG: za namenu `PREDAVANJE` "
             + "zadatak i rešenje, za `TEST` samo zadatak, osim uz `slikaResenja: true`. Vraća `{radnja: \"nova\", varijanta, "
@@ -69,6 +70,8 @@ public class VarijanteAlati {
             @McpToolParam(description = "Tačan odgovor za svako polje šeme grupe: ključ polja -> tačno jedno svojstvo po "
                     + "tipu polja (`broj`, `prihvatljivi`, `tacna` ili `tacne`; vodič `banka`).")
             Map<String, OdgovorPolja> odgovori,
+            @McpToolParam(description = "Nivo unutar tipa zadatka: 1 (lakša), 2 (srednja) ili 3 (teža varijanta); "
+                    + "Novica ga potvrđuje pri pregledu.") Integer nivo,
             @McpToolParam(description = "Prilozi `[{ime, medijId}]` (medijId iz `gfs-mcp-upload`); LaTeX ih zove "
                     + "`\\includegraphics{ime}`.", required = false) List<PrilogCmd> prilozi,
             @McpToolParam(description = "Da li da vrati PNG render; podrazumevano true.", required = false) Boolean slika,
@@ -78,7 +81,8 @@ public class VarijanteAlati {
             poziv.id("grupa", grupaId);
             McpPatch argumenti = McpPatch.iz(zahtev);
             McpSaSlikom<McpUpisVarijante> r = banka.napraviVarijantu(grupaId, new VarijantaCmd(naziv, tekst, resenje,
-                    argumenti.odgovori("odgovori"), argumenti.prilozi("prilozi"), null), serija,
+                    argumenti.odgovori("odgovori"), argumenti.prilozi("prilozi"), null,
+                    argumenti.strogo("nivo", Integer.class)), serija,   // strogo: 2.5 i "2" su greška, ne 2
                     slika(slika, slikaResenja), poziv);
             poziv.id("varijanta", r.podaci().varijanta().id());
             return odgovor.jsonSaSlikom(r.podaci(), r.png(), r.napomena());
@@ -91,7 +95,8 @@ public class VarijanteAlati {
             + "`ikadOdobrena: false`) se menja na mestu (`radnja: \"izmenjena\"`). Svaka druga varijanta (Novicina, aktivna, "
             + "arhivirana, ikad odobrena) se ne dira: izmena postaje nova kopija-nacrt koja original zamenjuje tek kad je "
             + "Novica odobri (`radnja: \"kopija\"`, `linkOriginala`); svaki takav poziv pravi novu kopiju, i kad poslate "
-            + "vrednosti ne menjaju ništa, zato šalji samo polja koja stvarno menjaš. Render i slika kao u "
+            + "vrednosti ne menjaju ništa, zato šalji samo polja koja stvarno menjaš. `nivo` (1-3) se ne briše; izmena samo "
+            + "nivoa radi samo na tvom neodobrenom nacrtu (nivo ostalih menja Novica u banci). Render i slika kao u "
             + "`napravi_varijantu`. Vraća `{radnja, varijanta, link}`. " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = false,
                     openWorldHint = false))
@@ -106,6 +111,8 @@ public class VarijanteAlati {
             Map<String, OdgovorPolja> odgovori,
             @McpToolParam(description = "Nov ceo spisak priloga `[{ime, medijId}]`; `null` briše sve.", required = false)
             List<PrilogCmd> prilozi,
+            @McpToolParam(description = "Nov nivo: 1 (lakša), 2 (srednja) ili 3 (teža varijanta).", required = false)
+            Integer nivo,
             @McpToolParam(description = "Da li da vrati PNG render; podrazumevano true.", required = false) Boolean slika,
             @McpToolParam(description = "Za namenu `TEST`: da li slika uključuje i rešenje; podrazumevano false.",
                     required = false) Boolean slikaResenja) {
@@ -114,7 +121,8 @@ public class VarijanteAlati {
             McpPatch patch = McpPatch.iz(zahtev);
             VarijantaPatch izmena = new VarijantaPatch(patch.promena("naziv", String.class, true),
                     patch.promena("tekst", String.class, false), patch.promena("resenje", String.class, true),
-                    patch.promena("odgovori", false, patch::odgovori), patch.promena("prilozi", true, patch::prilozi));
+                    patch.promena("odgovori", false, patch::odgovori), patch.promena("prilozi", true, patch::prilozi),
+                    patch.promena("nivo", Integer.class, false));
             McpSaSlikom<McpUpisVarijante> r = banka.izmeniVarijantu(varijantaId, izmena, serija,
                     slika(slika, slikaResenja), poziv);
             if ("kopija".equals(r.podaci().radnja())) {

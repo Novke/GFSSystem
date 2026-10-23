@@ -14,6 +14,7 @@ import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipPrelaza;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.utility.Nivo;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -180,7 +181,10 @@ public final class SlajdPP {
         proveri(cmd.pitanje());
     }
 
-    /** Grupa je obavezna, tajmer 5..600 s ili {@code null}, broj različitih varijanti 1..50 ili {@code null}. */
+    /**
+     * Grupa je obavezna, tajmer 5..600 s ili {@code null}, broj različitih varijanti 1..50 ili {@code null}, nivo 1..3 ili
+     * {@code null} ({@link Nivo#GRANICE}).
+     */
     private static void proveri(ZadatakSlajda z) {
         if (z == null || z.grupaId() == null) {
             throw greska(ZADATAK_BEZ_GRUPE);
@@ -191,6 +195,7 @@ public final class SlajdPP {
         if (z.brojVarijanti() != null && (z.brojVarijanti() < MIN_BROJ_VARIJANTI || z.brojVarijanti() > MAX_BROJ_VARIJANTI)) {
             throw greska(BROJ_VARIJANTI);
         }
+        Nivo.proveri(z.nivo());
     }
 
     private static void proveri(PitanjeCmd p) {

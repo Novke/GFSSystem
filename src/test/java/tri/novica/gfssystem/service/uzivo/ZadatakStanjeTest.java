@@ -97,8 +97,8 @@ class ZadatakStanjeTest {
         u1 = ucesnik(1L, "Ana");
         u2 = ucesnik(2L, "Bojan");
 
-        ZadatakSlajdaInfo info = new ZadatakSlajdaInfo(3L, null, 4, "2 → 10", List.of(new GrupaPutanja(3L, "2 → 10")),
-                true, 6, POLJA, false, List.of(), List.of());
+        ZadatakSlajdaInfo info = new ZadatakSlajdaInfo(3L, null, 4, null, "2 → 10", List.of(new GrupaPutanja(3L, "2 → 10")),
+                true, 6, List.of(0, 6, 0), POLJA, false, List.of(), List.of());
         when(zadaci.za(eq(7L), anyList())).thenReturn(Map.of(SLAJD, info));
         when(izvodjenjeRepository.findSaVezama(IZ)).thenReturn(Optional.of(iz));
         when(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(1L)).thenReturn(List.of(slajd));
@@ -124,9 +124,9 @@ class ZadatakStanjeTest {
     ZadatakSnimak snimak() {
         return new ZadatakSnimak(SLAJD, 3L, "2 → 10", List.of(new GrupaPutanja(3L, "2 → 10")), null, List.of(
                 new VarijantaSnimak(VAR_A, "V-A", 3L, "svg-A", "res-A", POLJA,
-                        Map.of("a", new OdgovorPolja(4545.0, null, null, null))),
+                        Map.of("a", new OdgovorPolja(4545.0, null, null, null)), 3),
                 new VarijantaSnimak(VAR_B, "V-B", 3L, "svg-B", "res-B", POLJA,
-                        Map.of("a", new OdgovorPolja(1313.0, null, null, null)))));
+                        Map.of("a", new OdgovorPolja(1313.0, null, null, null)), 3)), 3);
     }
 
     /** Faza ZADATAK slajda; van CEKA runda 202 sa odgovorima oba učesnika. */
@@ -303,5 +303,26 @@ class ZadatakStanjeTest {
         assertEquals(6, service.nastavnicko(IZ).zadatak().brojZaOtvaranje(), "0 = sve aktivne");
         iz.setZadatakBrojVarijanti(50);
         assertEquals(6, service.nastavnicko(IZ).zadatak().brojZaOtvaranje(), "najviše koliko ima kandidata");
+    }
+
+    @Test
+    void nivoVidiSamoKonzola() {
+        slajd.setZadatakNivo(3);
+        for (Faza f : List.of(Faza.CEKA, Faza.OTVORENO, Faza.ZATVORENO)) {
+            faza(f);
+            iz.setTacanPrikazan(true);
+            iz.setResenjePrikazano(f == Faza.ZATVORENO);
+            for (Object telefon : List.of(service.javno(IZ), service.licno(IZ, 1L), service.pocetno(IZ, 1L))) {
+                assertFalse(json(telefon).contains("nivo"), () -> f + ": telefon dobija nivo: " + json(telefon));
+            }
+            NastavnickiZadatak z = service.nastavnicko(IZ).zadatak();
+            assertEquals(3, z.nivoZaOtvaranje(), f.toString());
+            if (z.javniRezultat() != null) {
+                assertFalse(json(z.javniRezultat()).contains("nivo"), f + ": projektor dobija nivo");
+            }
+            if (f != Faza.CEKA) {
+                assertEquals(3, z.varijante().getFirst().nivo(), "konzola vidi nivo varijante");
+            }
+        }
     }
 }

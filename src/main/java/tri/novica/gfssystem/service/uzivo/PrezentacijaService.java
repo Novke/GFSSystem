@@ -646,6 +646,7 @@ public class PrezentacijaService {
         s.setGrupaZadataka(zadatak == null ? null : grupaZadatakaRepository.getReferenceById(zadatak.grupaId()));
         s.setZadatakVremeSekunde(zadatak == null ? null : zadatak.vremeSekunde());
         s.setZadatakBrojVarijanti(zadatak == null ? null : zadatak.brojVarijanti());
+        s.setZadatakNivo(zadatak == null ? null : zadatak.nivo());
         if (n.tip() != TipSlajda.PITANJE) {
             s.setPitanje(null);
             return;
@@ -707,6 +708,7 @@ public class PrezentacijaService {
         k.setGrupaZadataka(s.getGrupaZadataka());
         k.setZadatakVremeSekunde(s.getZadatakVremeSekunde());
         k.setZadatakBrojVarijanti(s.getZadatakBrojVarijanti());
+        k.setZadatakNivo(s.getZadatakNivo());
         k.setPitanje(s.getPitanje() == null ? null : kopija(s.getPitanje()));
         return k;
     }

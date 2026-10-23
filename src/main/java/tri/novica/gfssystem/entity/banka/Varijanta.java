@@ -33,6 +33,9 @@ public class Varijanta {
     /** Vrednosti po poljima šeme grupe: JSON objekat {@code kljuc -> vrednost}; običan tekst u bazi, čita/piše ga servis. */
     @Column(columnDefinition = "text", nullable = false)
     private String odgovori = "{}";
+    /** Nivo 1-3 (prikaz ★/★★/★★★): koliko je teška ova varijanta unutar svog tipa; kolona je tinyint, DEFAULT 2. */
+    @JdbcTypeCode(SqlTypes.TINYINT) @Column(nullable = false)
+    private int nivo = 2;
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
     private StatusVarijante status;
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)

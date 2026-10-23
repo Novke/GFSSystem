@@ -381,7 +381,7 @@ class PrezentacijaPregledTest {
         SlajdDetails bez = PrezentacijaPregled.bezPoteza(s);
         assertEquals(new SlajdDetails(3L, 2, TipSlajda.PLATNO, "N", "S", new MedijInfo(SLIKA, "a", "image/png", 1), "B",
                 true, null, PlatnoPregled.bezPoteza(platno(1)), new Prelaz(TipPrelaza.FADE, null, 500)), bez);
-        ZadatakSlajdaInfo zadatak = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10", List.of(), true, 3, List.of(), false,
+        ZadatakSlajdaInfo zadatak = new ZadatakSlajdaInfo(3L, 120, 4, null, "2 → 10", List.of(), true, 3, List.of(0, 3, 0), List.of(), false,
                 List.of(), List.of());
         assertEquals(zadatak, PrezentacijaPregled.bezPoteza(new SlajdDetails(3L, 2, TipSlajda.PLATNO, null, null, null,
                 null, false, null, platno(1), null, zadatak)).zadatak(), "zadatak ostaje i kad se potezi brišu");
@@ -402,8 +402,8 @@ class PrezentacijaPregledTest {
 
     @Test
     void zadatakSlajdImaSazetakBezSvg() {
-        ZadatakSlajdaInfo z = new ZadatakSlajdaInfo(3L, 120, 4, "2 → 10",
-                List.of(new GrupaPutanja(1L, "Konverzije"), new GrupaPutanja(3L, "2 → 10")), true, 6, List.of(), false,
+        ZadatakSlajdaInfo z = new ZadatakSlajdaInfo(3L, 120, 4, null, "2 → 10",
+                List.of(new GrupaPutanja(1L, "Konverzije"), new GrupaPutanja(3L, "2 → 10")), true, 6, List.of(0, 6, 0), List.of(), false,
                 List.of(), List.of("Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa."));
         SlajdDetails s = new SlajdDetails(9L, 1, TipSlajda.ZADATAK, null, null, null, null, false, null, null, null, z);
         McpSlajdSazetak m = PrezentacijaPregled.sazetak(s);

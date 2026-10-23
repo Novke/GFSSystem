@@ -38,7 +38,7 @@ class VarijantaRestTest {
             List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), 1, "V1", "Pretvori $1011_2$.", "\\foo",
             ODGOVORI, List.of(POLJE), List.of(new PrilogInfo("skica", new MedijInfo(PNG, "skica.png", "image/png", 120))),
             StatusVarijante.NACRT, IzvorVarijante.RUCNO, RenderStatus.GRESKA, SVG, null,
-            new RenderGreskaInfo(1, "Undefined control sequence."), "resenje", T, T, true, 9L, "uvoz-1");
+            new RenderGreskaInfo(1, "Undefined control sequence."), "resenje", T, T, true, 9L, "uvoz-1", 2);
     static final VarijantaCmd CMD = new VarijantaCmd("V1", "Pretvori $1011_2$.", null, ODGOVORI,
             List.of(new PrilogCmd("skica", PNG)), IzvorVarijante.CLAUDE);
     static final String TELO = """
@@ -51,7 +51,7 @@ class VarijantaRestTest {
     @Test
     void listaVraca200IFiltriraPoStatusu() throws Exception {
         when(service.lista(5L, StatusVarijante.AKTIVNA)).thenReturn(List.of(new VarijantaInfo(11L, 5L, 1, "V1",
-                StatusVarijante.AKTIVNA, IzvorVarijante.RUCNO, RenderStatus.OK, SVG, null, T, true, null, null)));
+                StatusVarijante.AKTIVNA, IzvorVarijante.RUCNO, RenderStatus.OK, SVG, null, T, true, null, null, 2)));
         mvc.perform(get("/banka/grupe/5/varijante").param("status", "AKTIVNA"))
            .andExpect(status().isOk())
            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -197,5 +197,42 @@ class VarijantaRestTest {
         mvc.perform(get("/banka/varijante/abc"))
            .andExpect(status().isBadRequest())
            .andExpect(jsonPath("$.reason").value("Neispravan parametar: id."));
+    }
+
+    @Test
+    void nivoSeMenjaPatchomSaObaveznimCelimBrojem() throws Exception {
+        when(service.promeniNivo(11L, 3)).thenReturn(DETAILS);
+        mvc.perform(patch("/banka/varijante/11/nivo").contentType(MediaType.APPLICATION_JSON).content("{\"nivo\":3}"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.id").value(11))
+           .andExpect(jsonPath("$.nivo").value(2));
+        verify(service).promeniNivo(11L, 3);
+
+        for (String telo : List.of("{}", "{\"nivo\":2.5}", "{\"nivo\":2.0}", "{\"nivo\":\"2\"}", "{\"nivo\":2,\"x\":1}",
+                "{\"niv\":2}")) {
+            mvc.perform(patch("/banka/varijante/11/nivo").contentType(MediaType.APPLICATION_JSON).content(telo))
+               .andExpect(status().isBadRequest());
+        }
+        verifyNoMoreInteractions(service);
+    }
+
+    @Test
+    void nivoIzvanOpsegaIliNullJe400IzServisa() throws Exception {
+        when(service.promeniNivo(eq(11L), any())).thenThrow(new SystemException("Nivo mora biti od 1 do 3.", HttpStatus.BAD_REQUEST));
+        mvc.perform(patch("/banka/varijante/11/nivo").contentType(MediaType.APPLICATION_JSON).content("{\"nivo\":null}"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value("Nivo mora biti od 1 do 3."));
+    }
+
+    @Test
+    void kreiranjeCitaNivoKaoCeoBroj() throws Exception {
+        when(service.kreiraj(eq(5L), any())).thenReturn(DETAILS);
+        mvc.perform(post("/banka/grupe/5/varijante").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tekst\":\"x\",\"odgovori\":{},\"nivo\":3}"))
+           .andExpect(status().isCreated());
+        verify(service).kreiraj(eq(5L), argThat(c -> Integer.valueOf(3).equals(c.nivo())));
+        mvc.perform(post("/banka/grupe/5/varijante").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tekst\":\"x\",\"odgovori\":{},\"nivo\":1.5}"))
+           .andExpect(status().isBadRequest());
     }
 }

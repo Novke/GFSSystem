@@ -52,6 +52,9 @@ public class Slajd {
     private Integer zadatakVremeSekunde;
     /** Broj različitih varijanti koje se izvlače pri otvaranju; null = sve aktivne. */
     private Integer zadatakBrojVarijanti;
+    /** Nivo varijanti (1-3) koje se izvlače pri otvaranju; null = svi nivoi. Kolona je tinyint. */
+    @JdbcTypeCode(SqlTypes.TINYINT)
+    private Integer zadatakNivo;
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "pitanje_id")
     private Pitanje pitanje;

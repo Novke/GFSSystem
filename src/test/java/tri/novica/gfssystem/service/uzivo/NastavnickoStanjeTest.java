@@ -220,7 +220,7 @@ class NastavnickoStanjeTest {
     }
 
     static ZadatakSlajdaInfo opisZadatka(long grupaId) {
-        return new ZadatakSlajdaInfo(grupaId, 120, 2, "Grupa " + grupaId, List.of(), true, 3, List.of(), false, List.of(),
+        return new ZadatakSlajdaInfo(grupaId, 120, 2, null, "Grupa " + grupaId, List.of(), true, 3, List.of(0, 3, 0), List.of(), false, List.of(),
                 List.of());
     }
 

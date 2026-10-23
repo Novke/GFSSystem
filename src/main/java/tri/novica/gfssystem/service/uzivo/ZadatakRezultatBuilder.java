@@ -58,7 +58,8 @@ public final class ZadatakRezultatBuilder {
         ZadatakRezultat r = izgradi(s, dodele, odgovori, true, true, true);
         return r.varijante().stream()
                 .map(v -> new VarijantaRunde(v.varijantaId(), v.naziv(), v.svgId(), v.resenjeSvgId(), v.dodeljeno(),
-                        v.odgovorilo(), v.tacnih() == null ? 0 : v.tacnih()))
+                        v.odgovorilo(), v.tacnih() == null ? 0 : v.tacnih(),
+                        s.varijanta(v.varijantaId()).map(VarijantaSnimak::nivo).orElse(null)))
                 .toList();
     }
 

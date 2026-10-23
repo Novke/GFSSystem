@@ -50,7 +50,7 @@ class BankaPretragaRestTest {
     void srecanSlucajVracaContentIPage() throws Exception {
         BankaPretragaStavka stavka = new BankaPretragaStavka(11L, 5L, "2 → 10",
                 List.of(new GrupaPutanja(3L, "Konverzije"), new GrupaPutanja(5L, "2 → 10")), null,
-                StatusVarijante.AKTIVNA, RenderStatus.OK, "Pretvori broj 1011 u dekadni sistem.", IzvorVarijante.CLAUDE, "uvoz-1");
+                StatusVarijante.AKTIVNA, RenderStatus.OK, "Pretvori broj 1011 u dekadni sistem.", IzvorVarijante.CLAUDE, "uvoz-1", 2);
         when(service.pretraga(any(), any())).thenAnswer(i ->
                 new PagedModel<>(new PageImpl<>(List.of(stavka), i.<Pageable>getArgument(1), 31)));
 
