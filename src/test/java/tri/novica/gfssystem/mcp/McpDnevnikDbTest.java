@@ -71,7 +71,7 @@ class McpDnevnikDbTest extends McpDbTestOsnova {
         String serija = "dnevnik-odbijen-" + UUID.randomUUID().toString().substring(0, 8);
         Map<String, Object> poziv = Map.of("name", "napravi_varijantu", "arguments", Map.of("serija", serija,
                 "grupaId", list.id(), "naziv", TAJNA, "tekst", TAJNA, "resenje", TAJNA,
-                "odgovori", Map.of("a", Map.of("broj", 11))));
+                "odgovori", Map.of("a", Map.of("broj", 11)), "nivo", 2));
         MockHttpServletResponse bez = mcp.posalji("tools/call", poziv, null);
         MockHttpServletResponse pogresan = mcp.posalji("tools/call", poziv, POGRESAN_KLJUC);
         assertEquals(401, bez.getStatus());
@@ -88,7 +88,7 @@ class McpDnevnikDbTest extends McpDbTestOsnova {
         String serija = "dnevnik-" + UUID.randomUUID().toString().substring(0, 8);
         JsonNode r = mcp.pozovi("napravi_varijantu", Map.of("serija", serija, "grupaId", list.id(),
                 "naziv", "Zbirka " + TAJNA, "tekst", "Pretvori $1011_{(2)}$ u dekadni. " + TAJNA,
-                "resenje", "Rešenje: $11$. " + TAJNA, "odgovori", Map.of("a", Map.of("broj", 11))));
+                "resenje", "Rešenje: $11$. " + TAJNA, "odgovori", Map.of("a", Map.of("broj", 11)), "nivo", 2));
         assertFalse(McpTestKlijent.greska(r), r.toString());
         Long id = McpTestKlijent.json(r).path("varijanta").path("id").asLong();
         assertTrue(McpTestKlijent.tekst(r).contains(TAJNA), "sadržaj je u odgovoru Klodu, ne u logu");

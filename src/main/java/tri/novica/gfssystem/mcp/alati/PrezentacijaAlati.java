@@ -65,7 +65,8 @@ public class PrezentacijaAlati {
             + "PLATNO: slojevi redom od najnižeg, sa id, tipom, nazivom, `okvir` `[x, y, sirina, visina]` na platnu 960 x 540, "
             + "tekstom (pasusi spojeni sa `\\n`, preovlađujući font i veličina), tabelom kao mrežom teksta, `latex` formule, "
             + "`medijId` slike i crteža i brojem tačaka crteža; ZADATAK: `zadatak` sa `grupaId`, `putanja` od korena banke "
-            + "(poslednji element je sama grupa), `brojAktivnih`, `brojVarijanti`, `vremeSekunde`, isključenjima i "
+            + "(poslednji element je sama grupa), `brojAktivnih`, `brojAktivnihPoNivou`, `brojVarijanti`, `nivo`, `vremeSekunde`, "
+            + "isključenjima i "
             + "`upozorenja`. Skraćen tekst se završava sa `…`; ceo slajd daje `slajd`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
@@ -119,8 +120,8 @@ public class PrezentacijaAlati {
             + "prezentaciju (i Novicinu): bez `posle` na kraj, sa `posle` odmah iza tog slajda. Oblik `slajd` i pravila su u "
             + "vodiču `pitanja`; drugi tip je greška `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`, a "
             + "prezentacija koja se upravo izvodi se ne menja. ZADATAK: `{tip: \"ZADATAK\", zadatak: {grupaId, vremeSekunde?, "
-            + "brojVarijanti?}}`; grupa iz banke istog predmeta, namena PREDAVANJE; prazno `brojVarijanti` = sve aktivne "
-            + "(Novica ga menja i u konzoli). Pročitaj `slajd.zadatak.upozorenja` i javi ih Novici. Vraća `{slajd, link}` "
+            + "brojVarijanti?, nivo?}}`; grupa iz banke istog predmeta, namena PREDAVANJE; prazno `brojVarijanti` = sve aktivne, "
+            + "`nivo` 1-3 = svi studenti dobijaju varijante tog nivoa, prazno = svi nivoi (Novica oba menja i u konzoli). Pročitaj `slajd.zadatak.upozorenja` i javi ih Novici. Vraća `{slajd, link}` "
             + "(sažetak slajda kao u `prezentacija`). " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false,
                     openWorldHint = false))

@@ -98,14 +98,14 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
     List<Object[]> zaPonistavanje(@Param("serija") String serija);
 
     /**
-     * AKTIVNE varijante sa gotovim SVG-om po grupi, jedan upit: redovi {@code [grupaId, broj]}, grupe bez njih nisu tu
-     * (kandidati slajda Zadatak, {@code KandidatiZadatka}).
+     * AKTIVNE varijante sa gotovim SVG-om po grupi i nivou, jedan upit: redovi {@code [grupaId, nivo, broj]}, grupe bez
+     * njih nisu tu (kandidati slajda Zadatak po nivou, {@code KandidatiZadatka}).
      */
     @Query("""
-            select v.grupa.id, count(v) from Varijanta v
+            select v.grupa.id, v.nivo, count(v) from Varijanta v
             where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
-            and v.renderSvg is not null group by v.grupa.id""")
-    List<Object[]> aktivneSaSvgPoGrupi(@Param("ids") Collection<Long> ids);
+            and v.renderSvg is not null group by v.grupa.id, v.nivo""")
+    List<Object[]> aktivneSaSvgPoGrupiINivou(@Param("ids") Collection<Long> ids);
 
     /**
      * AKTIVNE varijante zadatih grupa sa SVG-om teksta (inner join: bez njega varijanta nije kandidat) i, kad ga ima,
@@ -130,6 +130,16 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             where v.id in (:ids) and v.status = 'AKTIVNA' and v.render_svg_id is not null
             order by v.id for update""", nativeQuery = true)
     List<Long> zakljucajKandidate(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Kao {@link #zakljucajKandidate}, uz nivo slajda: varijanta kojoj je nivo promenjen ({@code PATCH .../nivo}) između
+     * čitanja kandidata i ključa ispada kao arhivirana, pa runda nikad ne meša nivoe.
+     */
+    @Query(value = """
+            select v.id from varijante v
+            where v.id in (:ids) and v.status = 'AKTIVNA' and v.render_svg_id is not null and v.nivo = :nivo
+            order by v.id for update""", nativeQuery = true)
+    List<Long> zakljucajKandidateNivoa(@Param("ids") Collection<Long> ids, @Param("nivo") int nivo);
 
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying

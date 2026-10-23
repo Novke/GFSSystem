@@ -215,7 +215,22 @@ group's schema, the console and projector show results per variant and, on `Shif
   least-assigned variant. Opening locks the node's candidates after the run row (`VarijantaRepository.zakljucajKandidate`, ascending
   ids) and draws only those still AKTIVNE, so a variant deleted while the round opens never enters the snapshot (lock order run ->
   variants; deletion takes group -> variants and never the run, so no cycle).
-- **Commands:** `BROJ_VARIJANTI` (only on a ZADATAK slide in CEKA; `null` = as on the slide, `0` = all, `1..50`; cleared on slide
+- **Variant level (`nivo`, V15; spec `docs/superpowers/specs/2026-10-21-nivo-varijante-design.md` in the wrapper repo):** `Varijanta.nivo`
+  1-3 (`utility/Nivo`: bounds, default 2, 400 `Nivo mora biti od 1 do 3.`) says how hard a variant is inside its type; it is not the group's
+  `tezina` 1-5 ("Težina tipa"). REST: `VarijantaCmd.nivo` on `POST` (absent = 2), **ignored on `PUT`** (an old front must not reset it),
+  `PATCH /banka/varijante/{id}/nivo` (`NivoCmd`, strict like `PragProlazaCmd`; no render, no status change, also on approved variants),
+  `nivo` in `VarijantaInfo`/`VarijantaDetails`/`BankaPretragaStavka`, filter and sort field `nivo` in `GET /banka/pretraga`; copies (duplicate, Claude's
+  copy, `KopijaGrupeService`) keep it. Slide `ZadatakSlajda.nivo` (`slajdovi.zadatak_nivo`, null = all levels); `ZadatakSlajdaInfo.brojAktivnihVarijanti`
+  counts the slide's level and `brojAktivnihPoNivou` holds exactly three counts (levels 1, 2, 3) so the console can show the count for its own choice;
+  warning `Nema aktivnih varijanti nivoa ★★★; odobri nacrte ili izaberi drugi nivo.`. Drawing (`KandidatiZadatka.kandidati(id, nivo)`) keeps only that
+  level (counts come from one aggregate query grouped by group and level, `VarijantaRepository.aktivneSaSvgPoGrupiINivou`), so **every student of a round gets the same level**; none is 409
+  `Grupa nema aktivnih varijanti nivoa ★★★.`. The round snapshot carries `nivo` (`ZadatakSnimak`, `VarijantaSnimak`), and so do `NastavnickiZadatak`
+  (`izmenaNivoa`, `nivoZaOtvaranje`), `VarijantaRunde` and `PregledZadatka` (`nivo`, `nivoi`); phones (`JavnoStanje`, `LicnoStanje`, `PocetnoStanje`) and
+  the projector's `javniRezultat` never do (`ZadatakStanjeTest.nivoVidiSamoKonzola`). MCP: `napravi_varijantu` requires `nivo` (facade, 400
+  `Nivo je obavezan (1 do 3).` before the budget); a level-only `izmeni_varijantu` changes Claude's own unapproved draft in place and is 409
+  `Nivo odobrene ili Novicine varijante menja Novica u banci.` on any other variant (never a copy, no budget); `pretraga_banke` filters by `nivo`.
+- **Commands:** `NIVO` (only on a ZADATAK slide in CEKA, `Izvodjenje.zadatakNivo`: `null` = as on the slide, `0` = all levels, `1..3`; 409 `Nivo se menja
+  pre otvaranja.` after opening; holds for the next opening and `PONOVI`, cleared on slide change, `TokIzvodjenja.nivo`), `BROJ_VARIJANTI` (only on a ZADATAK slide in CEKA; `null` = as on the slide, `0` = all, `1..50`; cleared on slide
   change) and `RESENJE` (toggle; on needs a closed round and at least one variant with a solution). `TACAN` on a paper-only task
   (no fields) is 409.
 - **Answers** (`OdgovorService` + `OcenaZadatka`): STOMP `polja` (`kljuc -> string` for BROJ/TEKST, list of option ids for
@@ -760,7 +775,9 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
   idempotent. `V13` = slide Zadatak (`slajdovi` group/timer/count, `izvodjenja.boduje`/`resenje_prikazano`/`zadatak_broj_varijanti`,
   `ucesnici.student_id`, `odgovori.polja`/`varijanta_id`, table `zadatak_dodele`; see "Zadatak slide"), idempotent. `V14` = prijava
-  (`V14__prijava.sql`). **Next free version: `V15`** (on `staging`).
+  (`V14__prijava.sql`). `V15` = nivo varijante (`V15__nivo_varijante.sql`: `varijante.nivo` `tinyint NOT NULL DEFAULT 2`, nullable
+  `slajdovi.zadatak_nivo` and `izvodjenja.zadatak_nivo`; see "Variant level"), idempotent; provisional until its merge into `staging`.
+  **Next free version: `V16`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

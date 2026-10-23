@@ -8,10 +8,17 @@ import java.util.Optional;
 
 /**
  * Snimak runde Zadatak slajda: čvor banke ({@code grupaId}, naziv i putanja od korena) i samo izvučene varijante, sa
- * šemom i tačnim odgovorima kakvi su bili pri otvaranju (spec 11, banka spec 4).
+ * šemom i tačnim odgovorima kakvi su bili pri otvaranju (spec 11, banka spec 4). {@code nivo}: nivo koji je važio pri
+ * otvaranju (sa slajda ili iz konzole), {@code null} = svi nivoi, a i za snimak od pre nivoa varijante.
  */
 public record ZadatakSnimak(Long slajdId, Long grupaId, String grupaNaziv, List<GrupaPutanja> putanja,
-                            Integer vremeSekunde, List<VarijantaSnimak> varijante) implements SnimakRunde {
+                            Integer vremeSekunde, List<VarijantaSnimak> varijante, Integer nivo) implements SnimakRunde {
+
+    /** Bez nivoa (svi nivoi). */
+    public ZadatakSnimak(Long slajdId, Long grupaId, String grupaNaziv, List<GrupaPutanja> putanja, Integer vremeSekunde,
+                         List<VarijantaSnimak> varijante) {
+        this(slajdId, grupaId, grupaNaziv, putanja, vremeSekunde, varijante, null);
+    }
 
     /** Tačno/netačno postoji kad bar jedna izvučena varijanta ima polja (bez polja je rad na papiru). */
     @Override

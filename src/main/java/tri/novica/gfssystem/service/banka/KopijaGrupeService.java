@@ -129,6 +129,7 @@ public class KopijaGrupeService {
         k.setTekst(v.getTekst());
         k.setResenje(v.getResenje());
         k.setOdgovori(v.getOdgovori());
+        k.setNivo(v.getNivo());
         k.setStatus(StatusVarijante.NACRT);
         k.setIzvor(IzvorVarijante.CLAUDE);
         k.setSerija(serija);

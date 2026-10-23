@@ -27,6 +27,7 @@ import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PitanjeRundaRepository;
 import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
+import tri.novica.gfssystem.utility.Nivo;
 import tri.novica.gfssystem.utility.Serija;
 import tri.novica.gfssystem.validation.BankaPP;
 
@@ -113,6 +114,8 @@ public class VarijantaService {
     /** MCP upis čiji bi korak 3 morao da renderuje pod ključem (sadržaj ili preambula promenjeni tokom rendera). */
     static final String IZMENJENA_U_MEDJUVREMENU = "Varijanta ili preambula je u međuvremenu izmenjena; pokušaj ponovo.";
     static final String SAMO_SOPSTVENI_NACRT = "Klod briše samo svoje neodobrene nacrte.";
+    /** MCP: patch samo nivoa nad tuđom ili ikad odobrenom varijantom (kopija samo zbog nivoa bi duplirala banku). */
+    static final String NIVO_ODOBRENE = "Nivo odobrene ili Novicine varijante menja Novica u banci.";
 
     /** Kontejner prevodi najviše 4 dokumenta odjednom: probe dobijaju 3, jedno mesto ostaje za čuvanje varijante. */
     static final int MAX_PROBA = 3;
@@ -178,7 +181,8 @@ public class VarijantaService {
     // ---------------------------------------------------------------- upis
 
     /**
-     * Nova varijanta na kraj grupe ({@code rb} = najveći + 1), NACRT, {@code izvor} iz komande ili RUCNO; render odmah,
+     * Nova varijanta na kraj grupe ({@code rb} = najveći + 1), NACRT, {@code izvor} iz komande ili RUCNO, {@code nivo} iz
+     * komande ili {@value Nivo#PODRAZUMEVANI} (van 1-3 je 400); render odmah,
      * pre ključa. Grupa mora biti list (409 za grupu sa podgrupama) sa težinom (409), odgovori moraju pokriti šemu polja
      * grupe; proverava se pre rendera i ponovo pod ključem.
      */
@@ -205,6 +209,7 @@ public class VarijantaService {
     private UpisVarijante novaVarijanta(Long grupaId, VarijantaCmd cmd, IzvorVarijante izvor, String serija, boolean png,
                                         boolean bezRenderaPodKljucem) {
         Sadrzaj s = proveren(cmd);
+        int nivo = nivoNove(cmd);
         String preambula = citaj(() -> {
             GrupaZadataka g = grupaRepository.findById(grupaId).orElseThrow(VarijantaService::grupaNijePronadjena);
             proveriZaNovu(g, s);
@@ -216,6 +221,7 @@ public class VarijantaService {
             proveriZaNovu(g, s);
             Varijanta v = novaUGrupi(g, izvor, serija);
             primeni(v, s);
+            v.setNivo(nivo);
             Varijanta nova = varijantaRepository.save(v);   // id je deo naziva SVG medija
             RenderVarijante.Ishod ishod = primeniPosleKljuca(nova, pre, false, bezRenderaPodKljucem);
             log.info("Varijanta kreirana: id={}, grupa={}, izvor={}, serija={}, render={}", nova.getId(), grupaId,
@@ -225,7 +231,8 @@ public class VarijantaService {
     }
 
     /**
-     * Puna zamena naziva, teksta, rešenja, odgovora i priloga (izvor ostaje). Renderuje samo kad se ulaz rendera
+     * Puna zamena naziva, teksta, rešenja, odgovora i priloga (izvor i nivo ostaju: {@code cmd.nivo()} se ne čita, nivo
+     * menja {@link #promeniNivo}). Renderuje samo kad se ulaz rendera
      * promenio ili poslednji render nije uspeo; AKTIVNA ostaje AKTIVNA samo ako render prođe.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -260,7 +267,9 @@ public class VarijantaService {
      * (odobren u međuvremenu = kopija). Korak 3 nikad ne renderuje pod ključem: upisuje render iz koraka 2 kad mu je heš
      * jednak hešu spojenog sadržaja sa trenutnom preambulom, ili ostavlja postojeći render sopstvenog nacrta istog heša;
      * inače (Novica je u međuvremenu promenio sadržaj ili preambulu, ili je odluka postala kopija a korak 2 nije renderovao
-     * jer je keš važio) 409 {@value #IZMENJENA_U_MEDJUVREMENU} i ništa se ne upisuje.
+     * jer je keš važio) 409 {@value #IZMENJENA_U_MEDJUVREMENU} i ništa se ne upisuje. Nivo iz patch-a ide u varijantu
+     * na mestu ili u kopiju (kopija bez njega nasleđuje nivo originala); patch samo nivoa ne renderuje i ne pravi kopiju
+     * ({@link #samoNivo}).
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public UpisVarijante izmeniDelimicno(Long id, VarijantaPatch patch, String serija, boolean png) {
@@ -269,6 +278,10 @@ public class VarijantaService {
         }
         if (serija != null) {
             Serija.proveri(serija);
+        }
+        Integer nivo = Nivo.proveri(patch.nivo().vrednost());
+        if (patch.samoNivo()) {
+            return samoNivo(id, nivo);
         }
         Spojeno spojeno = citaj(() -> {
             Varijanta v = varijantaRepository.findById(id).orElseThrow(VarijantaService::nijePronadjena);
@@ -288,6 +301,7 @@ public class VarijantaService {
             if (sopstveniNacrt(v)) {   // ponovo, nad zaključanim stanjem: Novica je u međuvremenu mogao da odobri
                 proveriOdgovore(v.getGrupa(), s.odgovori());
                 primeni(v, s);
+                v.setNivo(patch.nivo().primeni(v.getNivo()));
                 v.setIzmenjeno(sada());
                 RenderVarijante.Ishod ishod = primeniPosleKljuca(v, pre, false, true);
                 log.info("Varijanta izmenjena (Klod): id={}, serija={}, render={} ({})", id, serija, v.getRenderStatus(),
@@ -299,6 +313,7 @@ public class VarijantaService {
             Varijanta k = novaUGrupi(g, IzvorVarijante.CLAUDE, serija);
             k.setZamenjuje(v);
             primeni(k, s);
+            k.setNivo(patch.nivo().primeni(v.getNivo()));
             Varijanta kopija = varijantaRepository.save(k);
             RenderVarijante.Ishod ishod = primeniPosleKljuca(kopija, pre, false, true);
             log.info("Varijanta {} izmenjena kao kopija (Klod): id={}, serija={}, render={}", id, kopija.getId(), serija,
@@ -369,6 +384,42 @@ public class VarijantaService {
         return details(v);
     }
 
+    /**
+     * Nivo varijante (1-3, inače 400 {@value Nivo#GRANICE}), u svakom statusu i i za varijantu korišćenu na času: nivo je
+     * ocena varijante, ne sadržaj, pa se ne renderuje, {@code renderHash}, status i SVG ostaju. Pod ključem grupa ->
+     * varijanta kao svaki upis.
+     */
+    public VarijantaDetails promeniNivo(Long id, Integer nivo) {
+        if (nivo == null) {
+            throw new SystemException(Nivo.GRANICE, HttpStatus.BAD_REQUEST);
+        }
+        Nivo.proveri(nivo);
+        Varijanta v = zakljucaj(id);
+        if (v.getNivo() != nivo) {
+            v.setNivo(nivo);
+            v.setIzmenjeno(sada());
+            log.info("Nivo varijante: id={}, nivo={}", id, nivo);
+        }
+        return details(v);
+    }
+
+    /**
+     * Klodov patch samo nivoa (MCP {@code izmeni_varijantu}): na mestu samo na sopstvenom neodobrenom nacrtu, bez rendera
+     * i bez kopije; svaka druga varijanta je 409 {@value #NIVO_ODOBRENE} i ništa se ne upisuje.
+     */
+    private UpisVarijante samoNivo(Long id, Integer nivo) {
+        return pisi(() -> {
+            Varijanta v = zakljucaj(id);
+            if (!sopstveniNacrt(v)) {
+                throw new SystemException(NIVO_ODOBRENE, HttpStatus.CONFLICT);
+            }
+            v.setNivo(nivo);
+            v.setIzmenjeno(sada());
+            log.info("Nivo varijante (Klod): id={}, nivo={}", id, nivo);
+            return new UpisVarijante(details(v), UpisVarijante.Radnja.IZMENJENA, null);
+        });
+    }
+
     public VarijantaDetails arhiviraj(Long id) {
         Varijanta v = zakljucaj(id);
         promeniStatus(v, StatusVarijante.ARHIVIRANA);
@@ -425,6 +476,7 @@ public class VarijantaService {
             k.setTekst(original.getTekst());
             k.setResenje(original.getResenje());
             k.setOdgovori(original.getOdgovori());
+            k.setNivo(original.getNivo());
             primeniPriloge(k, original.getPrilozi().stream().map(p -> new Prilog(p.getIme(), p.getMedij())).toList());
             Varijanta kopija = varijantaRepository.save(k);
             primeniPosleKljuca(kopija, pre, false, bezRenderaPodKljucem);
@@ -880,6 +932,12 @@ public class VarijantaService {
                 p.prilozi().primeni(prilozi(v)), null);
     }
 
+    /** Nivo nove varijante: iz komande (1-3, inače 400) ili {@value Nivo#PODRAZUMEVANI}. */
+    private static int nivoNove(VarijantaCmd cmd) {
+        Integer nivo = cmd == null ? null : Nivo.proveri(cmd.nivo());
+        return nivo == null ? Nivo.PODRAZUMEVANI : nivo;
+    }
+
     /** Varijanta koju Klod sme da menja na mestu i da briše: NACRT, CLAUDE i nikad odobrena (spec MCP 4.1). */
     private static boolean sopstveniNacrt(Varijanta v) {
         return v.getStatus() == StatusVarijante.NACRT && v.getIzvor() == IzvorVarijante.CLAUDE && !v.isIkadOdobrena();
@@ -984,7 +1042,7 @@ public class VarijantaService {
     private static VarijantaInfo info(Varijanta v) {
         return new VarijantaInfo(v.getId(), v.getGrupa().getId(), v.getRb(), v.getNaziv(), v.getStatus(), v.getIzvor(),
                 v.getRenderStatus(), id(v.getRenderSvg()), id(v.getRenderResenjeSvg()), v.getIzmenjeno(), v.isIkadOdobrena(),
-                zamenjujeId(v), v.getSerija());
+                zamenjujeId(v), v.getSerija(), v.getNivo());
     }
 
     private VarijantaDetails details(Varijanta v) {
@@ -998,7 +1056,7 @@ public class VarijantaService {
                 v.getTekst(), v.getResenje(), PoljaJson.odgovoriIzKolone(v.getOdgovori()), PoljaJson.izKolone(g.getPolja()),
                 prilozi, v.getStatus(), v.getIzvor(), v.getRenderStatus(), id(v.getRenderSvg()), id(v.getRenderResenjeSvg()),
                 greska == null ? null : greska.info(), greska == null ? null : greska.deo(), v.getKreirano(), v.getIzmenjeno(),
-                v.isIkadOdobrena(), zamenjujeId(v), v.getSerija());
+                v.isIkadOdobrena(), zamenjujeId(v), v.getSerija(), v.getNivo());
     }
 
     /** Id originala bez učitavanja (lenja veza: id je u proksiju). */

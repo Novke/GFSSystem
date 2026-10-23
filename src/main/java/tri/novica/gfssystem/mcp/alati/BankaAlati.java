@@ -113,7 +113,7 @@ public class BankaAlati {
 
     @McpTool(name = "pretraga_banke", description = "Pretraga varijanti banke predmeta, 25 po strani, najnovije izmenjene "
             + "prve (`strana`, `brojStrana`, `ukupno`). Stavka ima varijantu, grupu sa putanjom, naziv, status, renderStatus, "
-            + "isečak teksta, `izvor` i `serija`. Svi filteri su opcioni; bez `q` uz `serija` daje sve što je ta serija "
+            + "isečak teksta, `izvor`, `serija` i `nivo`. Svi filteri su opcioni; bez `q` uz `serija` daje sve što je ta serija "
             + "napravila. Pre uvoza proveri da zadatak već ne postoji.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
@@ -127,10 +127,12 @@ public class BankaAlati {
             @McpToolParam(description = "Izvor varijante: `RUCNO` (Novica) ili `CLAUDE` (ti).", required = false)
             IzvorVarijante izvor,
             @McpToolParam(description = "Serija upisa (tačno poklapanje).", required = false) String serija,
+            @McpToolParam(description = "Nivo varijante: 1 (lakša), 2 (srednja) ili 3 (teža) unutar svog tipa.",
+                    required = false) Integer nivo,
             @McpToolParam(description = "Strana od 1; podrazumevano 1.", required = false) Integer strana) {
         return McpGreske.izvrsi("pretraga_banke", poziv -> {
             poziv.id("predmet", predmetId);
-            return odgovor.json(banka.pretraga(new BankaFilter(predmetId, namena, q, status, izvor, serija),
+            return odgovor.json(banka.pretraga(new BankaFilter(predmetId, namena, q, status, izvor, serija, nivo),
                     strana == null ? 1 : strana));
         });
     }

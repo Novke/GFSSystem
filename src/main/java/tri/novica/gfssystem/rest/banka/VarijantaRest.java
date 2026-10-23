@@ -48,6 +48,13 @@ public class VarijantaRest {
         return varijantaService.izmeni(id, cmd);
     }
 
+    /** Nivo varijante (1-3) bez rendera i bez promene statusa; ključ {@code nivo} je obavezan, višak polja je 400. */
+    @PatchMapping("/varijante/{id}/nivo")
+    @ResponseStatus(HttpStatus.OK)
+    public VarijantaDetails nivo(@PathVariable Long id, @RequestBody NivoCmd cmd) {
+        return varijantaService.promeniNivo(id, cmd.getNivo());
+    }
+
     @DeleteMapping("/varijante/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void obrisi(@PathVariable Long id) {
