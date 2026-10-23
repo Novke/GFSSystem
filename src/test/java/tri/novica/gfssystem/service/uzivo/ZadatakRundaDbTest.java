@@ -183,6 +183,7 @@ class ZadatakRundaDbTest {
         red.put("render_resenje_svg_id", saResenjem ? medij() : null);
         red.put("kreirano", LocalDateTime.now());
         red.put("izmenjeno", LocalDateTime.now());
+        red.put("nivo", 2);
         return new SimpleJdbcInsert(jdbc).withTableName("varijante").usingGeneratedKeyColumns("id")
                 .executeAndReturnKey(red).longValue();
     }
