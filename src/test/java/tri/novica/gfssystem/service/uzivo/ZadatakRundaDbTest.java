@@ -826,4 +826,41 @@ class ZadatakRundaDbTest {
         assertEquals(10, s.varijante().size());
         assertEquals(Set.of(1, 2, 3), new HashSet<>(s.varijante().stream().map(VarijantaSnimak::nivo).toList()));
     }
+
+    /** Nalaz završne recenzije: varijanta prebačena u drugi nivo dok se runda otvara ne ulazi u rundu tog nivoa. */
+    @Test
+    void nivoPromenjenDokSeRundaOtvaraNijeUSnimku() throws Exception {
+        List<Long> pVarijante = varijanteGrupe(p);
+        Long p1 = pVarijante.get(0);
+        Long p2 = pVarijante.get(1);
+        prezentacijaService.dodajSlajd(prezentacijaId, zadatakNivoa(p, 2), null);   // indeks 3, P1 i P2 su nivo 2
+        k(TipKomande.IDI_NA, 3);
+
+        CountDownLatch promenjeno = new CountDownLatch(1);
+        AtomicReference<Exception> greska = new AtomicReference<>();
+        Thread promena = new Thread(() -> {
+            try (Connection c = dataSource.getConnection()) {
+                c.setAutoCommit(false);
+                try (PreparedStatement ps = c.prepareStatement("update varijante set nivo = 3 where id = ?")) {
+                    ps.setLong(1, p1);
+                    ps.executeUpdate();
+                }
+                promenjeno.countDown();
+                Thread.sleep(1500);   // otvaranje za to vreme pročita kandidate (P1 još nivo 2) i čeka ključ P1
+                c.commit();
+            } catch (Exception ex) {
+                greska.set(ex);
+                promenjeno.countDown();
+            }
+        });
+        promena.start();
+        assertTrue(promenjeno.await(10, TimeUnit.SECONDS));
+        k(TipKomande.OTVORI_ZATVORI);
+        promena.join(10_000);
+        assertNull(greska.get());
+
+        ZadatakSnimak s = zadatakSnimak(trenutnaRunda());
+        assertEquals(Set.of(p2), idjevi(s), "varijanta koja je u međuvremenu postala nivo 3 nije izvučena");
+        sviNivoa(2, s);
+    }
 }

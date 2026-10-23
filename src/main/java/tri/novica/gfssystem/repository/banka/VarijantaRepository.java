@@ -131,6 +131,16 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
             order by v.id for update""", nativeQuery = true)
     List<Long> zakljucajKandidate(@Param("ids") Collection<Long> ids);
 
+    /**
+     * Kao {@link #zakljucajKandidate}, uz nivo slajda: varijanta kojoj je nivo promenjen ({@code PATCH .../nivo}) između
+     * čitanja kandidata i ključa ispada kao arhivirana, pa runda nikad ne meša nivoe.
+     */
+    @Query(value = """
+            select v.id from varijante v
+            where v.id in (:ids) and v.status = 'AKTIVNA' and v.render_svg_id is not null and v.nivo = :nivo
+            order by v.id for update""", nativeQuery = true)
+    List<Long> zakljucajKandidateNivoa(@Param("ids") Collection<Long> ids, @Param("nivo") int nivo);
+
     /** Poništava keš rendera cele banke predmeta (preambula je ulaz heša); vraća broj izmenjenih varijanti. */
     @Modifying
     @Query("update Varijanta v set v.renderHash = null where v.grupa.predmet.id = :predmetId")

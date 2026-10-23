@@ -75,7 +75,7 @@ public class ZadatakDodelaService {
         if (k.opis() == null) {
             throw new SystemException(GRUPA_OBRISANA, HttpStatus.CONFLICT);
         }
-        List<List<KandidatVarijante>> poListovima = zakljucaj(k.poListovima());
+        List<List<KandidatVarijante>> poListovima = zakljucaj(k.poListovima(), nivo);
         if (poListovima.isEmpty()) {
             throw new SystemException(nivo == null ? NEMA_AKTIVNIH : NEMA_AKTIVNIH_NIVOA.formatted(Nivo.oznaka(nivo)),
                     HttpStatus.CONFLICT);
@@ -94,19 +94,21 @@ public class ZadatakDodelaService {
     /**
      * Zaključava sve kandidate jednim upitom ({@link VarijantaRepository#zakljucajKandidate}: samo redovi varijanti,
      * rastuće po id-ju) i vraća listove samo sa onima koji su posle ključa još AKTIVNI sa SVG-om, bez listova koji su
-     * ostali prazni. Varijanta obrisana ili arhivirana dok se runda otvarala tako ne ulazi u izvlačenje. Brisanje varijante
+     * ostali prazni (sa nivoom slajda i još tog nivoa). Varijanta obrisana, arhivirana ili prebačena u drugi nivo dok se runda
+     * otvarala tako ne ulazi u izvlačenje. Brisanje varijante
      * ({@code VarijantaService}) i grupe ({@code GrupaZadatakaService}) zaključava grupu pa varijante, a izvođenje nikad,
      * pa redosled izvođenje -> varijante ne pravi krug. Sadržaj (SVG-ovi, šema, odgovori) ostaje iz čitanja pre ključa:
      * izmena commit-ovana između čitanja i ključa nije u snimku, kao da je runda otvorena malo pre nje. Snimak je i tada
      * ceo iz jedne verzije varijante, a njen stari SVG ostaje, jer je AKTIVNA varijanta odobrena ({@code ikadOdobrena},
      * {@code VarijantaService}, "SVG odobrene varijante se nikad ne briše").
      */
-    private List<List<KandidatVarijante>> zakljucaj(List<List<KandidatVarijante>> poListovima) {
+    private List<List<KandidatVarijante>> zakljucaj(List<List<KandidatVarijante>> poListovima, Integer nivo) {
         List<Long> ids = poListovima.stream().flatMap(List::stream).map(KandidatVarijante::varijantaId).toList();
         if (ids.isEmpty()) {
             return List.of();
         }
-        Set<Long> zakljucane = new HashSet<>(varijantaRepository.zakljucajKandidate(ids));
+        Set<Long> zakljucane = new HashSet<>(nivo == null ? varijantaRepository.zakljucajKandidate(ids)
+                : varijantaRepository.zakljucajKandidateNivoa(ids, nivo));
         if (zakljucane.size() == ids.size()) {
             return poListovima;
         }
