@@ -535,9 +535,11 @@ public class StanjeService {
             Long varijantaId = dodele.get(u.getId());
             if (varijantaId == null) continue;
             ZadatakRezultatBuilder.OdgovorZadatka o = poUcesniku.get(u.getId());
-            String naziv = s.varijanta(varijantaId).map(VarijantaSnimak::naziv).orElse(null);
+            VarijantaSnimak v = s.varijanta(varijantaId).orElse(null);
+            String naziv = v == null ? null : v.naziv();
             lista.add(new UcesnikZadatka(u.getId(), u.getIme(), varijantaId, naziv, o != null,
-                    o == null ? null : o.tacno(), o == null ? null : ishod(o.polja())));
+                    o == null ? null : o.tacno(), o == null ? null : ishod(o.polja()),
+                    o == null ? null : UnetoZadatka.tekstovi(v, o.polja())));
         }
         Map<Long, Integer> nivoi = new LinkedHashMap<>();
         if (s.varijante() != null) {

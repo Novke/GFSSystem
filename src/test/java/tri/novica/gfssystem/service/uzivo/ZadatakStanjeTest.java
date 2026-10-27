@@ -325,4 +325,22 @@ class ZadatakStanjeTest {
             }
         }
     }
+
+    /** Uneto po učesniku ({@code UcesnikZadatka.uneto}) nosi samo pregled izvođenja: ni telefon ni projektor ga ne dobijaju. */
+    @Test
+    void unetoNosiSamoPregled() {
+        for (Faza f : List.of(Faza.CEKA, Faza.OTVORENO, Faza.ZATVORENO)) {
+            faza(f);
+            iz.setTacanPrikazan(true);
+            iz.setResenjePrikazano(f == Faza.ZATVORENO);
+            iz.setRezultatiPrikazani(true);
+            for (Object telefon : List.of(service.javno(IZ), service.licno(IZ, 1L), service.pocetno(IZ, 1L))) {
+                assertFalse(json(telefon).contains("uneto"), () -> f + ": telefon dobija uneto: " + json(telefon));
+            }
+            NastavnickiZadatak z = service.nastavnicko(IZ).zadatak();
+            if (z.javniRezultat() != null) {
+                assertFalse(json(z.javniRezultat()).contains("uneto"), f + ": projektor dobija uneto");
+            }
+        }
+    }
 }

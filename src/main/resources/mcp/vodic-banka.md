@@ -45,7 +45,7 @@ Server odbija tekst i rešenje sa bilo kojom od ovih komandi pre rendera, i kad 
 - TikZ je podrazumevani put za jednostavne dijagrame; prilog je za fotografije, skenirane crteže i složene figure.
 
 ## Šema polja
-Šema (`polja`) kaže šta student unosi na telefonu i kako se ocenjuje; `[]` znači rad na papiru (telefon samo prikaže zadatak). Najviše 10 polja; `kljuc` je 1-10 malih slova i cifara, počinje slovom i jedinstven je; `oznaka` ima 1-200 znakova (npr. `a) dekadni`).
+Šema (`polja`) kaže šta student unosi na telefonu i kako se ocenjuje; `[]` znači rad na papiru (telefon samo prikaže zadatak). Najviše 10 polja; `kljuc` je 1-10 malih slova i cifara, počinje slovom i jedinstven je; `oznaka` ima 1-200 znakova i kratko kaže šta se unosi, velikim početnim slovom (npr. `Dekadna vrednost`). Slova `a)`, `b)` na početak oznake stavljaj samo kad tekst zadatka sam ima delove označene tim slovima; šema sa jednim poljem nikad nema slovo (tabla i pregled oznaku jedinog polja ni ne prikazuju).
 - `BROJ`: broj; `odstupanje` >= 0 (podrazumevano 0) sa `odstupanjeTip` `APSOLUTNO` (podrazumevano) ili `PROCENAT`, `jedinica` do 30 znakova. Student sme decimalni zarez ili tačku.
 - `TEKST`: kratak tekst; `zanemariVelicinu` i `zanemariRazmake` (podrazumevano true); ćirilica i dijakritici se porede kao latinica bez njih.
 - `JEDAN_TACAN`: tačna je jedna od 2-6 `opcije` (`tekst` 1-200 znakova, sme `$formula$`).
@@ -64,10 +64,10 @@ Primer `napravi_grupu` (list sa sva četiri tipa polja):
   "tezina": 2,
   "uputstvo": "Binarni broj od 6 do 8 cifara pretvoriti u dekadni i heksadekadni. Rešenje: zbir stepena dvojke, pa grupe po 4 bita. Bez razlomljenih brojeva.",
   "polja": [
-    {"kljuc": "a", "oznaka": "a) dekadni", "tip": "BROJ", "odstupanje": 0},
-    {"kljuc": "b", "oznaka": "b) heksadekadni", "tip": "TEKST", "zanemariVelicinu": true},
-    {"kljuc": "c", "oznaka": "c) Da li je broj paran?", "tip": "JEDAN_TACAN", "opcije": [{"tekst": "da"}, {"tekst": "ne"}]},
-    {"kljuc": "d", "oznaka": "d) Sa kojim brojevima je deljiv?", "tip": "VISE_TACNIH", "opcije": [{"tekst": "$2$"}, {"tekst": "$3$"}, {"tekst": "$5$"}]}
+    {"kljuc": "a", "oznaka": "Dekadna vrednost", "tip": "BROJ", "odstupanje": 0},
+    {"kljuc": "b", "oznaka": "Heksadekadni zapis", "tip": "TEKST", "zanemariVelicinu": true},
+    {"kljuc": "c", "oznaka": "Da li je broj paran?", "tip": "JEDAN_TACAN", "opcije": [{"tekst": "da"}, {"tekst": "ne"}]},
+    {"kljuc": "d", "oznaka": "Sa kojim brojevima je deljiv?", "tip": "VISE_TACNIH", "opcije": [{"tekst": "$2$"}, {"tekst": "$3$"}, {"tekst": "$5$"}]}
   ]
 }
 ```

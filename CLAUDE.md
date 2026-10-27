@@ -242,7 +242,11 @@ group's schema, the console and projector show results per variant and, on `Shif
   `RESENJE` on a closed round, or correct values before `TACAN` on a closed round; the public state carries no variant content at
   all. The projector (`NastavnickiZadatak.javniRezultat`) follows three independent switches (results, TACAN, RESENJE). The teacher
   API (`/izvodjenja/{id}/stanje`, `/rezultati`, teacher STOMP) carries everything, so on prod the task is only safe while the teacher
-  API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot).
+  API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot);
+  each `UcesnikZadatka` carries `polja` (`kljuc -> tacno`) and `uneto` (`kljuc -> text` as entered, schema order, built by the pure
+  `UnetoZadatka` from the snapshot: BROJ as typed plus the field's unit, TEKST as typed, options by their text joined with `, `,
+  an option missing from the snapshot as `#id`). `uneto` exists only in the teacher overview (`GET /izvodjenja/{id}/rezultati`),
+  never in a phone projection or `javniRezultat` (`ZadatakStanjeTest.unetoNosiSamoPregled`).
 - **Student identity seam:** `security/IdentitetStudenta` (`studentId(request)`, `dostupno()`); `NemaIdentiteta` is the bean only when no
   other exists (`IdentitetAutoKonfig`, `@ConditionalOnMissingBean`). Without the login project a scored run (`PokreniCmd.boduje`) is 409
   `Prijava studenata još nije dostupna.`; on branch `feature/prijava` the seam is live: `NalogIdentitet` (see "Prijava") replaces
@@ -252,7 +256,7 @@ group's schema, the console and projector show results per variant and, on `Shif
   not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
   edits in `PredavanjeService` must lock the lecture row first (plan task BE-8).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
-  grading, SVG survival, overview), `OcenaZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
+  grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
 
 ## Banka zadataka (faza 1)
@@ -295,7 +299,9 @@ variant with `ikadOdobrena` are never deleted, neither on a new render nor on de
   existing name just changes its medium).
 - **JSON schema of `polja` (`grupe_zadataka.polja`, text column, `[]` = work on paper)** is a list of `Polje {kljuc, oznaka, tip, odstupanje,
   odstupanjeTip, jedinica, zanemariVelicinu, zanemariRazmake, opcije[{id, tekst}]}`; <= 10 fields, `kljuc` `^[a-z][a-z0-9]{0,9}$` and unique,
-  `oznaka` 1-200 chars, `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
+  `oznaka` 1-200 chars (a plain description, e.g. `Dekadna vrednost`; a list letter `a)` only when the task text itself has parts with
+  those letters, never on a one-field schema: the projector and the overview hide the label of a single field, the phone strips a
+  leading `a) ` there; the MCP guide `vodic-banka.md` teaches the same, `VodicTest.vodicBankaUciOznakeBezSlova`), `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
   with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`).
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
   without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,

@@ -321,8 +321,11 @@ class ZadatakOdgovorDbTest {
         assertEquals("A", ua.varijantaNaziv());
         assertEquals(Boolean.TRUE, ua.tacno());
         assertEquals(Map.of("a", true), ua.polja());
+        assertEquals(Map.of("a", "45"), ua.uneto(), "pregled nosi šta je uneto");
         UcesnikZadatka ub = z.ucesnici().stream().filter(u -> u.ucesnikId().equals(naB)).findFirst().orElseThrow();
         assertEquals(Boolean.FALSE, ub.tacno());
+        assertEquals(Map.of("a", false), ub.polja());
+        assertEquals(Map.of("a", "45"), ub.uneto(), "i pogrešan unos");
         assertEquals(2, z.rezultat().varijante().size());
         z.rezultat().varijante().forEach(v -> assertNotNull(v.resenjeSvgId()));
         assertEquals(2, z.rezultat().ukupno());
