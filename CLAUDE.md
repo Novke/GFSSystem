@@ -725,10 +725,12 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
     (`gfs.front.url` only) would reject with 403. `CorsConfig.bezLti` returns no CORS configuration for `ProveraPoreklaFilter.LTI_IZUZECI` (login and launch only), in the chain
     and in MVC; every other path is unchanged. The two are protected by `state`, `nonce` and `__Host-gfs_lti` instead of an origin check.
 - **Index in three parts: (index, year)** (branch `feature/prijava-indeks-mejl`, `V16__indeks_telefon_kod.sql`): an index number repeats every
-  generation, so a student is the pair (canonical index, `studenti.godina`) and is **never** "the newest generation". `utility/IndeksUtil`:
-  `SMEROVI = ["GD"]` (the only study programme the forms offer; same list in the front `shared/util/indeks.ts`), `kanonski(indeks, godina)` =
+  generation, so a student is the pair (canonical index, `studenti.godina`) and is **never** "the newest generation". study programmes are the enum
+  `utility/Smer` (`GEODEZIJA("GD", "Geodezija")`, the only one for now; a new programme = a new constant here plus the same row in the front
+  `SMEROVI` in `shared/util/indeks.ts`; no DB table, the programme lives only inside the index; the forms show `GD` locked, no picker).
+  `utility/IndeksUtil`: `kanonski(indeks, godina)` =
   normalized, a `/YYYY` suffix equal to `godina` stripped, leading zeros of the number dropped (`gd 05/2026` + 2026 -> `GD5`),
-  `jeJavniOblik` = `GD` + 1-3 digits. The public requests `KodCmd`, `PrijavaKodomCmd`, `PomocCmd` carry `{indeks, godina}` (`godina`
+  `jeJavniOblik` = a `Smer` code + 1-3 digits. The public requests `KodCmd`, `PrijavaKodomCmd`, `PomocCmd` carry `{indeks, godina}` (`godina`
   2000-2100, else 400 `Godina upisa nije ispravna.`); `KodServis` finds the student with `StudentRepository.findAllPoIndeksuIGodini`
   (canonical compare in Java) for sending a code, signing in with a code, "Ne stiže mi kod" and the Moodle pairing (which signs in with a
   code). A new-form index that is not `jeJavniOblik` behaves like an unknown index (same answer). Counters, locks and the fake mask are

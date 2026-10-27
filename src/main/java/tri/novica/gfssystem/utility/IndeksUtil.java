@@ -1,6 +1,5 @@
 package tri.novica.gfssystem.utility;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,18 +20,12 @@ public final class IndeksUtil {
     private static final Pattern SUFIKS_GODINE = Pattern.compile("^(.+)/([0-9]{4})$");
     private static final Pattern SMER_BROJ = Pattern.compile("^([A-Z]{1,4})0*([0-9]+)$");
 
-    /**
-     * Smerovi koje javne forme (nalog, upis) nude kao prvi deo indeksa. Za sada samo geodezija; novi smer se dodaje ovde i
-     * u frontu ({@code shared/util/indeks.ts}, {@code SMEROVI}), bez druge izmene.
-     */
-    public static final List<String> SMEROVI = List.of("GD");
-
     /** Broj indeksa u javnoj formi: 1-3 cifre (prvih devet studenata generacije ima jednocifren broj). */
     public static final int MAX_CIFARA_BROJA = 3;
 
     /** Indeks iz javne forme u tri dela: smer sa liste i 1-3 cifre, kanonski (bez vodećih nula). */
     private static final Pattern JAVNI_OBLIK = Pattern.compile(
-            "^(?:" + String.join("|", SMEROVI) + ")[1-9][0-9]{0," + (MAX_CIFARA_BROJA - 1) + "}$");
+            "^(?:" + String.join("|", Smer.sifre()) + ")[1-9][0-9]{0," + (MAX_CIFARA_BROJA - 1) + "}$");
 
     private IndeksUtil() {}
 
@@ -57,7 +50,7 @@ public final class IndeksUtil {
         return sb.matches() ? sb.group(1) + sb.group(2) : n;
     }
 
-    /** Da li je kanonski indeks u obliku javne forme ({@link #SMEROVI} + 1-3 cifre, bez vodeće nule). */
+    /** Da li je kanonski indeks u obliku javne forme (šifra nekog {@link Smer} + 1-3 cifre, bez vodeće nule). */
     public static boolean jeJavniOblik(String kanonski) {
         return kanonski != null && JAVNI_OBLIK.matcher(kanonski).matches();
     }
