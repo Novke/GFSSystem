@@ -456,17 +456,17 @@ class NastavnickoStanjeTest {
         drugo.setPrezentacija(prez);
         drugo.setKod("654321");
         drugo.setStatus(StatusIzvodjenja.ZAVRSENO);
-        when(izvodjenjeRepository.findZaListu(1L, null)).thenReturn(List.of(drugo, iz));
+        when(izvodjenjeRepository.findZaListu(1L, null, null)).thenReturn(List.of(drugo, iz));
         when(ucesnikRepository.brojPoIzvodjenju(any())).thenReturn(List.<Object[]>of(new Object[]{5L, 2L}));
         when(rundaRepository.brojPoIzvodjenju(any())).thenReturn(List.<Object[]>of(new Object[]{5L, 3L}, new Object[]{6L, 1L}));
 
-        List<IzvodjenjeInfo> lista = service.lista(1L, null);
+        List<IzvodjenjeInfo> lista = service.lista(1L, null, null);
 
         assertEquals(List.of(6L, 5L), lista.stream().map(IzvodjenjeInfo::id).toList());
         assertEquals(0, lista.get(0).brojUcesnika());
         assertEquals(1, lista.get(0).brojPitanja());
         assertEquals(2, lista.get(1).brojUcesnika());
         assertEquals(3, lista.get(1).brojPitanja());
-        assertEquals(List.of(), service.lista(2L, StatusIzvodjenja.AKTIVNO));
+        assertEquals(List.of(), service.lista(2L, StatusIzvodjenja.AKTIVNO, null));
     }
 }

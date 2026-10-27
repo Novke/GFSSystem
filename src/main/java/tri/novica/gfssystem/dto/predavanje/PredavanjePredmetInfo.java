@@ -8,5 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PredavanjePredmetInfo {
+    private Long id;
     private String naziv;
 }

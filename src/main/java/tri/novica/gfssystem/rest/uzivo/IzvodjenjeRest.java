@@ -24,12 +24,13 @@ public class IzvodjenjeRest {
     private final IzvodjenjeService izvodjenjeService;
     private final StanjeService stanjeService;
 
-    /** Najnovija prva; oba filtra su opciona. */
+    /** Najnovija prva; svi filteri su opcioni ({@code predavanjeId}: izvođenja vezana za to predavanje). */
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     public List<IzvodjenjeInfo> lista(@RequestParam(required = false) Long prezentacijaId,
-                                      @RequestParam(required = false) StatusIzvodjenja status) {
-        return izvodjenjeService.lista(prezentacijaId, status);
+                                      @RequestParam(required = false) StatusIzvodjenja status,
+                                      @RequestParam(required = false) Long predavanjeId) {
+        return izvodjenjeService.lista(prezentacijaId, status, predavanjeId);
     }
 
     @GetMapping("/{id}/stanje")

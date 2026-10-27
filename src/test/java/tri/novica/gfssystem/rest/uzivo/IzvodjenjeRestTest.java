@@ -92,14 +92,21 @@ class IzvodjenjeRestTest {
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.prikaz").value("SLAJD"))
            .andExpect(jsonPath("$.pocetakMs").value(1_759_830_000_000L));
-        when(service.lista(1L, StatusIzvodjenja.AKTIVNO)).thenReturn(List.of(INFO));
+        when(service.lista(1L, StatusIzvodjenja.AKTIVNO, null)).thenReturn(List.of(INFO));
         mvc.perform(get("/izvodjenja").param("prezentacijaId", "1").param("status", "AKTIVNO"))
            .andExpect(status().isOk())
            .andExpect(jsonPath("$[0].id").value(5))
            .andExpect(jsonPath("$[0].pocetak").value("2026-10-07T12:00:00"))
            .andExpect(jsonPath("$[0].brojUcesnika").value(2));
-        when(service.lista(null, null)).thenReturn(List.of());
+        when(service.lista(null, null, null)).thenReturn(List.of());
         mvc.perform(get("/izvodjenja")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        when(service.lista(null, null, 40L)).thenReturn(List.of(INFO));
+        mvc.perform(get("/izvodjenja").param("predavanjeId", "40"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$[0].id").value(5));
+        mvc.perform(get("/izvodjenja").param("predavanjeId", "abc"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value("Neispravan parametar: predavanjeId."));
         mvc.perform(get("/izvodjenja").param("status", "NESTO"))
            .andExpect(status().isBadRequest())
            .andExpect(jsonPath("$.reason").value("Neispravan parametar: status."));

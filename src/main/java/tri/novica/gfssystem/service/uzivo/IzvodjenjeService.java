@@ -177,8 +177,8 @@ public class IzvodjenjeService {
     }
 
     @Transactional(readOnly = true)
-    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status) {
-        return stanjeService.lista(prezentacijaId, status);
+    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status, Long predavanjeId) {
+        return stanjeService.lista(prezentacijaId, status, predavanjeId);
     }
 
     @Transactional(readOnly = true)
