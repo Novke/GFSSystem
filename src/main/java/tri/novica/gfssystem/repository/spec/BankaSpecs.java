@@ -65,6 +65,12 @@ public final class BankaSpecs {
         return (root, query, cb) -> cb.equal(root.get("izvor"), izvor);
     }
 
+    /** Nivo varijante (1-3; opseg proverava {@code BankaFilter}). */
+    public static Specification<Varijanta> nivo(Integer nivo) {
+        if (nivo == null) return Specification.unrestricted();
+        return (root, query, cb) -> cb.equal(root.get("nivo"), nivo);
+    }
+
     /** Klodova serija upisa varijante (tačno poklapanje; obrazac proverava {@code BankaFilter}). */
     public static Specification<Varijanta> serija(String serija) {
         if (serija == null) return Specification.unrestricted();

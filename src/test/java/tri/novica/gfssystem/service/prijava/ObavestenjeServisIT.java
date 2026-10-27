@@ -117,6 +117,10 @@ class ObavestenjeServisIT {
         return h.substring("gfs_student=".length(), h.indexOf(';'));
     }
 
+    static String bezGodine(String indeks) {
+        return indeks.replace("/2025", "");
+    }
+
     static SystemException greska(Runnable r) {
         return assertThrows(SystemException.class, r::run);
     }
@@ -135,8 +139,10 @@ class ObavestenjeServisIT {
         assertEquals(VrstaObavestenja.NE_STIZE_KOD, o.vrsta());
         assertEquals(s.getId(), o.studentId());
         assertEquals("Test Studentić", o.studentIme());
-        assertEquals(s.getIndeks(), o.indeks());
-        assertEquals(s.getIndeks(), o.podaci().get("indeks"));
+        // stari oblik zahteva ("T7-.../2025"): sufiks je godina, indeks se čuva bez njega
+        assertEquals(s.getIndeks(), o.indeks()); // poznat student: indeks kako je zapisan
+        assertEquals(2025, o.godina());
+        assertEquals(bezGodine(s.getIndeks()), o.podaci().get("indeks"));
         assertEquals(Boolean.TRUE, o.podaci().get("imaMejl"));
         assertEquals(ip, o.podaci().get("ip"));
         assertEquals("NEPOZNAT", o.podaci().get("uredjaj"));
@@ -173,8 +179,8 @@ class ObavestenjeServisIT {
         assertEquals(VrstaObavestenja.NE_STIZE_KOD, o.vrsta());
         assertNull(o.studentId());
         assertNull(o.studentIme());
-        assertEquals(indeks, o.indeks());
-        assertEquals(indeks, o.podaci().get("indeks"));
+        assertEquals(bezGodine(indeks), o.indeks());
+        assertEquals(bezGodine(indeks), o.podaci().get("indeks"));
         assertEquals(Boolean.FALSE, o.podaci().get("imaMejl"));
         assertEquals("NEPOZNAT", o.podaci().get("uredjaj"));
     }

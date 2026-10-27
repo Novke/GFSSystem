@@ -158,9 +158,12 @@ public class StanjeService {
         return iz.isResenjePrikazano() && iz.getFaza() == Faza.ZATVORENO;
     }
 
-    /** Koliko će se varijanti izvući: {@code min(N, M)}, N iz konzole ili sa slajda ({@code null} = sve), M = kandidati. */
+    /**
+     * Koliko će se varijanti izvući: {@code min(N, M)}, N iz konzole ili sa slajda ({@code null} = sve), M = kandidati
+     * važećeg nivoa (iz konzole ili sa slajda, {@link TokIzvodjenja#nivo}).
+     */
     private static int brojZaOtvaranje(Izvodjenje iz, Slajd s, ZadatakSlajdaInfo info) {
-        int m = info == null ? 0 : info.brojAktivnihVarijanti();
+        int m = info == null ? 0 : info.brojAktivnih(TokIzvodjenja.nivo(iz, s));
         Integer n = TokIzvodjenja.brojVarijanti(iz, s);
         return n == null ? m : Math.min(n, m);
     }
@@ -204,7 +207,8 @@ public class StanjeService {
                 javni = ZadatakRezultatBuilder.izgradi(zr.snimak(), p.dodeleRunde(), odgovori, rez, tacan, resenje);
             }
         }
-        return new NastavnickiZadatak(info, iz.getZadatakBrojVarijanti(), brojZaOtvaranje(iz, trenutni, info),
+        return new NastavnickiZadatak(info, iz.getZadatakBrojVarijanti(), iz.getZadatakNivo(),
+                TokIzvodjenja.nivo(iz, trenutni), brojZaOtvaranje(iz, trenutni, info),
                 iz.isResenjePrikazano(), varijante, rezultat, javni);
     }
 
@@ -535,8 +539,12 @@ public class StanjeService {
             lista.add(new UcesnikZadatka(u.getId(), u.getIme(), varijantaId, naziv, o != null,
                     o == null ? null : o.tacno(), o == null ? null : ishod(o.polja())));
         }
+        Map<Long, Integer> nivoi = new LinkedHashMap<>();
+        if (s.varijante() != null) {
+            s.varijante().stream().filter(v -> v.nivo() != null).forEach(v -> nivoi.put(v.varijantaId(), v.nivo()));
+        }
         return new PregledZadatka(s.slajdId(), s.grupaNaziv(), s.putanja(),
-                ZadatakRezultatBuilder.izgradi(s, dodele, oz, true, true, true), List.copyOf(lista));
+                ZadatakRezultatBuilder.izgradi(s, dodele, oz, true, true, true), List.copyOf(lista), s.nivo(), nivoi);
     }
 
     // ---------------------------------------------------------------- zajedničko (i za javno/lično stanje)

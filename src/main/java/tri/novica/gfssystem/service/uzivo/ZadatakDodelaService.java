@@ -17,6 +17,7 @@ import tri.novica.gfssystem.repository.uzivo.ZadatakDodelaRepository;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.KandidatVarijante;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.Kandidati;
+import tri.novica.gfssystem.utility.Nivo;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -42,6 +43,8 @@ import java.util.*;
 public class ZadatakDodelaService {
 
     static final String NEMA_AKTIVNIH = "Grupa nema aktivnih varijanti.";
+    /** Kao {@link #NEMA_AKTIVNIH}, sa nivoom: {@code Grupa nema aktivnih varijanti nivoa ★★★.} */
+    static final String NEMA_AKTIVNIH_NIVOA = "Grupa nema aktivnih varijanti nivoa %s.";
     static final String GRUPA_OBRISANA = "Grupa zadatka je obrisana.";
 
     private final KandidatiZadatka kandidati;
@@ -54,26 +57,28 @@ public class ZadatakDodelaService {
     private final Clock clock;
 
     /**
-     * Snimak nove runde ZADATAK slajda: {@code min(brojVarijanti, kandidata)} izvučenih ({@code null} = sve), naizmenično
-     * po listovima, sa šemom i tačnim odgovorima kakvi su sada. U snimku su redom stabla (list, pa id), ne redom
+     * Snimak nove runde ZADATAK slajda: {@code min(brojVarijanti, kandidata)} izvučenih ({@code null} = sve) nivoa
+     * {@code nivo} ({@code null} = svi nivoi; nikad drugi nivo kad traženog nema), naizmenično po listovima, sa šemom i
+     * tačnim odgovorima kakvi su sada. U snimku su redom stabla (list, pa id), ne redom
      * izvlačenja. Slajd bez grupe (obrisana) ili sa grupom koje više nema u stablu PREDAVANJE predmeta -> 409
-     * {@value #GRUPA_OBRISANA}; bez kandidata -> 409 {@value #NEMA_AKTIVNIH}. Ništa ne upisuje, ali pre izvlačenja
+     * {@value #GRUPA_OBRISANA}; bez kandidata -> 409 {@value #NEMA_AKTIVNIH} (sa nivoom {@value #NEMA_AKTIVNIH_NIVOA}). Ništa ne upisuje, ali pre izvlačenja
      * zaključava kandidate do kraja transakcije ({@link #zakljucaj}): nijedna izvučena varijanta ne može biti obrisana pre
      * nego što se snimak commit-uje, a izvlači se samo iz onih koje su posle ključa još AKTIVNE (nijedna više nije -> 409
      * {@value #NEMA_AKTIVNIH}).
      */
-    public ZadatakSnimak snimak(Slajd s, Integer brojVarijanti) {
+    public ZadatakSnimak snimak(Slajd s, Integer brojVarijanti, Integer nivo) {
         GrupaZadataka grupa = s.getGrupaZadataka();
         if (grupa == null) {
             throw new SystemException(GRUPA_OBRISANA, HttpStatus.CONFLICT);
         }
-        Kandidati k = kandidati.kandidati(grupa.getId());
+        Kandidati k = kandidati.kandidati(grupa.getId(), nivo);
         if (k.opis() == null) {
             throw new SystemException(GRUPA_OBRISANA, HttpStatus.CONFLICT);
         }
-        List<List<KandidatVarijante>> poListovima = zakljucaj(k.poListovima());
+        List<List<KandidatVarijante>> poListovima = zakljucaj(k.poListovima(), nivo);
         if (poListovima.isEmpty()) {
-            throw new SystemException(NEMA_AKTIVNIH, HttpStatus.CONFLICT);
+            throw new SystemException(nivo == null ? NEMA_AKTIVNIH : NEMA_AKTIVNIH_NIVOA.formatted(Nivo.oznaka(nivo)),
+                    HttpStatus.CONFLICT);
         }
         Set<Long> izvucene = new HashSet<>();
         IzborVarijanti.izvuci(poListovima, brojVarijanti, random).forEach(v -> izvucene.add(v.varijantaId()));
@@ -83,25 +88,27 @@ public class ZadatakDodelaService {
                 .map(ZadatakDodelaService::snimakVarijante)
                 .toList();
         return new ZadatakSnimak(s.getId(), k.opis().grupaId(), k.opis().naziv(), k.opis().putanja(),
-                s.getZadatakVremeSekunde(), varijante);
+                s.getZadatakVremeSekunde(), varijante, nivo);
     }
 
     /**
      * Zaključava sve kandidate jednim upitom ({@link VarijantaRepository#zakljucajKandidate}: samo redovi varijanti,
      * rastuće po id-ju) i vraća listove samo sa onima koji su posle ključa još AKTIVNI sa SVG-om, bez listova koji su
-     * ostali prazni. Varijanta obrisana ili arhivirana dok se runda otvarala tako ne ulazi u izvlačenje. Brisanje varijante
+     * ostali prazni (sa nivoom slajda i još tog nivoa). Varijanta obrisana, arhivirana ili prebačena u drugi nivo dok se runda
+     * otvarala tako ne ulazi u izvlačenje. Brisanje varijante
      * ({@code VarijantaService}) i grupe ({@code GrupaZadatakaService}) zaključava grupu pa varijante, a izvođenje nikad,
      * pa redosled izvođenje -> varijante ne pravi krug. Sadržaj (SVG-ovi, šema, odgovori) ostaje iz čitanja pre ključa:
      * izmena commit-ovana između čitanja i ključa nije u snimku, kao da je runda otvorena malo pre nje. Snimak je i tada
      * ceo iz jedne verzije varijante, a njen stari SVG ostaje, jer je AKTIVNA varijanta odobrena ({@code ikadOdobrena},
      * {@code VarijantaService}, "SVG odobrene varijante se nikad ne briše").
      */
-    private List<List<KandidatVarijante>> zakljucaj(List<List<KandidatVarijante>> poListovima) {
+    private List<List<KandidatVarijante>> zakljucaj(List<List<KandidatVarijante>> poListovima, Integer nivo) {
         List<Long> ids = poListovima.stream().flatMap(List::stream).map(KandidatVarijante::varijantaId).toList();
         if (ids.isEmpty()) {
             return List.of();
         }
-        Set<Long> zakljucane = new HashSet<>(varijantaRepository.zakljucajKandidate(ids));
+        Set<Long> zakljucane = new HashSet<>(nivo == null ? varijantaRepository.zakljucajKandidate(ids)
+                : varijantaRepository.zakljucajKandidateNivoa(ids, nivo));
         if (zakljucane.size() == ids.size()) {
             return poListovima;
         }
@@ -188,6 +195,6 @@ public class ZadatakDodelaService {
 
     private static VarijantaSnimak snimakVarijante(KandidatVarijante v) {
         return new VarijantaSnimak(v.varijantaId(), v.naziv(), v.grupaId(), v.svgId(), v.resenjeSvgId(), v.polja(),
-                v.odgovori());
+                v.odgovori(), v.nivo());
     }
 }

@@ -36,6 +36,11 @@ public class KodZaPrijavu {
     private int pogresni;
     private LocalDateTime iskoriscen;
     private LocalDateTime ponisten;
+    /** Kako je kod izdat (V16; stari redovi i stara slika: podrazumevano {@code MEJL} u bazi). */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(nullable = false, length = 20)
+    private NacinKoda nacin = NacinKoda.MEJL;
 
     @Override
     public boolean equals(Object o) {

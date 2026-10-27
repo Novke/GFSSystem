@@ -30,8 +30,9 @@ Polja koja ne važe za tip server briše.
 
 ## ZADATAK
 Zadatak slajd na času: svaki student na telefonu dobija svoju nasumičnu varijantu iz grupe banke, upisuje odgovor po poljima grupe, a projektor posle pokazuje rezultate po varijanti i rešenje.
-- `zadatak` (obavezan za `ZADATAK`): `{"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4}`. `grupaId` je grupa iz banke **istog predmeta**, namene `PREDAVANJE` (list ili unutrašnji čvor: tada se izvlači naizmenično iz njegovih listova); inače `Grupa mora biti iz banke ovog predmeta, namena Predavanja.`, a nepostojeća `Grupa zadataka nije pronađena.`.
+- `zadatak` (obavezan za `ZADATAK`): `{"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4, "nivo": 1}`. `grupaId` je grupa iz banke **istog predmeta**, namene `PREDAVANJE` (list ili unutrašnji čvor: tada se izvlači naizmenično iz njegovih listova); inače `Grupa mora biti iz banke ovog predmeta, namena Predavanja.`, a nepostojeća `Grupa zadataka nije pronađena.`.
 - `brojVarijanti` (1-50, opciono): koliko različitih zadataka ide u salu; bez njega idu sve aktivne. Novica ga menja i u konzoli pre otvaranja, pa ga ne pogađaj: ako ne zna, izostavi ga.
+- `nivo` (1-3, opciono): svi studenti u rundi dobijaju varijante tog nivoa; bez njega se izvlači iz svih nivoa. Za "daj jedan lakši pa jedan teži" napravi dva ZADATAK slajda iste grupe sa `nivo` 1 i 3. Novica nivo menja i u konzoli pre otvaranja. Odgovor nosi `brojAktivnihPoNivou` (tri broja, za nivo 1, 2 i 3); kad izabrani nivo nema aktivnih varijanti, upozorenje je npr. `Nema aktivnih varijanti nivoa ★★★; odobri nacrte ili izaberi drugi nivo.` (nivo u porukama je napisan zvezdicama)
 - `vremeSekunde` (5-600, opciono): tajmer za odgovor; bez njega nema tajmera.
 - Studenti dobijaju samo **aktivne** varijante (odobrene, sa uspešnim renderom). Nacrti se ne izvlače: slajd nad grupom bez aktivnih varijanti javlja upozorenje i na času se ne otvara (409). Zato na kraju uvek reci Novici koje grupe mora da odobri pre časa (`/banka/pregled`).
 - Odgovor `dodaj_slajd` nosi `slajd.zadatak` sa `putanja`, `brojAktivnih`, `brojVarijanti` i `upozorenja`. **Pročitaj `upozorenja` i javi ih Novici** rečima: `Tema je isključena.`, `Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa.`, `Isključene podgrupe se ne izvlače: …`. Upozorenje nije greška: slajd je dodat.
@@ -48,7 +49,7 @@ Svaki primer je vrednost argumenta `slajd` u `dodaj_slajd`. `medijId` u slici je
 ```json
 {
   "tip": "ZADATAK",
-  "zadatak": {"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4},
+  "zadatak": {"grupaId": 3, "vremeSekunde": 120, "brojVarijanti": 4, "nivo": 2},
   "beleske": "Posle Vežbe 1: pretvaranje 2 → 10."
 }
 ```

@@ -71,6 +71,16 @@ public final class TokIzvodjenja {
     }
 
     /**
+     * Nivo varijanti koje se izvlače pri otvaranju ZADATAK slajda, {@code null} = svi nivoi: izmena iz konzole
+     * ({@code Izvodjenje.zadatakNivo}: {@code null} = kao na slajdu, 0 = svi), inače nivo sa slajda.
+     */
+    public static Integer nivo(Izvodjenje iz, Slajd s) {
+        Integer izmena = iz.getZadatakNivo();
+        if (izmena == null) return s.getZadatakNivo();
+        return izmena == 0 ? null : izmena;
+    }
+
+    /**
      * Da li runda sa ovim snimkom pripada slajdu ovakvog tipa ({@link PitanjeSnimak} za PITANJE, {@link ZadatakSnimak}
      * za ZADATAK). Slajd može promeniti tip usred runa, pa runda druge vrste ne sme postati njegova trenutna.
      */

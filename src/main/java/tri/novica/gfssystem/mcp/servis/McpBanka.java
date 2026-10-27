@@ -45,6 +45,7 @@ import tri.novica.gfssystem.service.banka.SerijaService;
 import tri.novica.gfssystem.service.banka.VarijantaService;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
+import tri.novica.gfssystem.utility.Nivo;
 import tri.novica.gfssystem.utility.Serija;
 
 import java.util.ArrayList;
@@ -96,6 +97,8 @@ public class McpBanka {
     static final String NOVICINA_GRUPA = "Ovu grupu je napravio Novica; izmenu radi on u UI-ju.";
     /** 400 za {@code izmeni_varijantu} bez ijednog polja: nad tuđom varijantom bi to bila kopija bez izmene. */
     static final String IZMENA_BEZ_POLJA = "Izmena mora sadržati bar jedno polje varijante.";
+    /** Nivo nove Klodove varijante je obavezan. */
+    static final String NIVO_OBAVEZAN = "Nivo je obavezan (1 do 3).";
 
     private final McpLinkovi linkovi;
     private final McpBudzet budzet;
@@ -263,7 +266,9 @@ public class McpBanka {
      * Klodova nova varijanta na kraj lista {@code grupaId} (i Novicinog): NACRT, izvor CLAUDE bez obzira na komandu, serija
      * upisa. Grupa se čita pre budžeta (nepostojeća je 404 bez troška), pa se troši jedno pravljenje pre upisa. Render je deo
      * upisa, uz traženu sliku i PNG iz istog prevođenja; greška rendera je stanje varijante ({@code renderGreska},
-     * {@code renderDeo}), ne greška alata. Slika po {@link #saSlikom}; rezultat nosi {@code linkPregleda} serije.
+     * {@code renderDeo}), ne greška alata. Slika po {@link #saSlikom}; rezultat nosi {@code linkPregleda} serije. Nivo je
+     * obavezan (400 {@value #NIVO_OBAVEZAN}, pre budžeta): Klod uvek predlaže nivo, Novica ga potvrđuje pri pregledu; REST
+     * bez nivoa daje 2.
      */
     public McpSaSlikom<McpUpisVarijante> napraviVarijantu(Long grupaId, VarijantaCmd cmd, String serija, ZahtevSlike slika,
                                                           McpPoziv poziv) {
@@ -272,6 +277,10 @@ public class McpBanka {
         if (cmd == null) {
             throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
+        if (cmd.nivo() == null) {
+            throw new SystemException(NIVO_OBAVEZAN, HttpStatus.BAD_REQUEST);
+        }
+        Nivo.proveri(cmd.nivo());
         Namena namena = grupaService.detalji(id).namena();
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         ZahtevSlike zahtev = slika == null ? ZahtevSlike.NE : slika;
@@ -285,7 +294,7 @@ public class McpBanka {
      * mestu, svaka druga varijanta dobija kopiju-nacrt iz serije koja je zamenjuje ({@code linkOriginala}; original ostaje).
      * Izmena bez ijednog polja je 400 {@value #IZMENA_BEZ_POLJA}. Kopija troši jedno pravljenje pre upisa: odluka se
      * predviđa iz stanja pre upisa, a servis je ponovo donosi pod ključem (nacrt koji Novica odobri baš tada postaje kopija
-     * bez troška; retko, a budžet je zaštita od petlje). 409 servisa (sadržaj ili preambula promenjeni tokom rendera) je
+     * bez troška; retko, a budžet je zaštita od petlje). Izmena samo nivoa ne troši: menja se na mestu ili je 409. 409 servisa (sadržaj ili preambula promenjeni tokom rendera) je
      * greška alata bez slike, i ništa nije upisano.
      */
     public McpSaSlikom<McpUpisVarijante> izmeniVarijantu(Long id, VarijantaPatch patch, String serija, ZahtevSlike slika,
@@ -300,7 +309,7 @@ public class McpBanka {
         }
         VarijantaDetails trenutna = varijantaService.detalji(varijantaId);
         Namena namena = grupaService.detalji(trenutna.grupaId()).namena();
-        if (!sopstveniNacrt(trenutna)) {
+        if (!sopstveniNacrt(trenutna) && !patch.samoNivo()) {   // samo nivo nikad ne pravi kopiju
             budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         }
         ZahtevSlike zahtev = slika == null ? ZahtevSlike.NE : slika;
@@ -463,7 +472,7 @@ public class McpBanka {
 
     private static boolean bezIzmene(VarijantaPatch p) {
         return !p.naziv().postavljeno() && !p.tekst().postavljeno() && !p.resenje().postavljeno()
-                && !p.odgovori().postavljeno() && !p.prilozi().postavljeno();
+                && !p.odgovori().postavljeno() && !p.prilozi().postavljeno() && !p.nivo().postavljeno();
     }
 
     private static List<StavkaPonistavanja> spoji(List<StavkaPonistavanja> prve, List<StavkaPonistavanja> druge) {
@@ -492,12 +501,12 @@ public class McpBanka {
     private McpVarijanta mcp(VarijantaDetails d, Namena namena) {
         List<McpPrilog> prilozi = d.prilozi().stream().map(p -> new McpPrilog(p.ime(), p.medij().id())).toList();
         return new McpVarijanta(d.id(), d.grupaId(), d.putanja(), namena, d.naziv(), d.tekst(), d.resenje(), d.odgovori(),
-                d.polja(), prilozi, d.status(), d.izvor(), d.ikadOdobrena(), d.zamenjuje(), d.serija(), d.renderStatus(),
+                d.polja(), prilozi, d.status(), d.izvor(), d.ikadOdobrena(), d.zamenjuje(), d.serija(), d.nivo(), d.renderStatus(),
                 d.renderGreska(), d.renderDeo(), d.izmenjeno(), linkovi.varijanta(d.id()));
     }
 
     private static McpVarijantaSazetak sazetak(VarijantaInfo v) {
-        return new McpVarijantaSazetak(v.id(), v.naziv(), v.status(), v.izvor(), v.renderStatus(), v.zamenjuje());
+        return new McpVarijantaSazetak(v.id(), v.naziv(), v.status(), v.izvor(), v.renderStatus(), v.zamenjuje(), v.nivo());
     }
 
     /** Id iz argumenta alata; bez njega 400 {@code Neispravan parametar: <ime>.} (kao REST za pogrešan parametar). */

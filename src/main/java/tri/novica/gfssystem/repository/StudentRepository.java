@@ -11,9 +11,11 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Student;
+import tri.novica.gfssystem.utility.IndeksUtil;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,22 +34,38 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
 
     List<Student> findByGrupa(Grupa grupa);
 
-    /** Stari redovi mogu imati razmake ili mala slova u indeksu, zato se normalizuje i kolona. */
-    @Query("""
-        SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Student s
-        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina""")
-    boolean postojiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina);
+    /** Svi studenti sa godinom upisa {@code godina} (jedna generacija: desetine redova). */
+    List<Student> findAllByGodina(int godina);
+
+    /**
+     * Studenti sa tačno ovim parom (kanonski indeks, godina upisa), najnoviji id prvi. Kolona se svodi na kanonski oblik u
+     * Javi ({@link IndeksUtil#kanonski}: stari redovi mogu imati razmake, mala slova, vodeće nule ili sufiks
+     * {@code /<godina>}), i poredi binarno: MySQL {@code utf8mb4_0900_ai_ci} bi izjednačio akcente i punu širinu.
+     */
+    default List<Student> findAllPoIndeksuIGodini(String kanonskiIndeks, int godina) {
+        if (kanonskiIndeks == null) {
+            return List.of();
+        }
+        return findAllByGodina(godina).stream()
+                .filter(s -> kanonskiIndeks.equals(IndeksUtil.kanonski(s.getIndeks(), s.getGodina())))
+                .sorted(Comparator.comparing(Student::getId).reversed())
+                .toList();
+    }
+
+    /** Postoji li student sa parom (kanonski indeks, godina upisa); vidi {@link #findAllPoIndeksuIGodini}. */
+    default boolean postojiStudent(String kanonskiIndeks, int godina) {
+        return !findAllPoIndeksuIGodini(kanonskiIndeks, godina).isEmpty();
+    }
 
     /** Isto što {@link #postojiStudent}, ali bez studenta koji se menja (izmena na sopstveni indeks i godinu je dozvoljena). */
-    @Query("""
-        SELECT CASE WHEN COUNT(s) > 0 THEN true ELSE false END FROM Student s
-        WHERE UPPER(REPLACE(s.indeks, ' ', '')) = :indeks AND s.godina = :godina AND s.id <> :izuzetId""")
-    boolean postojiDrugiStudent(@Param("indeks") String normalizovanIndeks, @Param("godina") int godina,
-                                @Param("izuzetId") Long izuzetId);
+    default boolean postojiDrugiStudent(String kanonskiIndeks, int godina, Long izuzetId) {
+        return findAllPoIndeksuIGodini(kanonskiIndeks, godina).stream().anyMatch(s -> !s.getId().equals(izuzetId));
+    }
 
     /**
      * Studenti sa normalizovanim indeksom (velika slova, bez razmaka, kao {@code IndeksUtil.normalizuj}), najnoviji upis
-     * prvi ({@code godina} DESC, pa {@code id} DESC): isti indeks se ponavlja kroz godine upisa.
+     * prvi ({@code godina} DESC, pa {@code id} DESC): isti indeks se ponavlja kroz godine upisa. PRIVREMENO: samo za stari
+     * zahtev za kod bez godine (keširan SPA); ukloniti zajedno sa {@code IndeksUtil.razdvoji}.
      */
     @Query("""
         SELECT s FROM Student s
@@ -58,11 +76,6 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
     /** Svi studenti sa normalizovanim indeksom, najnoviji upis prvi (vidi gornji upit). */
     default List<Student> findAllPoNormalizovanomIndeksu(String normalizovanIndeks) {
         return findAllPoNormalizovanomIndeksu(normalizovanIndeks, Pageable.unpaged());
-    }
-
-    /** Student sa normalizovanim indeksom iz najnovijeg upisa (nalog studenta, prijava kodom). */
-    default Optional<Student> findNajnovijiPoIndeksu(String normalizovanIndeks) {
-        return findAllPoNormalizovanomIndeksu(normalizovanIndeks, PageRequest.of(0, 1)).stream().findFirst();
     }
 
     /** Zaključava red studenta (SELECT ... FOR UPDATE) do kraja transakcije: kodovi i limiti jednog studenta idu redom. */

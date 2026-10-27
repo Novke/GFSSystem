@@ -34,6 +34,7 @@ GET /banka/varijante/{id} ADMIN
 PUT /banka/varijante/{id} ADMIN
 POST /banka/varijante/{id}/arhiviraj ADMIN
 POST /banka/varijante/{id}/dupliraj ADMIN
+PATCH /banka/varijante/{id}/nivo ADMIN
 POST /banka/varijante/{id}/odobri ADMIN
 POST /banka/varijante/{id}/render ADMIN
 POST /banka/varijante/{id}/vrati-u-nacrt ADMIN
@@ -165,6 +166,7 @@ GET /studenti/pretraga ADMIN
 GET /studenti/{id} ADMIN
 PUT /studenti/{id} ADMIN
 GET /studenti/{id}/nalog ADMIN
+POST /studenti/{id}/nalog/kod-za-diktiranje ADMIN
 DELETE /studenti/{id}/nalog/moodle ADMIN
 POST /studenti/{id}/nalog/opozovi-uredjaje ADMIN
 POST /studenti/{id}/nalog/posalji-kod ADMIN

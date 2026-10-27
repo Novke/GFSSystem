@@ -6,8 +6,9 @@ import tri.novica.gfssystem.entity.banka.StatusVarijante;
 
 /**
  * Varijanta u alatu {@code grupa}: bez teksta i bez id-jeva SVG-a (javni URL-ovi, modelu ne trebaju); {@code zamenjuje} je
- * id originala koji ova Klodova kopija zamenjuje ({@code null} za ostale). Ceo sadržaj daje {@code varijanta}.
+ * id originala koji ova Klodova kopija zamenjuje ({@code null} za ostale), {@code nivo} 1-3. Ceo sadržaj daje
+ * {@code varijanta}.
  */
 public record McpVarijantaSazetak(Long id, String naziv, StatusVarijante status, IzvorVarijante izvor,
-                                  RenderStatus renderStatus, Long zamenjuje) {
+                                  RenderStatus renderStatus, Long zamenjuje, int nivo) {
 }

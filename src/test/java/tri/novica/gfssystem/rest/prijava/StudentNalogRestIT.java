@@ -274,6 +274,45 @@ class StudentNalogRestIT {
         assertEquals(1, jdbc.queryForObject("select count(*) from obavestenja where student_id is null and reseno is null", Integer.class));
     }
 
+    // ---------------------------------------------------------------- kod-za-diktiranje (plan C)
+
+    @Test
+    void kodZaDiktiranjeVracaKodJednomBezMejlaIResavaObavestenja(CapturedOutput izlaz) throws Exception {
+        mejl.dostupan(false);
+        Student s = studenti.napravi(null);
+        obavestenje(s, "NE_STIZE_KOD");
+        obavestenje(s, "PREVISE_KODOVA");
+
+        String telo = mvc.perform(sOriginom(post("/studenti/{id}/nalog/kod-za-diktiranje", s.getId())).with(nastavnik))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("no-store")))
+                .andExpect(jsonPath("$.kod").value(matchesPattern("\\d{6}")))
+                .andExpect(jsonPath("$.istice").isString())
+                .andExpect(jsonPath("$.indeks").value(s.getIndeks().replace("/2025", "")))
+                .andExpect(jsonPath("$.godina").value(2025))
+                // sintetički indeks nije oblik GD + broj: nastavnik dobija upozorenje
+                .andExpect(jsonPath("$.upozorenje").isString())
+                .andReturn().getResponse().getContentAsString();
+        String kod = telo.replaceAll(".*\"kod\":\"(\\d{6})\".*", "$1");
+        assertTrue(mejl.poslate().isEmpty());
+        assertEquals("NASTAVNIK", jdbc.queryForObject(
+                "select nacin from kodovi_za_prijavu where student_id = ?", String.class, s.getId()));
+        assertEquals(0, otvorenaZa(s));
+        // vrednost koda nikad u logu
+        assertTrue(izlaz.getAll().contains("Kod za diktiranje izdat"));
+        assertTrue(izlaz.getAll().lines().filter(l -> l.contains("iktir")).noneMatch(l -> l.contains(kod)), "kod je u logu");
+    }
+
+    @Test
+    void kodZaDiktiranjeJeSamoZaNastavnika() throws Exception {
+        Student s = studenti.napravi(null);
+        mvc.perform(post("/studenti/{id}/nalog/kod-za-diktiranje", s.getId()).header("Origin", PrijavaTestUtil.ORIGIN))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/studenti/{id}/nalog/kod-za-diktiranje", -5).with(nastavnik))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.reason").value("Ne postoji."));
+        assertEquals(0, jdbc.queryForObject("select count(*) from kodovi_za_prijavu where student_id = ?", Integer.class, s.getId()));
+    }
+
     @Test
     void kodSaKarticeVaziZaPrijavuIPonistavaPrethodni() throws Exception {
         Student s = studenti.napravi("ana@example.test");

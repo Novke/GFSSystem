@@ -18,6 +18,7 @@ import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.uzivo.*;
 import tri.novica.gfssystem.security.IdentitetStudenta;
+import tri.novica.gfssystem.utility.Nivo;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -61,6 +62,7 @@ public class IzvodjenjeService {
     static final String NEMA_ZADATKA = "Na ovom slajdu nema zadatka.";
     static final String BROJ_PRE_OTVARANJA = "Broj različitih zadataka se menja pre otvaranja.";
     static final String BROJ_VARIJANTI_GRANICE = "Broj različitih zadataka mora biti od 1 do 50.";
+    static final String NIVO_PRE_OTVARANJA = "Nivo se menja pre otvaranja.";
     static final String NEMA_RESENJA = "Nijedna varijanta nema rešenje.";
     /** Ime UNIQUE ključa kolone {@code aktivan_kod} (V7). */
     static final String UK_AKTIVAN_KOD = "uk_izvodjenja_aktivan_kod";
@@ -245,6 +247,7 @@ public class IzvodjenjeService {
             case ZAVRSI -> zavrsi(iz);
             case RESENJE -> resenjePrikaz(iz, sl);
             case BROJ_VARIJANTI -> brojVarijantiKomanda(iz, sl, cmd.vrednost());
+            case NIVO -> nivoKomanda(iz, sl, cmd.vrednost());
         }
     }
 
@@ -312,7 +315,7 @@ public class IzvodjenjeService {
 
     /**
      * Prelazak na slajd {@code j} (-1 prijava, n kraj). Otvoreno pitanje se zatvara; rezultati, tačan odgovor, rešenje i
-     * rang-lista se gase, a izmena broja varijanti iz konzole se briše (ekran i QR ostaju). INFO sa postepenim i PLATNO
+     * rang-lista se gase, a izmena broja varijanti i nivoa iz konzole se briše (ekran i QR ostaju). INFO sa postepenim i PLATNO
      * počinju od koraka 0 ({@code napred}) ili sa svim otkrivenim (unazad: sa svim koracima); slajd sa rundama (pitanje,
      * zadatak) prikazuje poslednju rundu kao zatvorenu, inače čeka.
      */
@@ -324,6 +327,7 @@ public class IzvodjenjeService {
         iz.setTacanPrikazan(false);
         iz.setResenjePrikazano(false);
         iz.setZadatakBrojVarijanti(null);
+        iz.setZadatakNivo(null);
         iz.setRangListaPrikazana(false);
         iz.setFaza(null);
         iz.setTrenutnaRundaId(null);
@@ -397,7 +401,7 @@ public class IzvodjenjeService {
     private void otvori(Izvodjenje iz, Slajd s) {
         boolean zadatak = s.getTip() == TipSlajda.ZADATAK;
         SnimakRunde snimak = zadatak
-                ? zadatakDodelaService.snimak(s, TokIzvodjenja.brojVarijanti(iz, s))
+                ? zadatakDodelaService.snimak(s, TokIzvodjenja.brojVarijanti(iz, s), TokIzvodjenja.nivo(iz, s))
                 : PitanjeSnimak.od(s);
         Integer sekunde = zadatak ? s.getZadatakVremeSekunde() : s.getPitanje().getVremeSekunde();
         LocalDateTime sada = sada();
@@ -516,6 +520,25 @@ public class IzvodjenjeService {
             throw new SystemException(BROJ_PRE_OTVARANJA, HttpStatus.CONFLICT);
         }
         iz.setZadatakBrojVarijanti(vrednost);
+    }
+
+    /**
+     * Nivo varijanti za sledeće otvaranje ZADATAK slajda (i za PONOVI), samo pre otvaranja: {@code null} = kao na slajdu,
+     * 0 = svi nivoi, 1..3 = taj nivo (van toga 400 {@link Nivo#GRANICE}). Briše se pri prelasku na drugi slajd
+     * ({@link #idiNa}), kao broj varijanti.
+     */
+    private void nivoKomanda(Izvodjenje iz, List<Slajd> sl, Integer vrednost) {
+        if (vrednost != null && vrednost != 0) {
+            Nivo.proveri(vrednost);
+        }
+        Slajd s = TokIzvodjenja.trenutni(iz, sl);
+        if (s == null || s.getTip() != TipSlajda.ZADATAK) {
+            throw new SystemException(NEMA_ZADATKA, HttpStatus.CONFLICT);
+        }
+        if (faza(iz) != Faza.CEKA) {
+            throw new SystemException(NIVO_PRE_OTVARANJA, HttpStatus.CONFLICT);
+        }
+        iz.setZadatakNivo(vrednost);
     }
 
     /** Nova runda istog pitanja ili zadatka (stari odgovori i dodele ostaju u prethodnoj); otvorena se prvo zatvori. */
@@ -732,9 +755,10 @@ public class IzvodjenjeService {
         if (i < 0) return;
         Slajd s = sl.get(i);
         if (s.getTip() != TipSlajda.ZADATAK) {
-            // rešenje i broj varijanti postoje samo na Zadatak slajdu
+            // rešenje, broj varijanti i nivo postoje samo na Zadatak slajdu
             iz.setResenjePrikazano(false);
             iz.setZadatakBrojVarijanti(null);
+            iz.setZadatakNivo(null);
         }
         if (!TokIzvodjenja.saRundama(s)) {
             if (iz.getFaza() == Faza.OTVORENO) {

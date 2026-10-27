@@ -27,7 +27,7 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class BankaPretragaService {
 
-    public static final Set<String> SORT_POLJA = Set.of("izmenjeno", "naziv");
+    public static final Set<String> SORT_POLJA = Set.of("izmenjeno", "naziv", "nivo");
     public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.desc("izmenjeno"));
 
     static final int DUZINA_ISECKA = 160;
@@ -44,6 +44,7 @@ public class BankaPretragaService {
                 BankaSpecs.status(f.status()),
                 BankaSpecs.izvor(f.izvor()),
                 BankaSpecs.serija(f.serija()),
+                BankaSpecs.nivo(f.nivo()),
                 BankaSpecs.upit(f.q()));
         Page<Varijanta> strana = varijantaRepository.findAll(spec, pageable);
         return new PagedModel<>(strana.map(this::stavka));
@@ -52,7 +53,7 @@ public class BankaPretragaService {
     private BankaPretragaStavka stavka(Varijanta v) {
         return new BankaPretragaStavka(v.getId(), v.getGrupa().getId(), v.getGrupa().getNaziv(),
                 grupaZadatakaService.putanja(v.getGrupa()), v.getNaziv(), v.getStatus(), v.getRenderStatus(),
-                isecak(v.getTekst()), v.getIzvor(), v.getSerija());
+                isecak(v.getTekst()), v.getIzvor(), v.getSerija(), v.getNivo());
     }
 
     /** Prvih {@value #DUZINA_ISECKA} znakova (code point-a, bez cepanja para) sa novim redovima sažetim u razmak. */
