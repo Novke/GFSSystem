@@ -473,8 +473,8 @@ public class StanjeService {
     // ---------------------------------------------------------------- lista i rezultati
 
     /** Izvođenja (filteri opcioni), najnovija prva; brojevi učesnika i pitanja sa po jednim upitom za celu listu. */
-    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status) {
-        List<Izvodjenje> lista = izvodjenjeRepository.findZaListu(prezentacijaId, status);
+    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status, Long predavanjeId) {
+        List<Izvodjenje> lista = izvodjenjeRepository.findZaListu(prezentacijaId, status, predavanjeId);
         if (lista.isEmpty()) return List.of();
         List<Long> ids = lista.stream().map(Izvodjenje::getId).toList();
         Map<Long, Long> ucesnika = brojevi(ucesnikRepository.brojPoIzvodjenju(ids));

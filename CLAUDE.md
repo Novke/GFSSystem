@@ -108,6 +108,9 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 `rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V7__uzivo.sql` (idempotent; originally V5, renumbered after the redesign's V6).
 - **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
   `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
+- **Runs of a lecture:** `GET /izvodjenja` takes three optional filters, `prezentacijaId`, `status` and `predavanjeId` (runs bound to that lecture;
+  newest first, same `IzvodjenjeInfo` rows). The lecture screen lists "Prezentacije na ovom predavanju" with it. `PredavanjeDetails.predmet` carries
+  `{id, naziv}` (the front picks the subject's presentations by that id).
 - `NastavnickoStanje.pocetakMs` (epoch ms, zona `Clock`-a) je osnova štoperice u konzoli i daljinskom; vremena u stanju su uvek epoch ms.
 - **PLATNO slide (slide builder, phase 1; `V8__platno.sql`):** `TipSlajda.PLATNO` holds a canvas document in `slajdovi.platno`
   (JSON, <= 1 MB): `dto/uzivo/platno/*` (records `Platno`, `Sloj` = TEKST|SLIKA|OBLIK|TABELA|FORMULA|CRTEZ, `Animacija`, ...).

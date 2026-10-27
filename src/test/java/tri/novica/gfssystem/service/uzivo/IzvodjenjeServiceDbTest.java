@@ -42,6 +42,7 @@ class IzvodjenjeServiceDbTest {
     @Autowired PrezentacijaService prezentacijaService;
     @Autowired PredmetRepository predmetRepository;
     @Autowired GrupaRepository grupaRepository;
+    @Autowired tri.novica.gfssystem.repository.PredavanjeRepository predavanjeRepository;
     @Autowired tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository prezentacijaRepository;
     @Autowired tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository izvodjenjeRepository;
     @Autowired JdbcTemplate jdbc;
@@ -328,13 +329,48 @@ class IzvodjenjeServiceDbTest {
         assertEquals(410, e.getCode());
         Long novo = service.pokreni(p.id(), new PokreniCmd(false, null, null)).id();
         k(novo, TipKomande.ZAVRSI);
-        assertEquals(List.of(novo, id), service.lista(p.id(), StatusIzvodjenja.ZAVRSENO).stream().map(IzvodjenjeInfo::id).toList());
-        assertEquals(1, service.lista(p.id(), null).get(1).brojUcesnika());
-        assertEquals(1, service.lista(p.id(), null).get(1).brojPitanja());
+        assertEquals(List.of(novo, id), service.lista(p.id(), StatusIzvodjenja.ZAVRSENO, null).stream().map(IzvodjenjeInfo::id).toList());
+        assertEquals(1, service.lista(p.id(), null, null).get(1).brojUcesnika());
+        assertEquals(1, service.lista(p.id(), null, null).get(1).brojPitanja());
 
         service.obrisi(id);
         assertEquals(0, broj("select count(*) from izvodjenja where id = ?", id));
         assertEquals(0, broj("select count(*) from ucesnici where izvodjenje_id = ?", id));
+    }
+
+    @Test
+    void listaFiltriraPoPredavanju() {
+        PrezentacijaDetails prva = prezentacijaSaPlatnom();
+        PrezentacijaDetails druga = prezentacijaSaPlatnom();
+        tri.novica.gfssystem.entity.Predavanje pr = new tri.novica.gfssystem.entity.Predavanje();
+        pr.setPredmet(predmet);
+        pr.setGrupa(grupa);
+        pr.setRb(1);
+        pr.setDatum(java.time.LocalDate.of(2026, 10, 27));
+        pr = predavanjeRepository.save(pr);
+        try {
+            Long uPredavanju = service.pokreni(prva.id(), new PokreniCmd(true, null, pr.getId())).id();
+            Long bezPredavanja = service.pokreni(druga.id(), new PokreniCmd(true, null, null)).id();
+
+            List<IzvodjenjeInfo> lista = service.lista(null, null, pr.getId());
+            assertEquals(List.of(uPredavanju), lista.stream().map(IzvodjenjeInfo::id).toList());
+            assertEquals(pr.getId(), lista.get(0).predavanje().id());
+            assertEquals(prva.id(), lista.get(0).prezentacija().id());
+            assertEquals(List.of(), service.lista(null, StatusIzvodjenja.ZAVRSENO, pr.getId()));
+            assertEquals(List.of(), service.lista(prva.id() + 1_000_000, null, pr.getId()));
+            assertEquals(List.of(), service.lista(null, null, Long.MAX_VALUE));
+            assertTrue(service.lista(null, null, null).stream().map(IzvodjenjeInfo::id).toList().containsAll(List.of(uPredavanju, bezPredavanja)));
+
+            k(uPredavanju, TipKomande.ZAVRSI);
+            assertEquals(List.of(uPredavanju), service.lista(null, StatusIzvodjenja.ZAVRSENO, pr.getId()).stream().map(IzvodjenjeInfo::id).toList());
+        } finally {
+            for (Long id : List.of(prva.id(), druga.id())) {
+                jdbc.update("update izvodjenja set status = 'ZAVRSENO', aktivan_kod = null where prezentacija_id = ?", id);
+                prezentacijaService.obrisi(id);
+            }
+            prezentacije.removeAll(List.of(prva.id(), druga.id()));
+            predavanjeRepository.deleteById(pr.getId());
+        }
     }
 
     @Test

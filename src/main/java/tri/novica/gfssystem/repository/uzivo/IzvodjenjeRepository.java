@@ -27,13 +27,15 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
             where i.id = :id""")
     Optional<Izvodjenje> findSaVezama(@Param("id") Long id);
 
-    /** Lista izvođenja (oba filtra opciona), najnovija prva, sa prezentacijom, grupom i predavanjem. */
+    /** Lista izvođenja (svi filteri opcioni), najnovija prva, sa prezentacijom, grupom i predavanjem. */
     @Query("""
             select i from Izvodjenje i join fetch i.prezentacija left join fetch i.grupa left join fetch i.predavanje
             where (:prezentacijaId is null or i.prezentacija.id = :prezentacijaId)
               and (:status is null or i.status = :status)
+              and (:predavanjeId is null or i.predavanje.id = :predavanjeId)
             order by i.pocetak desc, i.id desc""")
-    List<Izvodjenje> findZaListu(@Param("prezentacijaId") Long prezentacijaId, @Param("status") StatusIzvodjenja status);
+    List<Izvodjenje> findZaListu(@Param("prezentacijaId") Long prezentacijaId, @Param("status") StatusIzvodjenja status,
+                                 @Param("predavanjeId") Long predavanjeId);
 
     Optional<Izvodjenje> findByAktivanKod(String kod);
 
