@@ -241,7 +241,7 @@ class BankaAlatiCitanjeDbTest extends McpDbTestOsnova {
         assertEquals(3, varijante.size(), varijante.toString());
         Map<Long, JsonNode> poId = new HashMap<>();
         varijante.forEach(v -> poId.put(v.path("id").asLong(), v));
-        assertEquals(Set.of("id", "naziv", "status", "izvor", "renderStatus", "zamenjuje"),
+        assertEquals(Set.of("id", "naziv", "status", "izvor", "renderStatus", "zamenjuje", "nivo"),
                 new TreeSet<>(poId.get(aktivna).propertyNames()));
         assertEquals("AKTIVNA", poId.get(aktivna).path("status").asString());
         assertEquals("RUCNO", poId.get(aktivna).path("izvor").asString());
@@ -274,7 +274,7 @@ class BankaAlatiCitanjeDbTest extends McpDbTestOsnova {
 
         JsonNode v = McpTestKlijent.json(r);
         assertEquals(Set.of("id", "grupaId", "putanja", "namena", "naziv", "tekst", "resenje", "odgovori", "polja",
-                "prilozi", "status", "izvor", "ikadOdobrena", "zamenjuje", "serija", "renderStatus", "renderGreska",
+                "prilozi", "status", "izvor", "ikadOdobrena", "zamenjuje", "serija", "nivo", "renderStatus", "renderGreska",
                 "renderDeo", "izmenjeno", "link"), new TreeSet<>(v.propertyNames()));
         assertEquals(claudeNacrt, v.path("id").asLong());
         assertEquals(list.id(), v.path("grupaId").asLong());
@@ -404,7 +404,7 @@ class BankaAlatiCitanjeDbTest extends McpDbTestOsnova {
         Set<String> obavezno = new TreeSet<>();
         sema.path("required").forEach(n -> obavezno.add(n.asString()));
         assertEquals(Set.of("predmetId"), obavezno, sema.toString());
-        assertEquals(Set.of("predmetId", "q", "namena", "status", "izvor", "serija", "strana"),
+        assertEquals(Set.of("predmetId", "q", "namena", "status", "izvor", "serija", "nivo", "strana"),
                 new TreeSet<>(sema.path("properties").propertyNames()));
     }
 

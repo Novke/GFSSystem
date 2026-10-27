@@ -11,6 +11,7 @@ import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.Opis;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.StabloPredavanja;
+import tri.novica.gfssystem.utility.Nivo;
 
 import java.util.*;
 
@@ -21,7 +22,8 @@ import java.util.*;
  * sve Zadatak slajdove, i uopšte samo kad ima ZADATAK slajda sa grupom. Samo čitanje.
  * <p>
  * Upozorenja, ovim redom: {@value #OBRISANA} (samo ono, kad grupe nema), {@value #ISKLJUCENA_TEMA} (čvor ili predak),
- * {@value #BEZ_AKTIVNIH} (nula kandidata), pa spisak isključenih podgrupa. Grupa koje nema u stablu PREDAVANJE predmeta
+ * {@value #BEZ_AKTIVNIH} (nula kandidata) ili {@value #BEZ_AKTIVNIH_NIVOA} (ima kandidata, ali nijednog nivoa slajda), pa
+ * spisak isključenih podgrupa. Grupa koje nema u stablu PREDAVANJE predmeta
  * (obrisana, ili iz drugog predmeta ili namene TEST) računa se kao obrisana: slajd je bez upotrebljive grupe.
  */
 @Service
@@ -33,6 +35,9 @@ public class ZadaciSlajdova {
     static final String ISKLJUCENA_TEMA = "Tema je isključena.";
     static final String BEZ_AKTIVNIH = "Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa.";
     static final String ISKLJUCENE_PODGRUPE = "Isključene podgrupe se ne izvlače: ";
+    /** {@code %s} = nivo kao zvezdice ({@code Nivo.oznaka}). */
+    static final String BEZ_AKTIVNIH_NIVOA = "Nema aktivnih varijanti nivoa %s; odobri nacrte ili izaberi drugi nivo.";
+    private static final List<Integer> BEZ_KANDIDATA = List.of(0, 0, 0);
 
     private final KandidatiZadatka kandidati;
 
@@ -68,22 +73,25 @@ public class ZadaciSlajdova {
         GrupaZadataka grupa = s.getGrupaZadataka();
         Opis opis = grupa == null || stablo == null ? null : stablo.opis(grupa.getId());
         if (opis == null) {
-            return new ZadatakSlajdaInfo(null, s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), null, List.of(),
-                    false, 0, null, false, List.of(), List.of(OBRISANA));
+            return new ZadatakSlajdaInfo(null, s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), s.getZadatakNivo(),
+                    null, List.of(), false, 0, BEZ_KANDIDATA, null, false, List.of(), List.of(OBRISANA));
         }
         List<String> upozorenja = new ArrayList<>();
         if (opis.iskljucena()) {
             upozorenja.add(ISKLJUCENA_TEMA);
         }
+        Integer nivo = s.getZadatakNivo();
         if (opis.brojKandidata() == 0) {
             upozorenja.add(BEZ_AKTIVNIH);
+        } else if (opis.brojKandidata(nivo) == 0) {
+            upozorenja.add(BEZ_AKTIVNIH_NIVOA.formatted(Nivo.oznaka(nivo)));
         }
         if (!opis.iskljucenePodgrupe().isEmpty()) {
             upozorenja.add(ISKLJUCENE_PODGRUPE
                     + String.join(", ", opis.iskljucenePodgrupe().stream().map(GrupaPutanja::naziv).toList()) + ".");
         }
-        return new ZadatakSlajdaInfo(opis.grupaId(), s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), opis.naziv(),
-                opis.putanja(), opis.list(), opis.brojKandidata(), opis.polja(), opis.iskljucena(),
-                opis.iskljucenePodgrupe(), List.copyOf(upozorenja));
+        return new ZadatakSlajdaInfo(opis.grupaId(), s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), nivo,
+                opis.naziv(), opis.putanja(), opis.list(), opis.brojKandidata(nivo), opis.poNivou(), opis.polja(),
+                opis.iskljucena(), opis.iskljucenePodgrupe(), List.copyOf(upozorenja));
     }
 }

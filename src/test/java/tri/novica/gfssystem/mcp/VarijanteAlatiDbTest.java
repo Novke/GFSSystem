@@ -221,7 +221,7 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
 
     Map<String, Object> napravi(GrupaDetails grupa, Object... dodatno) {
         Map<String, Object> m = mapa("serija", serija, "grupaId", grupa.id(), "naziv", "Zbirka 1.2", "tekst", TEKST,
-                "resenje", RESENJE, "odgovori", ODGOVORI);
+                "resenje", RESENJE, "odgovori", ODGOVORI, "nivo", 2);
         m.putAll(mapa(dodatno));
         return m;
     }
@@ -593,5 +593,78 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
         verify(budzet, never()).trosiPravljenje(anyString(), anyInt());
 
         ocekujGresku("proba_rendera", mapa("tekst", TEKST), "Predmet je obavezan.");
+    }
+
+    // ---------------------------------------------------------------- nivo
+
+    int nivo(Long varijantaId) {
+        return jdbc.queryForObject("select nivo from varijante where id = ?", Integer.class, varijantaId);
+    }
+
+    @Test
+    void napraviTraziNivoCeoBrojOdJedanDoTri() {
+        int pre = brojVarijanti();
+        Map<String, Object> bez = napravi(list);
+        bez.remove("nivo");
+        ocekujGresku("napravi_varijantu", bez, "Nivo je obavezan (1 do 3).");
+        ocekujGresku("napravi_varijantu", napravi(list, "nivo", 4), "Nivo mora biti od 1 do 3.");
+        ocekujGresku("napravi_varijantu", napravi(list, "nivo", 2.5), "Neispravan format podataka.");
+        ocekujGresku("napravi_varijantu", napravi(list, "nivo", "2"), "Neispravan format podataka.");
+        assertEquals(pre, brojVarijanti());
+
+        JsonNode r = McpTestKlijent.json(uspeh("napravi_varijantu", napravi(list, "nivo", 3, "slika", false)));
+        assertEquals(3, r.path("varijanta").path("nivo").asInt());
+        assertEquals(3, nivo(r.path("varijanta").path("id").asLong()));
+    }
+
+    @Test
+    void samoNivoMenjaSopstveniNacrtNaMestuATudjiJe409() {
+        Long id = klodovNacrt(list, TEKST, RESENJE);
+        int pre = brojVarijanti();
+        clearInvocations(latexRender);
+
+        JsonNode u = McpTestKlijent.json(uspeh("izmeni_varijantu",
+                mapa("serija", serija, "varijantaId", id, "nivo", 1, "slika", false)));
+        assertEquals("izmenjena", u.path("radnja").asString());
+        assertEquals(1, u.path("varijanta").path("nivo").asInt());
+        assertEquals(1, nivo(id));
+        verify(latexRender, never()).renderuj(anyList(), anyString(), anyList());
+        verify(latexRender, never()).renderuj(anyString(), anyString(), anyList());
+
+        ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", rucna, "nivo", 3),
+                "Nivo odobrene ili Novicine varijante menja Novica u banci.");
+        ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "nivo", null),
+                "Polje 'nivo' se ne briše.");
+        ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "nivo", 0),
+                "Nivo mora biti od 1 do 3.");
+        assertEquals(2, nivo(rucna));
+        assertEquals(1, nivo(id));
+        assertEquals(pre, brojVarijanti(), "samo nivo nikad ne pravi kopiju");
+        verify(budzet, never()).trosiPravljenje(anyString(), anyInt());
+    }
+
+    @Test
+    void kopijaNoviceineVarijanteNosiNoviIliStariNivo() {
+        varijantaService.promeniNivo(rucna, 3);
+        JsonNode stari = McpTestKlijent.json(uspeh("izmeni_varijantu",
+                mapa("serija", serija, "varijantaId", rucna, "tekst", NOVI_TEKST, "slika", false)));
+        assertEquals("kopija", stari.path("radnja").asString());
+        assertEquals(3, stari.path("varijanta").path("nivo").asInt(), "kopija nasleđuje nivo originala");
+
+        JsonNode novi = McpTestKlijent.json(uspeh("izmeni_varijantu",
+                mapa("serija", serija, "varijantaId", rucna, "tekst", NOVI_TEKST + " ", "nivo", 1, "slika", false)));
+        assertEquals(1, novi.path("varijanta").path("nivo").asInt());
+        assertEquals(3, nivo(rucna), "original netaknut");
+    }
+
+    @Test
+    void pretragaFiltriraPoNivou() {
+        Long id = klodovNacrt(list, TEKST, RESENJE);
+        varijantaService.promeniNivo(id, 1);
+        JsonNode r = McpTestKlijent.json(uspeh("pretraga_banke", mapa("predmetId", predmet.getId(), "nivo", 1)));
+        List<Long> ids = new ArrayList<>();
+        r.path("stavke").forEach(st -> ids.add(st.path("varijantaId").asLong()));
+        assertEquals(List.of(id), ids, r.toString());
+        assertEquals(1, r.path("stavke").get(0).path("nivo").asInt());
     }
 }

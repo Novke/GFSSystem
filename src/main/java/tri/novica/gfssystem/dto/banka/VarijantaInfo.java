@@ -11,8 +11,9 @@ import java.time.LocalDateTime;
  * rendera ({@code api/public/mediji/{id}}); posle neuspelog rendera ostaju stari dok novi ne uspe. {@code ikadOdobrena}:
  * bila je bar jednom odobrena (vraćanje u nacrt to ne briše); {@code zamenjuje} je id originala koji ova kopija
  * zamenjuje (odobrenje kopije ga arhivira), {@code serija} Klodova serija upisa; oba {@code null} za ručno unete.
+ * {@code nivo} 1-3 (lakša, srednja, teža unutar tipa).
  */
 public record VarijantaInfo(Long id, Long grupaId, int rb, String naziv, StatusVarijante status, IzvorVarijante izvor,
                             RenderStatus renderStatus, String svgId, String resenjeSvgId, LocalDateTime izmenjeno,
-                            boolean ikadOdobrena, Long zamenjuje, String serija) {
+                            boolean ikadOdobrena, Long zamenjuje, String serija, int nivo) {
 }

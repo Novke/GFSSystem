@@ -1163,16 +1163,16 @@ class IzvodjenjeServiceTest {
     // ---------------------------------------------------------------- 11. svaka komanda zaključava i objavljuje
 
     @ParameterizedTest
-    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI"},
+    @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI", "NIVO"},
             mode = EnumSource.Mode.EXCLUDE)
     void svakaKomandaZakljucavaObjavljujeIVracaStanje(TipKomande tip) {
         doS2Zatvoreno();
         proveriKomandu(tip);
     }
 
-    /** RESENJE (zatvorena runda sa rešenjem) i BROJ_VARIJANTI (CEKA) važe samo na Zadatak slajdu (S4 posle S3). */
+    /** RESENJE (zatvorena runda sa rešenjem), BROJ_VARIJANTI i NIVO (CEKA) važe samo na Zadatak slajdu (S4 posle S3). */
     @ParameterizedTest
-    @EnumSource(value = TipKomande.class, names = {"RESENJE", "BROJ_VARIJANTI"})
+    @EnumSource(value = TipKomande.class, names = {"RESENJE", "BROJ_VARIJANTI", "NIVO"})
     void zadatakKomandeZakljucavajuIObjavljuju(TipKomande tip) {
         Slajd z = new Slajd();
         z.setId(14L);
@@ -1180,7 +1180,7 @@ class IzvodjenjeServiceTest {
         z.setTip(TipSlajda.ZADATAK);
         z.setPrezentacija(prez);
         slajdovi.add(z);
-        when(zadatakDodelaService.snimak(z, null)).thenReturn(new ZadatakSnimak(14L, 3L, "K",
+        when(zadatakDodelaService.snimak(z, null, null)).thenReturn(new ZadatakSnimak(14L, 3L, "K",
                 List.of(new GrupaPutanja(3L, "K")), null,
                 List.of(new VarijantaSnimak(31L, "V1", 3L, "svg-31", "resenje-31", List.of(), Map.of()))));
         idiNa(3);

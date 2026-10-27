@@ -1,4 +1,4 @@
--- V15: kanonski indeks, telefoni u E.164 i vrsta koda za prijavu (grana feature/prijava-indeks-mejl).
+-- V16: kanonski indeks, telefoni u E.164 i vrsta koda za prijavu (grana feature/prijava-indeks-mejl).
 -- Broj verzije je privremen do merge-a u staging (sledeći slobodan na origin/staging; pre merge-a proveriti).
 -- Sve je idempotentno (ponovno izvršavanje ne menja ništa) i aditivno za prethodnu sliku: ona i dalje čita indeks i
 -- telefon kao tekst, a novu kolonu ne mapira (DEFAULT 'MEJL' pokriva njene upise).

@@ -256,7 +256,7 @@ class VarijantaServiceTest {
         assertEquals(List.of(), service.lista(grupa.getId(), StatusVarijante.AKTIVNA));
         VarijantaInfo info = service.lista(grupa.getId(), StatusVarijante.NACRT).get(0);
         assertEquals(new VarijantaInfo(d.id(), grupa.getId(), 1, "V1", StatusVarijante.NACRT, IzvorVarijante.RUCNO,
-                RenderStatus.OK, "svg-1", "svg-2", SADA, false, null, null), info);
+                RenderStatus.OK, "svg-1", "svg-2", SADA, false, null, null, 2), info);
     }
 
     @Test
@@ -1052,5 +1052,48 @@ class VarijantaServiceTest {
         when(latexRender.renderuj(eq("svg"), contains("Spora."), anyList())).thenThrow(new RenderNedostupan());
         ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
         ocekujGresku(503, "Render servis nije dostupan.", () -> service.renderujSve(7L));
+    }
+
+    // ---------------------------------------------------------------- nivo varijante
+
+    static VarijantaCmd cmdNivo(String tekst, Integer nivo) {
+        return new VarijantaCmd("V1", tekst, "$11$", ODGOVOR_A, List.of(), null, nivo);
+    }
+
+    @Test
+    void kreiranjeCuvaNivoIliPodrazumevaDva() {
+        assertEquals(3, service.kreiraj(grupa.getId(), cmdNivo("Pretvori 1011.", 3)).nivo());
+        assertEquals(2, service.kreiraj(grupa.getId(), cmd("Pretvori 1100.")).nivo());
+        ocekujGresku(400, "Nivo mora biti od 1 do 3.", () -> service.kreiraj(grupa.getId(), cmdNivo("Tekst.", 4)));
+        ocekujGresku(400, "Nivo mora biti od 1 do 3.", () -> service.kreiraj(grupa.getId(), cmdNivo("Tekst.", 0)));
+    }
+
+    @Test
+    void promenaNivoaNeRenderujeINeMenjaStatusNiSvg() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmd("Pretvori 1011."));
+        service.odobri(d.id());
+        String hes = varijanta(d.id()).getRenderHash();
+        clearInvocations(latexRender, medijService);
+
+        VarijantaDetails n = service.promeniNivo(d.id(), 1);
+
+        assertEquals(1, n.nivo());
+        assertEquals(StatusVarijante.AKTIVNA, n.status());
+        assertEquals(d.svgId(), n.svgId());
+        assertEquals(d.resenjeSvgId(), n.resenjeSvgId());
+        assertEquals(hes, varijanta(d.id()).getRenderHash());
+        verifyNoInteractions(latexRender, medijService);
+        ocekujGresku(400, "Nivo mora biti od 1 do 3.", () -> service.promeniNivo(d.id(), null));
+        ocekujGresku(400, "Nivo mora biti od 1 do 3.", () -> service.promeniNivo(d.id(), 5));
+        assertEquals(1, varijanta(d.id()).getNivo());
+    }
+
+    @Test
+    void izmenaPutomNeMenjaNivoADuplikatGaPrepisuje() {
+        VarijantaDetails d = service.kreiraj(grupa.getId(), cmdNivo("Pretvori 1011.", 3));
+        // stari front šalje PUT bez nivoa, novi ga šalje: PUT ga ignoriše u oba slučaja
+        assertEquals(3, service.izmeni(d.id(), cmd("Pretvori 1100.")).nivo());
+        assertEquals(3, service.izmeni(d.id(), cmdNivo("Pretvori 1110.", 1)).nivo());
+        assertEquals(3, service.dupliraj(d.id()).nivo());
     }
 }

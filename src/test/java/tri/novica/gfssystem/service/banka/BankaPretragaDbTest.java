@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.service.banka;
 
+import tri.novica.gfssystem.exceptions.SystemException;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -209,7 +210,7 @@ class BankaPretragaDbTest {
         var podrazumevano = PageableUtil.proveri(PageRequest.of(0, 25), BankaPretragaService.SORT_POLJA,
                 BankaPretragaService.PODRAZUMEVANI_SORT);
         assertEquals(List.of(v3.getId(), v2.getId(), v1.getId()), ids(service.pretraga(filter(null), podrazumevano)));
-        assertEquals(Set.of("izmenjeno", "naziv"), BankaPretragaService.SORT_POLJA);
+        assertEquals(Set.of("izmenjeno", "naziv", "nivo"), BankaPretragaService.SORT_POLJA);
 
         // isto vreme izmene: id opadajuce
         jdbc.update("update varijante set izmenjeno = ? where id in (?, ?)", T0, v1.getId(), v2.getId());
@@ -318,5 +319,24 @@ class BankaPretragaDbTest {
         m.setKreirano(T0);
         mediji.add(m.getId());
         return medijRepository.save(m);
+    }
+
+    @Test
+    void nivoFiltriraISortiraUzStavku() {
+        v1.setNivo(1);
+        v3.setNivo(3);
+        varijantaRepository.saveAll(List.of(v1, v3));   // v2 ostaje na podrazumevanom 2
+
+        assertEquals(List.of(v3.getId()),
+                ids(service.pretraga(new BankaFilter(predmet.getId(), null, null, null, null, null, 3), PRVIH_25)));
+        assertEquals(List.of(v2.getId()),
+                ids(service.pretraga(new BankaFilter(predmet.getId(), null, null, null, null, null, 2), PRVIH_25)));
+        PagedModel<BankaPretragaStavka> poNivou = service.pretraga(filter(null),
+                PageRequest.of(0, 25, Sort.by(Sort.Order.asc("nivo"), Sort.Order.desc("id"))));
+        assertEquals(List.of(v1.getId(), v2.getId(), v3.getId()), ids(poNivou));
+        assertEquals(List.of(1, 2, 3), poNivou.getContent().stream().map(BankaPretragaStavka::nivo).toList());
+        SystemException e = assertThrows(SystemException.class,
+                () -> new BankaFilter(predmet.getId(), null, null, null, null, null, 4));
+        assertEquals("Nivo mora biti od 1 do 3.", e.getMessage());
     }
 }

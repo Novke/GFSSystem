@@ -126,14 +126,14 @@ class McpKrajNaKrajDbTest extends McpDbTestOsnova {
         // napravi_varijantu: dva Klodova nacrta; Novica jedan odobri u UI-ju
         JsonNode prva = uspeh("napravi_varijantu", mapa("serija", serija, "grupaId", grupaId, "naziv", "Zbirka 1.1",
                 "tekst", "Pretvori $1A_{(16)}$ u dekadni.", "resenje", "Rešenje: $26$.", "odgovori",
-                Map.of("a", Map.of("broj", 26))));
+                Map.of("a", Map.of("broj", 26)), "nivo", 1));
         assertEquals("nova", prva.path("radnja").asString());
         assertEquals(LINK + "/banka/pregled?serija=" + serija, prva.path("linkPregleda").asString());
         Long nacrt = prva.path("varijanta").path("id").asLong();
         assertEquals("NACRT", prva.path("varijanta").path("status").asString());
         assertEquals("CLAUDE", prva.path("varijanta").path("izvor").asString());
         Long odobrena = uspeh("napravi_varijantu", mapa("serija", serija, "grupaId", grupaId, "naziv", "Zbirka 1.2",
-                "tekst", "Pretvori $FF_{(16)}$ u dekadni.", "odgovori", Map.of("a", Map.of("broj", 255))))
+                "tekst", "Pretvori $FF_{(16)}$ u dekadni.", "odgovori", Map.of("a", Map.of("broj", 255)), "nivo", 3))
                 .path("varijanta").path("id").asLong();
         varijantaService.odobri(odobrena);
 

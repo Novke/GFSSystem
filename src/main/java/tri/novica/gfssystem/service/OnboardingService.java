@@ -266,7 +266,7 @@ public class OnboardingService {
         student.setIme(prijava.getIme());
         student.setPrezime(prijava.getPrezime());
         student.setGodina(prijava.getGodina());
-        // prijava podneta pre kanonskog oblika (V15) još može da nosi stari zapis
+        // prijava podneta pre kanonskog oblika (V16) još može da nosi stari zapis
         student.setIndeks(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()));
         String e164 = Telefon.uE164(prijava.getBrojTelefona());
         student.setBrojTelefona(e164 != null ? e164 : prijava.getBrojTelefona());

@@ -24,16 +24,18 @@ public class BankaPretragaRest {
 
     /**
      * Lista varijanti: filteri su opcioni, {@code q} (bar 2 znaka, 400 inače) se traži u nazivu i tekstu varijante i u
-     * nazivu grupe, {@code izvor} je izvor varijante, {@code serija} Klodova serija (van obrasca 400); {@code page}/{@code size}
-     * (podrazumevano 25, najviše 100) i {@code sort} po {@code izmenjeno} ili {@code naziv} (podrazumevano {@code izmenjeno,desc}).
+     * nazivu grupe, {@code izvor} je izvor varijante, {@code serija} Klodova serija (van obrasca 400), {@code nivo} nivo
+     * varijante (1-3, inače 400); {@code page}/{@code size} (podrazumevano 25, najviše 100) i {@code sort} po
+     * {@code izmenjeno}, {@code naziv} ili {@code nivo} (podrazumevano {@code izmenjeno,desc}).
      */
     @GetMapping("/pretraga")
     @ResponseStatus(HttpStatus.OK)
     public PagedModel<BankaPretragaStavka> pretraga(@RequestParam(required = false) Long predmetId,
             @RequestParam(required = false) Namena namena, @RequestParam(required = false) String q,
             @RequestParam(required = false) StatusVarijante status, @RequestParam(required = false) IzvorVarijante izvor,
-            @RequestParam(required = false) String serija, Pageable pageable) {
-        return pretragaService.pretraga(new BankaFilter(predmetId, namena, q, status, izvor, serija),
+            @RequestParam(required = false) String serija, @RequestParam(required = false) Integer nivo,
+            Pageable pageable) {
+        return pretragaService.pretraga(new BankaFilter(predmetId, namena, q, status, izvor, serija, nivo),
                 PageableUtil.proveri(pageable, BankaPretragaService.SORT_POLJA, BankaPretragaService.PODRAZUMEVANI_SORT));
     }
 }

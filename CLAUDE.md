@@ -91,7 +91,7 @@ the public form, the teacher accepts or rejects (`OnboardingRest`, `/onboarding/
 - **Phone numbers are E.164** (`utility/Telefon.uE164`): `+...` kept, `00...` -> `+...`, a leading `0` -> `+381` (Serbia), `381` + 8-10 digits
   -> `+381...`; spaces, dashes, dots, slashes and parentheses ignored; anything else is 400 `Broj telefona nije ispravan. ...`. Applied by
   `PrijavaPP` (public form and the teacher's edit of a submission) and `StudentService` (manual add/edit; an unchanged legacy value is kept
-  so an old record can still be edited). The vCard export still goes through `Telefon.uMedjunarodni`, which passes E.164 through. V15
+  so an old record can still be edited). The vCard export still goes through `Telefon.uMedjunarodni`, which passes E.164 through. V16
   normalizes only the unambiguous stored forms (see "Database").
 - **Concurrency:** every change to a session (submit, accept, reject, accept-all, edit, `PATCH`) first locks the session
   row (`findByTokenForUpdate` / `findByIdForUpdate`, `PESSIMISTIC_WRITE`) inside the same `@Transactional` method.
@@ -223,7 +223,22 @@ group's schema, the console and projector show results per variant and, on `Shif
   least-assigned variant. Opening locks the node's candidates after the run row (`VarijantaRepository.zakljucajKandidate`, ascending
   ids) and draws only those still AKTIVNE, so a variant deleted while the round opens never enters the snapshot (lock order run ->
   variants; deletion takes group -> variants and never the run, so no cycle).
-- **Commands:** `BROJ_VARIJANTI` (only on a ZADATAK slide in CEKA; `null` = as on the slide, `0` = all, `1..50`; cleared on slide
+- **Variant level (`nivo`, V15; spec `docs/superpowers/specs/2026-10-21-nivo-varijante-design.md` in the wrapper repo):** `Varijanta.nivo`
+  1-3 (`utility/Nivo`: bounds, default 2, 400 `Nivo mora biti od 1 do 3.`) says how hard a variant is inside its type; it is not the group's
+  `tezina` 1-5 ("Težina tipa"). REST: `VarijantaCmd.nivo` on `POST` (absent = 2), **ignored on `PUT`** (an old front must not reset it),
+  `PATCH /banka/varijante/{id}/nivo` (`NivoCmd`, strict like `PragProlazaCmd`; no render, no status change, also on approved variants),
+  `nivo` in `VarijantaInfo`/`VarijantaDetails`/`BankaPretragaStavka`, filter and sort field `nivo` in `GET /banka/pretraga`; copies (duplicate, Claude's
+  copy, `KopijaGrupeService`) keep it. Slide `ZadatakSlajda.nivo` (`slajdovi.zadatak_nivo`, null = all levels); `ZadatakSlajdaInfo.brojAktivnihVarijanti`
+  counts the slide's level and `brojAktivnihPoNivou` holds exactly three counts (levels 1, 2, 3) so the console can show the count for its own choice;
+  warning `Nema aktivnih varijanti nivoa ★★★; odobri nacrte ili izaberi drugi nivo.`. Drawing (`KandidatiZadatka.kandidati(id, nivo)`) keeps only that
+  level (counts come from one aggregate query grouped by group and level, `VarijantaRepository.aktivneSaSvgPoGrupiINivou`), so **every student of a round gets the same level**; none is 409
+  `Grupa nema aktivnih varijanti nivoa ★★★.`. The round snapshot carries `nivo` (`ZadatakSnimak`, `VarijantaSnimak`), and so do `NastavnickiZadatak`
+  (`izmenaNivoa`, `nivoZaOtvaranje`), `VarijantaRunde` and `PregledZadatka` (`nivo`, `nivoi`); phones (`JavnoStanje`, `LicnoStanje`, `PocetnoStanje`) and
+  the projector's `javniRezultat` never do (`ZadatakStanjeTest.nivoVidiSamoKonzola`). MCP: `napravi_varijantu` requires `nivo` (facade, 400
+  `Nivo je obavezan (1 do 3).` before the budget); a level-only `izmeni_varijantu` changes Claude's own unapproved draft in place and is 409
+  `Nivo odobrene ili Novicine varijante menja Novica u banci.` on any other variant (never a copy, no budget); `pretraga_banke` filters by `nivo`.
+- **Commands:** `NIVO` (only on a ZADATAK slide in CEKA, `Izvodjenje.zadatakNivo`: `null` = as on the slide, `0` = all levels, `1..3`; 409 `Nivo se menja
+  pre otvaranja.` after opening; holds for the next opening and `PONOVI`, cleared on slide change, `TokIzvodjenja.nivo`), `BROJ_VARIJANTI` (only on a ZADATAK slide in CEKA; `null` = as on the slide, `0` = all, `1..50`; cleared on slide
   change) and `RESENJE` (toggle; on needs a closed round and at least one variant with a solution). `TACAN` on a paper-only task
   (no fields) is 409.
 - **Answers** (`OdgovorService` + `OcenaZadatka`): STOMP `polja` (`kljuc -> string` for BROJ/TEKST, list of option ids for
@@ -709,7 +724,7 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
   - **CORS exemption:** a launch is a cross-site `form_post` carrying `Origin: https://moodle...`, which the chain's `CorsFilter` and the MVC CORS mapping
     (`gfs.front.url` only) would reject with 403. `CorsConfig.bezLti` returns no CORS configuration for `ProveraPoreklaFilter.LTI_IZUZECI` (login and launch only), in the chain
     and in MVC; every other path is unchanged. The two are protected by `state`, `nonce` and `__Host-gfs_lti` instead of an origin check.
-- **Index in three parts: (index, year)** (branch `feature/prijava-indeks-mejl`, `V15__indeks_telefon_kod.sql`): an index number repeats every
+- **Index in three parts: (index, year)** (branch `feature/prijava-indeks-mejl`, `V16__indeks_telefon_kod.sql`): an index number repeats every
   generation, so a student is the pair (canonical index, `studenti.godina`) and is **never** "the newest generation". `utility/IndeksUtil`:
   `SMEROVI = ["GD"]` (the only study programme the forms offer; same list in the front `shared/util/indeks.ts`), `kanonski(indeks, godina)` =
   normalized, a `/YYYY` suffix equal to `godina` stripped, leading zeros of the number dropped (`gd 05/2026` + 2026 -> `GD5`),
@@ -724,7 +739,7 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
 - **Dictated code (plan C):** `POST /studenti/{id}/nalog/kod-za-diktiranje` (ADMIN, in the access snapshot, never under `/public/**`) returns
   `KodZaDiktiranjeInfo {kod, istice, indeks, godina, upozorenje}` once with `Cache-Control: no-store`, sends no mail, works for a student
   without mail and without SMTP, 60/h in total (`VrstaPokusaja.KOD_DIKTIRAN`, 429), 404 for an unknown id. Same table, hash, 10 minutes,
-  5 wrong tries and single use as the mail code; column `kodovi_za_prijavu.nacin` (`NacinKoda` `MEJL`|`NASTAVNIK`, V15, default `MEJL`).
+  5 wrong tries and single use as the mail code; column `kodovi_za_prijavu.nacin` (`NacinKoda` `MEJL`|`NASTAVNIK`, V16, default `MEJL`).
   **Relation to the mail code:** a new code voids only active codes of the **same** `nacin`, so "Pošalji ponovo" on the phone never kills a
   code the teacher just dictated (and a new dictated code does not kill the mailed one); a sign-in checks every active code of the student,
   marks the hit one used and voids all others; a wrong entry counts against every active code. Issuing resolves the student's open
@@ -797,11 +812,13 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `zamenjuje_id` and `serija` on variants, `serija` on presentations and slides, table `iskljucene_teme`; see "MCP za Claude-a"),
   idempotent. `V13` = slide Zadatak (`slajdovi` group/timer/count, `izvodjenja.boduje`/`resenje_prikazano`/`zadatak_broj_varijanti`,
   `ucesnici.student_id`, `odgovori.polja`/`varijanta_id`, table `zadatak_dodele`; see "Zadatak slide"), idempotent. `V14` = prijava
-  (`V14__prijava.sql`). `V15` = index, phone and code kind (`V15__indeks_telefon_kod.sql`, branch `feature/prijava-indeks-mejl`;
-  re-check the number against `origin/staging` right before the merge): `kodovi_za_prijavu.nacin` (`NOT NULL DEFAULT 'MEJL'`); strips a `/YYYY`
-  suffix from `studenti.indeks` when it equals `godina` and the short form collides with no other row of that year; phones of `studenti` and
-  `prijave` to E.164 only for unambiguous forms (`+...` without separators, `00...`, `0` + 7-10 digits -> `+381`, `381` + 8-10 digits), the
-  rest stays as typed; all idempotent and additive (an older image reads the text columns unchanged). **Next free version: `V16`**.
+  (`V14__prijava.sql`). `V15` = nivo varijante (`V15__nivo_varijante.sql`: `varijante.nivo` `tinyint NOT NULL DEFAULT 2`, nullable
+  `slajdovi.zadatak_nivo` and `izvodjenja.zadatak_nivo`; see "Variant level"), idempotent. `V16` = index, phone and code kind
+  (`V16__indeks_telefon_kod.sql`, branch `feature/prijava-indeks-mejl`; re-check the number against `origin/staging` right before the merge):
+  `kodovi_za_prijavu.nacin` (`NOT NULL DEFAULT 'MEJL'`); strips a `/YYYY` suffix from `studenti.indeks` when it equals `godina` and the short form
+  collides with no other row of that year; phones of `studenti` and `prijave` to E.164 only for unambiguous forms (`+...` without separators, `00...`,
+  `0` + 7-10 digits -> `+381`, `381` + 8-10 digits), the rest stays as typed; all idempotent and additive (an older image reads the text columns
+  unchanged). **Next free version: `V17`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

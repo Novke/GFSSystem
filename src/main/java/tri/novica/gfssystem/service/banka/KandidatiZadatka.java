@@ -12,6 +12,7 @@ import tri.novica.gfssystem.entity.banka.Varijanta;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
 import tri.novica.gfssystem.repository.banka.IskljucenaTemaRepository;
 import tri.novica.gfssystem.repository.banka.VarijantaRepository;
+import tri.novica.gfssystem.utility.Nivo;
 
 import java.util.*;
 
@@ -20,7 +21,7 @@ import java.util.*;
  * temama i AKTIVNE varijante sa SVG-om u listovima koje čvor obuhvata. Isti izvor koristi opis Zadatak slajda u editoru,
  * konzoli i MCP-u ({@code ZadaciSlajdova}), izvlačenje pri otvaranju runde ({@code ZadatakDodelaService}) i budući "novi rok".
  * <p>
- * {@link #stablo} čita celo stablo u tri upita (grupe, brojači kandidata po grupi, teme), a {@link StabloPredavanja#opis}
+ * {@link #stablo} čita celo stablo u tri upita (grupe, brojači kandidata po grupi i nivou, teme), a {@link StabloPredavanja#opis}
  * posle toga radi u memoriji, pa batch opis više slajdova košta jedno stablo. {@link #kandidati} dodaje jedan upit za
  * same varijante. Samo čitanje; ne zaključava ništa.
  * <p>
@@ -43,15 +44,22 @@ public class KandidatiZadatka {
      * Opis grupe u stablu PREDAVANJE. {@code list}: grupa nema podgrupa. {@code polja}: šema kad je grupa list, inače
      * {@code null} (prazna lista = rad na papiru). {@code iskljucena}: grupa ili neki njen predak ima sopstvenu temu.
      * {@code listovi}: id-jevi listova koje grupa obuhvata, redom stabla (grupa koja je list daje sebe). {@code
-     * brojKandidata}: AKTIVNE varijante sa SVG-om u tim listovima.
+     * brojKandidata}: AKTIVNE varijante sa SVG-om u tim listovima, {@code poNivou} isto po nivou (tačno tri broja, za nivo 1,
+     * 2 i 3).
      */
     public record Opis(Long grupaId, String naziv, List<GrupaPutanja> putanja, boolean list, List<Polje> polja,
-                       boolean iskljucena, List<GrupaPutanja> iskljucenePodgrupe, List<Long> listovi, int brojKandidata) {
+                       boolean iskljucena, List<GrupaPutanja> iskljucenePodgrupe, List<Long> listovi, int brojKandidata,
+                       List<Integer> poNivou) {
+
+        /** Kandidati nivoa {@code nivo} (1-3); {@code null} = svi nivoi ({@link #brojKandidata}). */
+        public int brojKandidata(Integer nivo) {
+            return nivo == null ? brojKandidata : poNivou.get(nivo - 1);
+        }
     }
 
     /** Aktivna varijanta sa SVG-om: slike su id-jevi medija, {@code polja} šema njenog lista, {@code odgovori} tačne vrednosti. */
     public record KandidatVarijante(Long varijantaId, Long grupaId, String naziv, String svgId, String resenjeSvgId,
-                                    List<Polje> polja, Map<String, OdgovorPolja> odgovori) {
+                                    List<Polje> polja, Map<String, OdgovorPolja> odgovori, int nivo) {
     }
 
     /** {@code opis == null} kad grupe nema u stablu PREDAVANJE; {@code poListovima}: listovi redom stabla, bez onih bez kandidata. */
@@ -65,10 +73,11 @@ public class KandidatiZadatka {
         }
 
         private final Map<Long, Cvor> cvorovi;
-        private final Map<Long, Integer> aktivni;
+        /** Grupa -> broj kandidata po nivou (indeks = nivo - 1). */
+        private final Map<Long, int[]> aktivni;
         private final Set<Long> iskljucene;
 
-        private StabloPredavanja(Map<Long, Cvor> cvorovi, Map<Long, Integer> aktivni, Set<Long> iskljucene) {
+        private StabloPredavanja(Map<Long, Cvor> cvorovi, Map<Long, int[]> aktivni, Set<Long> iskljucene) {
             this.cvorovi = cvorovi;
             this.aktivni = aktivni;
             this.iskljucene = iskljucene;
@@ -90,10 +99,17 @@ public class KandidatiZadatka {
             List<Long> listovi = new ArrayList<>();
             List<GrupaPutanja> iskljucenePodgrupe = new ArrayList<>();
             obidji(cvor, true, listovi, iskljucenePodgrupe);
-            int brojKandidata = listovi.stream().mapToInt(id -> aktivni.getOrDefault(id, 0)).sum();
+            int[] poNivou = new int[Nivo.MAX];
+            for (Long id : listovi) {
+                int[] broj = aktivni.get(id);
+                if (broj != null) {
+                    Arrays.setAll(poNivou, i -> poNivou[i] + broj[i]);
+                }
+            }
             boolean list = cvor.deca().isEmpty();
             return new Opis(cvor.id(), cvor.naziv(), List.copyOf(putanja), list, list ? polja(cvor.id()) : null,
-                    iskljucena, List.copyOf(iskljucenePodgrupe), List.copyOf(listovi), brojKandidata);
+                    iskljucena, List.copyOf(iskljucenePodgrupe), List.copyOf(listovi), Arrays.stream(poNivou).sum(),
+                    Arrays.stream(poNivou).boxed().toList());
         }
 
         private Cvor roditelj(Cvor c) {
@@ -136,38 +152,51 @@ public class KandidatiZadatka {
             }
             cvorovi.put(g.getId(), new StabloPredavanja.Cvor(g.getId(), g.getNaziv(), roditeljId, g.getPolja(), dete));
         }
-        Map<Long, Integer> aktivni = new HashMap<>();
+        Map<Long, int[]> aktivni = new HashMap<>();
         Set<Long> iskljucene = Set.of();
         if (!cvorovi.isEmpty()) {
-            for (Object[] red : varijantaRepository.aktivneSaSvgPoGrupi(cvorovi.keySet())) {
-                aktivni.put(((Number) red[0]).longValue(), ((Number) red[1]).intValue());
+            for (Object[] red : varijantaRepository.aktivneSaSvgPoGrupiINivou(cvorovi.keySet())) {
+                int nivo = ((Number) red[1]).intValue();
+                if (nivo >= Nivo.MIN && nivo <= Nivo.MAX) {   // kolona je tinyint; van opsega upisuje samo ručni SQL
+                    aktivni.computeIfAbsent(((Number) red[0]).longValue(), id -> new int[Nivo.MAX])[nivo - 1]
+                            = ((Number) red[2]).intValue();
+                }
             }
             iskljucene = temaRepository.iskljuceneGrupe(predmetId).keySet();
         }
         return new StabloPredavanja(cvorovi, aktivni, iskljucene);
     }
 
-    /**
-     * Kandidati čvora: AKTIVNE varijante sa SVG-om u listovima koje obuhvata, po listovima redom stabla (varijante po
-     * id-ju), bez listova bez kandidata. Nepostojeća grupa ili grupa namene TEST: {@code opis == null} i prazna lista.
-     */
+    /** Kandidati čvora svih nivoa ({@link #kandidati(Long, Integer)} sa {@code null}). */
     public Kandidati kandidati(Long grupaId) {
+        return kandidati(grupaId, null);
+    }
+
+    /**
+     * Kandidati čvora: AKTIVNE varijante sa SVG-om nivoa {@code nivo} ({@code null} = svi nivoi) u listovima koje
+     * obuhvata, po listovima redom stabla (varijante po id-ju), bez listova bez kandidata tog nivoa: list bez varijanti
+     * traženog nivoa ne daje varijante drugog nivoa. Nepostojeća grupa ili grupa namene TEST: {@code opis == null} i
+     * prazna lista.
+     */
+    public Kandidati kandidati(Long grupaId, Integer nivo) {
         Optional<Long> predmetId = grupaId == null ? Optional.empty() : grupaRepository.findPredmetId(grupaId);
         if (predmetId.isEmpty()) {
             return BEZ_GRUPE;
         }
         StabloPredavanja stablo = stablo(predmetId.get());
         Opis opis = stablo.opis(grupaId);
-        return opis == null ? BEZ_GRUPE : new Kandidati(opis, poListovima(stablo, opis));
+        return opis == null ? BEZ_GRUPE : new Kandidati(opis, poListovima(stablo, opis, nivo));
     }
 
-    private List<List<KandidatVarijante>> poListovima(StabloPredavanja stablo, Opis opis) {
-        if (opis.brojKandidata() == 0) {
+    private List<List<KandidatVarijante>> poListovima(StabloPredavanja stablo, Opis opis, Integer nivo) {
+        if (opis.brojKandidata(nivo) == 0) {
             return List.of();
         }
         Map<Long, List<Varijanta>> poGrupi = new HashMap<>();
         for (Varijanta v : varijantaRepository.aktivneZaGrupe(opis.listovi())) {
-            poGrupi.computeIfAbsent(v.getGrupa().getId(), id -> new ArrayList<>()).add(v);
+            if (nivo == null || v.getNivo() == nivo) {
+                poGrupi.computeIfAbsent(v.getGrupa().getId(), id -> new ArrayList<>()).add(v);
+            }
         }
         List<List<KandidatVarijante>> rezultat = new ArrayList<>();
         for (Long list : opis.listovi()) {
@@ -183,6 +212,6 @@ public class KandidatiZadatka {
     private static KandidatVarijante kandidat(Varijanta v, List<Polje> polja) {
         return new KandidatVarijante(v.getId(), v.getGrupa().getId(), v.getNaziv(), v.getRenderSvg().getId(),
                 v.getRenderResenjeSvg() == null ? null : v.getRenderResenjeSvg().getId(), polja,
-                PoljaJson.odgovoriIzKolone(v.getOdgovori()));
+                PoljaJson.odgovoriIzKolone(v.getOdgovori()), v.getNivo());
     }
 }

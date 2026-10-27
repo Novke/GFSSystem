@@ -130,6 +130,7 @@ class PrezentacijaZadatakDbTest {
         red.put("render_svg_id", svgId);
         red.put("kreirano", LocalDateTime.now());
         red.put("izmenjeno", LocalDateTime.now());
+        red.put("nivo", 2);
         new SimpleJdbcInsert(jdbc).withTableName("varijante").usingGeneratedKeyColumns("id").executeAndReturnKey(red);
     }
 
