@@ -13,11 +13,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.prijava.KodOdgovor;
 import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.entity.prijava.KodZaPrijavu;
+import tri.novica.gfssystem.entity.prijava.NacinKoda;
 import tri.novica.gfssystem.entity.prijava.VrstaPokusaja;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.prijava.KodZaPrijavuRepository;
-import tri.novica.gfssystem.service.mejl.MejlPoruka;
+import tri.novica.gfssystem.service.mejl.MejlPoruke;
 import tri.novica.gfssystem.service.mejl.MejlServis;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.IndeksUtil;
@@ -72,6 +73,16 @@ import java.util.regex.Pattern;
  * su 503 (slanje nije podešeno) i 429 po IP-u: oni ne zavise od indeksa, pa vraćaju odmah (inače bi napadač preko
  * limita i dalje držao niti zahteva).
  * <p>
+ * <b>Student je par (kanonski indeks, godina upisa)</b> ({@link IndeksUtil#kanonski}): broj indeksa se ponavlja kroz
+ * generacije, pa se student traži tačno po paru, nikad "najnovija generacija". Zahtev iz forme u tri dela nosi godinu, a
+ * indeks mora biti u obliku javne forme ({@link IndeksUtil#jeJavniOblik}); sve ostalo je kao nepostojeći indeks. Brojači,
+ * brave i lažna maska idu po identitetu {@code <kanonski>/<godina>}. PRIVREMENO (keširan stari SPA, jedno izdanje): zahtev
+ * bez godine sa sufiksom {@code /YYYY} uzima taj sufiks kao godinu, a bez sufiksa traži najnoviju generaciju kao ranije.
+ * <p>
+ * <b>Kod za diktiranje</b> ({@link #kodZaDiktiranje}): isti kod, ista tabela i ista pravila, samo se prikazuje nastavniku
+ * umesto da ide mejlom ({@link NacinKoda#NASTAVNIK}). Nov kod poništava samo stare kodove iste vrste, provera prihvata bilo
+ * koji aktivan kod studenta, a uspešna prijava poništava sve ostale.
+ * <p>
  * Log: IP i id-jevi, indeks samo kao prvih 8 hex SHA-256; nikad kod, mejl ni ime.
  */
 @Service
@@ -82,7 +93,7 @@ public class KodServis {
     static final String PREVISE = "Previše pokušaja. Pokušaj ponovo kasnije.";
     static final String NEISPRAVAN = "Kod nije ispravan ili je istekao.";
     static final String BEZ_SMTP = "Slanje koda trenutno nije moguće. Javi se nastavniku.";
-    static final String NASLOV = "GFS: kod za prijavu";
+    static final String NASLOV = MejlPoruke.NASLOV_KODA;
 
     static final Duration TRAJANJE_KODA = Duration.ofMinutes(10);
     static final int MAX_POGRESNIH = 5;
@@ -91,6 +102,8 @@ public class KodServis {
     static final int LIMIT_SLANJA_STUDENT = 3;
     static final int LIMIT_GRESAKA_IP = 20;
     static final int LIMIT_SA_KARTICE = 20;
+    /** Kodova za diktiranje na sat, ukupno (nastavnik na času; mejl se ne šalje, pa je limit širi). */
+    static final int LIMIT_DIKTIRANIH = 60;
     /** Ključ ukupnog brojača za kodove sa kartice studenta. */
     static final String UKUPNO = "ukupno";
     private static final Pattern FORMAT_KODA = Pattern.compile("^[0-9]{6}$");
@@ -105,6 +118,7 @@ public class KodServis {
     private final KodZaPrijavuRepository kodovi;
     private final PokusajiServis pokusaji;
     private final MejlServis mejl;
+    private final MejlPoruke poruke;
     private final ApplicationEventPublisher dogadjaji;
     private final MaskaMejla maska;
     private final TokenGenerator tokenGenerator;
@@ -123,7 +137,7 @@ public class KodServis {
     private volatile int cekanjeBraveS = CEKANJE_BRAVE_S;
 
     public KodServis(StudentRepository studenti, KodZaPrijavuRepository kodovi, PokusajiServis pokusaji, MejlServis mejl,
-                     ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
+                     MejlPoruke poruke, ApplicationEventPublisher dogadjaji, MaskaMejla maska, TokenGenerator tokenGenerator,
                      KljuceviAplikacije kljucevi, JdbcTemplate jdbc, PlatformTransactionManager transakcije, Clock clock,
                      @Value("${gfs.nalog.minimalno-trajanje-ms:200}") long minimalnoTrajanjeMs,
                      @Value("${gfs.prijava.brava-prefiks:}") String bravaPrefiks) {
@@ -135,6 +149,7 @@ public class KodServis {
         this.kodovi = kodovi;
         this.pokusaji = pokusaji;
         this.mejl = mejl;
+        this.poruke = poruke;
         this.dogadjaji = dogadjaji;
         this.maska = maska;
         this.tokenGenerator = tokenGenerator;
@@ -146,19 +161,62 @@ public class KodServis {
     /** Ishod zaključanog dela slanja: maska za odgovor, ili limit po indeksu ({@code studentId} može biti null). */
     private record Slanje(String maska, boolean limit, Long studentId) {}
 
-    /** Indeks zahteva: normalizovan, HMAC (ključ brojača i ime brave) i da li sme u bazu. */
-    record Indeks(String n, String hmac, boolean trazi) {}
+    /**
+     * Indeks zahteva: kanonski {@code n}, godina upisa (null samo za stari zahtev bez godine), HMAC identiteta (ključ brojača
+     * i ime brave) i da li sme u bazu.
+     */
+    record Indeks(String n, Integer godina, String hmac, boolean trazi) {
+        /** {@code <kanonski>/<godina>}, ili samo indeks bez godine: ključ brojača, lažne maske i traga u logu. */
+        String identitet() {
+            return identitet(n, godina);
+        }
 
-    Indeks indeks(String indeks) {
-        String n = normalizuj(indeks);
-        return new Indeks(n, hmacIndeksa(n), BELA_LISTA_INDEKSA.matcher(n).matches());
+        static String identitet(String n, Integer godina) {
+            return godina == null ? n : n + "/" + godina;
+        }
+
+        /** Indeks za log (prvih 8 hex SHA-256 identiteta). */
+        String trag() {
+            return KodServis.trag(identitet());
+        }
     }
 
     /**
-     * Šalje kod na mejl studenta sa indeksom (najnoviji upis); uvek isti odgovor (spec 5.1). 503 kad slanje nije podešeno,
-     * 429 preko 50/h po IP-u (broji se svaki zahtev, i za nepostojeći indeks) ili 3/h po indeksu.
+     * Indeks iz zahteva. {@code godina} != null: forma u tri dela, indeks mora biti u obliku javne forme. {@code godina} ==
+     * null: stari SPA (PRIVREMENO), sufiks {@code /YYYY} je godina. Bela lista se proverava na normalizovanom unosu.
      */
+    Indeks indeks(String indeks, Integer godina) {
+        String sirov = indeks;
+        Integer g = godina;
+        if (g == null) {
+            IndeksUtil.Razdvojen r = IndeksUtil.razdvoji(indeks);
+            sirov = r.indeks();
+            g = r.godina();
+        }
+        String normalizovan = normalizuj(sirov);
+        boolean trazi = BELA_LISTA_INDEKSA.matcher(normalizovan).matches();
+        String n = trazi ? IndeksUtil.kanonski(normalizovan, g) : normalizovan;
+        if (godina != null) {
+            trazi = trazi && IndeksUtil.jeJavniOblik(n);
+        }
+        return new Indeks(n, g, hmacIndeksa(Indeks.identitet(n, g)), trazi);
+    }
+
+    /** Stari zahtev sa jednim poljem (testovi i keširan SPA): isto što {@link #indeks(String, Integer)} bez godine. */
+    Indeks indeks(String indeks) {
+        return indeks(indeks, null);
+    }
+
+    /** Stari zahtev bez godine (PRIVREMENO, vidi opis klase). */
     public KodOdgovor posalji(String indeks, String ip) {
+        return posalji(indeks, null, ip);
+    }
+
+    /**
+     * Šalje kod na mejl studenta sa parom (indeks, godina upisa); uvek isti odgovor (spec 5.1). 503 kad slanje nije
+     * podešeno, 429 preko 50/h po IP-u (broji se svaki zahtev, i za nepostojeći indeks) ili 3/h po indeksu.
+     */
+    public KodOdgovor posalji(String indeks, Integer godina, String ip) {
         long pocetak = System.nanoTime();
         // 503 i 429 po IP-u ne zavise od indeksa (ništa ne otkrivaju), pa idu bez donje granice: inače bi napadač
         // preko limita i dalje držao niti zahteva
@@ -172,13 +230,13 @@ public class KodServis {
         try {
             pokusaji.zabelezi(VrstaPokusaja.KOD_SLANJE_IP, ip);
             // HMAC-ovi i lažna maska se računaju uvek (isti posao), a prvi poziv pravi ključeve van zaključane transakcije
-            Indeks i = indeks(indeks);
-            String lazna = maska.lazna(i.n());
+            Indeks i = indeks(indeks, godina);
+            String lazna = maska.lazna(i.identitet());
 
             Slanje s = zakljucano.execute(tx -> posaljiZakljucano(i, lazna));
             if (s.limit()) {
                 log.info("Zahtev za kod odbijen (limit po indeksu), indeks={}, student={}, ip={}",
-                        trag(i.n()), s.studentId(), ip);
+                        i.trag(), s.studentId(), ip);
                 if (s.studentId() != null) {
                     // posao u pozadini (ObavestenjeServis, posle ovog zahteva): 429 za postojećeg studenta ne radi
                     // ništa više u bazi nego za nepostojeći indeks
@@ -194,7 +252,6 @@ public class KodServis {
 
     private Slanje posaljiZakljucano(Indeks i, String lazna) {
         zakljucajIndeks(i);
-        String n = i.n();
         Optional<Student> student = zakljucajStudenta(i);
         String kljuc = student.map(s -> String.valueOf(s.getId())).orElse(kljucIndeksaIzHmac(i.hmac()));
         Long studentId = student.map(Student::getId).orElse(null);
@@ -203,20 +260,25 @@ public class KodServis {
         }
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.KOD_SLANJE_STUDENT, kljuc);
         if (student.isEmpty() || nemaMejl(student.get())) {
-            log.info("Zahtev za kod bez naloga ili mejla, indeks={}, student={}", trag(n), studentId);
+            log.info("Zahtev za kod bez naloga ili mejla, indeks={}, student={}", i.trag(), studentId);
             return new Slanje(lazna, false, studentId);
         }
         Student s = student.get();
-        novKod(s);
+        novKodNaMejl(s, false);
         log.info("Kod poslat, student={}", s.getId());
         return new Slanje(maska.maska(s.getEmail()), false, s.getId());
     }
 
-    /**
-     * Proverava kod za indeks; vraća {@code studentId} i troši kod. 429 preko 20 pogrešnih na sat po IP-u; inače svaki
-     * neuspeh (nema aktivnog koda, pogrešan, istekao, nepostojeći indeks) daje isti 401 i broji se po IP-u.
-     */
+    /** Stari zahtev bez godine (PRIVREMENO, vidi opis klase). */
     public Long proveri(String indeks, String kod, String ip) {
+        return proveri(indeks, null, kod, ip);
+    }
+
+    /**
+     * Proverava kod za par (indeks, godina upisa); vraća {@code studentId} i troši kod. 429 preko 20 pogrešnih na sat po
+     * IP-u; inače svaki neuspeh (nema aktivnog koda, pogrešan, istekao, nepostojeći indeks) daje isti 401 i broji se po IP-u.
+     */
+    public Long proveri(String indeks, Integer godina, String kod, String ip) {
         long pocetak = System.nanoTime();
         // 429 po IP-u ne zavisi od indeksa ni koda, pa ide bez donje granice (kao u posalji)
         if (pokusaji.dostignut(VrstaPokusaja.KOD_GRESKA_IP, ip, LIMIT_GRESAKA_IP, SAT)) {
@@ -224,11 +286,11 @@ public class KodServis {
             throw new SystemException(PREVISE, 429);
         }
         try {
-            Indeks i = indeks(indeks);
+            Indeks i = indeks(indeks, godina);
             Long studentId = zakljucano.execute(tx -> proveriZakljucano(i, kod));
             if (studentId == null) {
                 pokusaji.zabelezi(VrstaPokusaja.KOD_GRESKA_IP, ip);
-                log.info("Neispravan kod, indeks={}, ip={}", trag(i.n()), ip);
+                log.info("Neispravan kod, indeks={}, ip={}", i.trag(), ip);
                 throw new SystemException(NEISPRAVAN, 401);
             }
             log.info("Kod iskorišćen, student={}, ip={}", studentId, ip);
@@ -238,6 +300,10 @@ public class KodServis {
         }
     }
 
+    /**
+     * Kod se poredi sa svakim aktivnim kodom studenta (najviše po jedan sa mejla i od nastavnika). Pogodak troši taj kod i
+     * poništava ostale aktivne; promašaj povećava brojač pogrešnih na svakom aktivnom kodu (posle 5 kod se poništava).
+     */
     private Long proveriZakljucano(Indeks i, String kod) {
         Optional<Student> student = zakljucajStudenta(i);
         if (student.isEmpty()) {
@@ -248,39 +314,61 @@ public class KodServis {
         if (aktivni.isEmpty()) {
             return null;
         }
-        KodZaPrijavu k = aktivni.getFirst();
-        boolean tacan = kod != null && FORMAT_KODA.matcher(kod).matches()
-                && MessageDigest.isEqual(ascii(TokenHash.od(k.getSo() + kod)), ascii(k.getKodHes()));
-        if (tacan) {
-            k.setIskoriscen(sada);
-            kodovi.save(k);
+        boolean formatOk = kod != null && FORMAT_KODA.matcher(kod).matches();
+        KodZaPrijavu pogodjen = null;
+        for (KodZaPrijavu k : aktivni) {
+            // poredi se svaki (bez ranog izlaska): isto trajanje bez obzira na to koji je pogođen
+            boolean tacan = formatOk && MessageDigest.isEqual(ascii(TokenHash.od(k.getSo() + kod)), ascii(k.getKodHes()));
+            if (tacan && pogodjen == null) {
+                pogodjen = k;
+            }
+        }
+        if (pogodjen != null) {
+            for (KodZaPrijavu k : aktivni) {
+                if (k == pogodjen) {
+                    k.setIskoriscen(sada);
+                } else {
+                    k.setPonisten(sada);
+                }
+                kodovi.save(k);
+            }
             return student.get().getId();
         }
-        k.setPogresni(k.getPogresni() + 1);
-        if (k.getPogresni() >= MAX_POGRESNIH) {
-            k.setPonisten(sada);
-            log.info("Kod poništen posle {} pogrešnih unosa, student={}", MAX_POGRESNIH, student.get().getId());
+        for (KodZaPrijavu k : aktivni) {
+            k.setPogresni(k.getPogresni() + 1);
+            if (k.getPogresni() >= MAX_POGRESNIH) {
+                k.setPonisten(sada);
+                log.info("Kod poništen posle {} pogrešnih unosa, student={}, nacin={}", MAX_POGRESNIH,
+                        student.get().getId(), k.getNacin());
+            }
+            kodovi.save(k);
         }
-        kodovi.save(k);
         return null;
     }
 
     /**
-     * Student sa najnovijim upisom za normalizovan indeks, sa zaključanim redom. Samo indeks sa bele liste (prazan, npr.
-     * od samih neprekidivih razmaka koje {@code @NotBlank} pušta, nije na njoj), i samo tačno isti posle normalizacije:
-     * upit u bazi poredi pod {@code ai_ci} (akcenti, širina), pa se kandidati ovde porede binarno.
+     * Student za indeks zahteva, sa zaključanim redom. Samo indeks sa bele liste (prazan, npr. od samih neprekidivih
+     * razmaka koje {@code @NotBlank} pušta, nije na njoj), i samo tačno isti kanonski oblik: upit u bazi poredi pod
+     * {@code ai_ci} (akcenti, širina), pa se kandidati ovde porede binarno.
      */
     private Optional<Student> zakljucajStudenta(Indeks i) {
         return nadjiStudenta(i).flatMap(s -> studenti.findByIdForUpdate(s.getId()));
     }
 
-    /** Isto bez zaključavanja reda (bela lista i binarno poređenje kao gore): {@link ObavestenjeServis#neStizeKod}. */
+    /**
+     * Isto bez zaključavanja reda: {@link ObavestenjeServis#neStizeKod}. Sa godinom tačno par (kanonski indeks, godina)
+     * ({@link StudentRepository#findAllPoIndeksuIGodini}; dva reda sa istim parom ne bi smela da postoje, uzima se noviji
+     * id). Bez godine (PRIVREMENO, stari SPA) najnovija generacija sa tim indeksom, kao pre.
+     */
     Optional<Student> nadjiStudenta(Indeks i) {
         if (!i.trazi()) {
             return Optional.empty();
         }
+        if (i.godina() != null) {
+            return studenti.findAllPoIndeksuIGodini(i.n(), i.godina()).stream().findFirst();
+        }
         return studenti.findAllPoNormalizovanomIndeksu(i.n()).stream()
-                .filter(s -> i.n().equals(IndeksUtil.normalizuj(s.getIndeks())))
+                .filter(s -> i.n().equals(IndeksUtil.kanonski(s.getIndeks(), s.getGodina())))
                 .findFirst();
     }
 
@@ -301,7 +389,7 @@ public class KodServis {
      * prefiks (slanje koda, "Ne stiže mi kod"), a redosled je uvek brava indeksa pa red studenta.
      */
     boolean uzmiBravu(String prefiks, Indeks i) {
-        return uzmiBravu(prefiks + i.hmac().substring(0, 32), cekanjeBraveS, trag(i.n()));
+        return uzmiBravu(prefiks + i.hmac().substring(0, 32), cekanjeBraveS, i.trag());
     }
 
     /**
@@ -363,17 +451,58 @@ public class KodServis {
                 throw new SystemException("Student nema mejl.", 409);
             }
             pokusaji.zabeleziUTransakciji(VrstaPokusaja.KOD_SA_KARTICE, UKUPNO);
-            novKod(s);
+            novKodNaMejl(s, true);
         });
         log.info("Kod poslat sa kartice, student={}", studentId);
     }
 
-    /** Pod zaključanim redom studenta: poništava aktivne kodove, upisuje nov i objavljuje mejl (šalje se posle commit-a). */
-    private void novKod(Student s) {
+    /** Kod koji nastavnik izdiktira: vrednost (jednom, nikad u bazi ni logu) i trenutak isteka. */
+    public record DiktiranKod(String kod, LocalDateTime istice) {
+        @Override
+        public String toString() {
+            return "DiktiranKod[kod=***, istice=" + istice + "]";
+        }
+    }
+
+    /**
+     * Kod za diktiranje sa kartice studenta (nastavnik, plan C): isti kod i ista pravila kao kod sa mejla, ali se ne šalje
+     * nikud, nego se jednom vraća nastavniku. Sme i studentu bez mejla i kad SMTP nije podešen. Najviše
+     * {@value #LIMIT_DIKTIRANIH} na sat ukupno (429); 404 kad student ne postoji. Poništava samo raniji kod za diktiranje
+     * istog studenta, ne i kod sa mejla.
+     */
+    public DiktiranKod kodZaDiktiranje(Long studentId) {
+        if (pokusaji.dostignut(VrstaPokusaja.KOD_DIKTIRAN, UKUPNO, LIMIT_DIKTIRANIH, SAT)) {
+            log.info("Kod za diktiranje odbijen (limit ukupno), student={}", studentId);
+            throw new SystemException(PREVISE, 429);
+        }
+        DiktiranKod d = zakljucano.execute(tx -> {
+            Student s = studenti.findByIdForUpdate(studentId)
+                    .orElseThrow(() -> new SystemException("Ne postoji.", 404));
+            pokusaji.zabeleziUTransakciji(VrstaPokusaja.KOD_DIKTIRAN, UKUPNO);
+            String kod = novKod(s, NacinKoda.NASTAVNIK);
+            return new DiktiranKod(kod, LocalDateTime.now(clock).plus(TRAJANJE_KODA));
+        });
+        log.info("Kod za diktiranje izdat, student={}", studentId);
+        return d;
+    }
+
+    /** Nov kod na mejl studenta (mejl se šalje posle commit-a). */
+    private void novKodNaMejl(Student s, boolean odNastavnika) {
+        String kod = novKod(s, NacinKoda.MEJL);
+        dogadjaji.publishEvent(poruke.kod(s.getEmail().trim(), s.getIme(), kod, TRAJANJE_KODA.toMinutes(), odNastavnika));
+    }
+
+    /**
+     * Pod zaključanim redom studenta: poništava aktivne kodove iste vrste ({@code nacin}), upisuje nov i vraća njegovu
+     * vrednost (u bazi je samo heš).
+     */
+    private String novKod(Student s, NacinKoda nacin) {
         LocalDateTime sada = LocalDateTime.now(clock);
         for (KodZaPrijavu stari : kodovi.findAktivne(s.getId(), sada)) {
-            stari.setPonisten(sada);
-            kodovi.save(stari);
+            if (stari.getNacin() == nacin) {
+                stari.setPonisten(sada);
+                kodovi.save(stari);
+            }
         }
         String kod = String.format(Locale.ROOT, "%06d", random.nextInt(1_000_000));
         String so = tokenGenerator.novi();
@@ -384,19 +513,9 @@ public class KodServis {
         k.setKreirano(sada);
         k.setIstice(sada.plus(TRAJANJE_KODA));
         k.setPogresni(0);
+        k.setNacin(nacin);
         kodovi.save(k);
-        dogadjaji.publishEvent(new MejlPoruka(s.getEmail().trim(), NASLOV, telo(kod)));
-    }
-
-    static String telo(String kod) {
-        return """
-                Zdravo,
-
-                tvoj kod za prijavu u GFS je: %s
-
-                Kod važi 10 minuta i može se iskoristiti samo jednom.
-                Ako nisi tražio kod, zanemari ovu poruku.
-                """.formatted(kod);
+        return kod;
     }
 
     /** Menja čekanje brave indeksa (s, testovi); {@link #CEKANJE_BRAVE_S} je podrazumevano. */

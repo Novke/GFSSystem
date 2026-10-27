@@ -12,6 +12,8 @@ import tri.novica.gfssystem.dto.onboarding.*;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.utility.IndeksUtil;
+import tri.novica.gfssystem.utility.Telefon;
 import tri.novica.gfssystem.utility.TokenGenerator;
 import tri.novica.gfssystem.validation.PrijavaPP;
 
@@ -125,7 +127,7 @@ public class OnboardingService {
         }
         // Menja upravljani entitet; ako dedupe ispod baci izuzetak, transakcija se poništava.
         PrijavaPP.primeni(cmd, prijava, clock);
-        if (studentRepository.postojiStudent(prijava.getIndeks(), prijava.getGodina())) {
+        if (studentRepository.postojiStudent(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()), prijava.getGodina())) {
             throw new SystemException(StudentService.DUPLIKAT, HttpStatus.BAD_REQUEST);
         }
         if (prijavaRepository.existsBySesijaIdAndIndeksAndGodinaAndStatusAndIdNot(sesija.getId(), prijava.getIndeks(),
@@ -139,7 +141,7 @@ public class OnboardingService {
     public OnboardingSesijaDetails prihvati(Long sesijaId, Long prijavaId) {
         OnboardingSesija sesija = zakljucana(sesijaId);
         Prijava prijava = naCekanju(sesija, prijavaId);
-        if (studentRepository.postojiStudent(prijava.getIndeks(), prijava.getGodina())) {
+        if (studentRepository.postojiStudent(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()), prijava.getGodina())) {
             throw new SystemException("Student sa indeksom " + prijava.getIndeks() + " (godina upisa "
                     + prijava.getGodina() + ") već postoji u sistemu.", HttpStatus.CONFLICT);
         }
@@ -166,7 +168,7 @@ public class OnboardingService {
         List<String> preskoceni = new ArrayList<>();
         for (Prijava prijava : prijavaRepository.findAllBySesijaIdAndStatusOrderByPodnetoAsc(sesija.getId(),
                 StatusPrijave.NA_CEKANJU)) {
-            if (studentRepository.postojiStudent(prijava.getIndeks(), prijava.getGodina())) {
+            if (studentRepository.postojiStudent(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()), prijava.getGodina())) {
                 prijava.setNapomena(PRESKOCENO);
                 prijavaRepository.save(prijava);
                 preskoceni.add(prijava.getIndeks());
@@ -204,7 +206,7 @@ public class OnboardingService {
         }
         Prijava prijava = new Prijava();
         PrijavaPP.primeni(cmd, prijava, clock);
-        if (studentRepository.postojiStudent(prijava.getIndeks(), prijava.getGodina())) {
+        if (studentRepository.postojiStudent(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()), prijava.getGodina())) {
             throw new SystemException(STUDENT_POSTOJI, HttpStatus.BAD_REQUEST);
         }
         if (prijavaRepository.existsBySesijaIdAndIndeksAndGodinaAndStatus(sesija.getId(), prijava.getIndeks(),
@@ -264,8 +266,10 @@ public class OnboardingService {
         student.setIme(prijava.getIme());
         student.setPrezime(prijava.getPrezime());
         student.setGodina(prijava.getGodina());
-        student.setIndeks(prijava.getIndeks());
-        student.setBrojTelefona(prijava.getBrojTelefona());
+        // prijava podneta pre kanonskog oblika (V16) još može da nosi stari zapis
+        student.setIndeks(IndeksUtil.kanonski(prijava.getIndeks(), prijava.getGodina()));
+        String e164 = Telefon.uE164(prijava.getBrojTelefona());
+        student.setBrojTelefona(e164 != null ? e164 : prijava.getBrojTelefona());
         student.setEmail(prijava.getEmail());
         student.setDatumRodjenja(prijava.getDatumRodjenja());
         student.setOpstina(prijava.getOpstina());

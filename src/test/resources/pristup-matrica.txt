@@ -166,6 +166,7 @@ GET /studenti/pretraga ADMIN
 GET /studenti/{id} ADMIN
 PUT /studenti/{id} ADMIN
 GET /studenti/{id}/nalog ADMIN
+POST /studenti/{id}/nalog/kod-za-diktiranje ADMIN
 DELETE /studenti/{id}/nalog/moodle ADMIN
 POST /studenti/{id}/nalog/opozovi-uredjaje ADMIN
 POST /studenti/{id}/nalog/posalji-kod ADMIN

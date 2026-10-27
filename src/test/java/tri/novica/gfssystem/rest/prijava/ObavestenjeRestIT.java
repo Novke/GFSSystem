@@ -97,7 +97,8 @@ class ObavestenjeRestIT {
                 // najnovije prvo: nepostojeći indeks je stvoren posle studenta
                 .andExpect(jsonPath("$.content[0].studentId").value(nullValue()))
                 .andExpect(jsonPath("$.content[0].studentIme").value(nullValue()))
-                .andExpect(jsonPath("$.content[0].indeks").value(nema))
+                .andExpect(jsonPath("$.content[0].indeks").value(nema.replace("/2025", "")))
+                .andExpect(jsonPath("$.content[0].godina").value(2025))
                 .andExpect(jsonPath("$.content[0].vrsta").value("NE_STIZE_KOD"))
                 .andExpect(jsonPath("$.content[0].podaci.imaMejl").value(false))
                 .andExpect(jsonPath("$.content[0].podaci.uredjaj").value("NEPOZNAT"))

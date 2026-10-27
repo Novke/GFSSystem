@@ -26,6 +26,7 @@ import tri.novica.gfssystem.repository.spec.StudentSpecs;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.IndeksUtil;
 import tri.novica.gfssystem.utility.StudentMapper;
+import tri.novica.gfssystem.utility.Telefon;
 import tri.novica.gfssystem.utility.Utility;
 
 import java.util.*;
@@ -39,6 +40,8 @@ public class StudentService {
     public static final Set<String> SORT_POLJA = Set.of("prezime", "ime", "indeks", "godina");
     public static final Sort PODRAZUMEVANI_SORT = Sort.by(Sort.Order.asc("prezime"), Sort.Order.asc("ime"));
 
+    public static final String NEISPRAVAN_TELEFON =
+            "Broj telefona nije ispravan. Unesi ga sa pozivnim brojem (npr. +381 64 1234567) ili kao 064 1234567.";
     public static final String DUPLIKAT = "Student sa ovim indeksom i godinom upisa već postoji u sistemu.";
 
     private final StudentRepository studentRepository;
@@ -74,12 +77,13 @@ public class StudentService {
 
     public StudentInfo create(CreateStudentCmd studentCmd) {
         Grupa grupa = findGrupaOrThrow(studentCmd.getGrupaId());
-        String indeks = IndeksUtil.normalizuj(studentCmd.getIndeks());
+        String indeks = IndeksUtil.kanonski(studentCmd.getIndeks(), studentCmd.getGodina());
         proveriDuplikat(indeks, studentCmd.getGodina(), null);
 
         Student newStudent = mapper.map(studentCmd, Student.class);
         newStudent.setIndeks(indeks);
         newStudent.setEmail(email(studentCmd.getEmail()));
+        newStudent.setBrojTelefona(telefon(studentCmd.getBrojTelefona(), null));
         newStudent.setGrupa(grupa);
 
         return mapper.map(studentRepository.save(newStudent),
@@ -96,8 +100,9 @@ public class StudentService {
         Student student = studentRepository.findById(id)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
         Grupa grupa = findGrupaOrThrow(cmd.getGrupaId());
-        String indeks = IndeksUtil.normalizuj(cmd.getIndeks());
+        String indeks = IndeksUtil.kanonski(cmd.getIndeks(), cmd.getGodina());
         proveriDuplikat(indeks, cmd.getGodina(), id);
+        String telefon = telefon(cmd.getBrojTelefona(), student.getBrojTelefona());
 
         // eksplicitno (ne ModelMapper): on preskače null, a PUT mora da obriše email, opštinu...
         student.setIme(cmd.getIme());
@@ -105,7 +110,7 @@ public class StudentService {
         student.setIndeks(indeks);
         student.setGodina(cmd.getGodina());
         student.setEmail(email(cmd.getEmail()));
-        student.setBrojTelefona(cmd.getBrojTelefona());
+        student.setBrojTelefona(telefon);
         student.setDatumRodjenja(cmd.getDatumRodjenja());
         student.setOpstina(cmd.getOpstina());
         student.setGrupa(grupa);
@@ -113,7 +118,7 @@ public class StudentService {
         return mapper.map(studentRepository.save(student), StudentInfo.class);
     }
 
-    /** Dedupe po (normalizovan indeks, godina upisa); {@code izuzetId} je student koji se menja (ili null pri dodavanju). */
+    /** Dedupe po (kanonski indeks, godina upisa); {@code izuzetId} je student koji se menja (ili null pri dodavanju). */
     private void proveriDuplikat(String normalizovanIndeks, int godina, Long izuzetId) {
         boolean postoji = izuzetId == null
                 ? studentRepository.postojiStudent(normalizovanIndeks, godina)
@@ -121,6 +126,24 @@ public class StudentService {
         if (postoji) {
             throw new SystemException(DUPLIKAT, HttpStatus.BAD_REQUEST);
         }
+    }
+
+    /**
+     * Broj telefona u E.164 ({@link Telefon#uE164}); prazno -> null. Neprepoznat broj je 400, osim kad je doslovno jednak
+     * dosadašnjem ({@code dosadasnji}, izmena): stari red sa neobičnim brojem ne sme da blokira izmenu ostalih polja.
+     */
+    private static String telefon(String broj, String dosadasnji) {
+        if (broj == null || broj.isBlank()) {
+            return null;
+        }
+        String e164 = Telefon.uE164(broj);
+        if (e164 != null) {
+            return e164;
+        }
+        if (broj.equals(dosadasnji)) {
+            return dosadasnji;
+        }
+        throw new SystemException(NEISPRAVAN_TELEFON, HttpStatus.BAD_REQUEST);
     }
 
     /** Trim i mala slova; prazno -> null. */
