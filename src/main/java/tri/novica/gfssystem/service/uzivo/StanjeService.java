@@ -329,29 +329,21 @@ public class StanjeService {
         List<RezultatOpcija> opcije = r.opcije().stream()
                 .map(o -> new RezultatOpcija(o.id(), null, o.broj(), o.tacna()))
                 .toList();
-        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala());
+        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala(), r.tacnih());
     }
 
     /**
      * Javni rezultat trenutnog pitanja ({@code NastavnickoStanje.javniRezultat} za projektor, a kroz
      * {@link #rezultatZaTelefon} i {@code JavnoStanje.rezultat}): samo kad su rezultati prikazani i runda je javna
-     * ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (i broj "u odstupanju", koji govori koliko je tačnih)
-     * tek kad je tačan odgovor prikazan na zatvorenom pitanju. Tekstovi opcija su uvek tu (projektor).
+     * ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (oznake opcija, vrednosti i tekstova i broj tačnih) tek kad
+     * je tačan odgovor prikazan na zatvorenom pitanju ({@link RezultatBuilder}). Tekstovi opcija su uvek tu (projektor).
      */
     Rezultat javniRezultat(Podaci p) {
         Izvodjenje iz = p.iz();
         if (!iz.isRezultatiPrikazani()) return null;
         PitanjeRunda runda = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
         if (runda == null) return null;
-        boolean tacan = tacanVidljiv(iz);
-        Rezultat r = rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
-        if (r == null) return null;
-        if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
-            RezultatBrojevi b = r.brojevi();
-            return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
-                    r.tekstovi(), r.skala());
-        }
-        return r;
+        return rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacanVidljiv(iz));
     }
 
     /**
