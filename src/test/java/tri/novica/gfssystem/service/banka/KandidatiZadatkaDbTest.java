@@ -312,4 +312,28 @@ class KandidatiZadatkaDbTest {
             assertEquals(List.of(), rezultat.poListovima());
         }
     }
+
+    long id(long grupa, String naziv) {
+        return jdbc.queryForObject("select id from varijante where grupa_id = ? and naziv = ?", Long.class, grupa, naziv);
+    }
+
+    @Test
+    void primerJePrviKandidatRedomStablaPoNivou() {
+        long a1 = id(a, "A1");
+        long a2 = id(a, "A2");
+        long b11 = id(b1, "B1-1");
+        jdbc.update("update varijante set nivo = 3 where id = ?", a1);
+        StabloPredavanja stablo = kandidati.stablo(predmet.getId());
+
+        assertEquals(a1, stablo.primer(stablo.opis(k), null), "prvi list A (rb 1), najmanji id bez obzira na nivo");
+        assertEquals(a2, stablo.primer(stablo.opis(k), 2), "nivo slajda: A1 je ★★★, pa A2");
+        assertEquals(a1, stablo.primer(stablo.opis(k), 3));
+        assertNull(stablo.primer(stablo.opis(k), 1), "nema kandidata nivoa 1");
+        assertEquals(b11, stablo.primer(stablo.opis(b), null), "B2 je isključena, B1 je prvi list");
+        assertNull(stablo.primer(stablo.opis(c), null), "list bez aktivnih");
+        assertNull(stablo.primer(null, null));
+
+        assertEquals(Map.of(a1, svg.get("A1"), b11, svg.get("B1-1")), kandidati.svgTeksta(List.of(a1, b11)));
+        assertEquals(Map.of(), kandidati.svgTeksta(List.of()));
+    }
 }

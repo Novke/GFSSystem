@@ -200,7 +200,7 @@ class PrezentacijaRestTest {
     @Test
     void zadatakSlajdKrozPutIOdgovorNosiOpis() throws Exception {
         ZadatakSlajdaInfo opis = new ZadatakSlajdaInfo(5L, null, 4, null, "2 → 10", List.of(new GrupaPutanja(1L, "Konverzije"),
-                new GrupaPutanja(5L, "2 → 10")), true, 3, List.of(0, 3, 0), List.of(), false, List.of(), List.of());
+                new GrupaPutanja(5L, "2 → 10")), true, 3, List.of(0, 3, 0), List.of(), false, List.of(), List.of(), null);
         when(service.izmeniSlajd(eq(1L), any())).thenReturn(new SlajdDetails(1L, 1, TipSlajda.ZADATAK, null, null, null, null,
                 false, null, null, null, opis));
 

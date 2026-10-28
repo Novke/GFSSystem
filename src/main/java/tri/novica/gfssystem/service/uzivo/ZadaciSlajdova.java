@@ -17,7 +17,7 @@ import java.util.*;
 
 /**
  * Opis Zadatak slajdova (editor, konzola, MCP): ono što je na slajdu plus čvor banke u trenutku čitanja (putanja, šema,
- * broj kandidata, isključene podgrupe) i upozorenja za Novicu. Isti izvor ({@link KandidatiZadatka}) kao izvlačenje pri
+ * broj kandidata, isključene podgrupe, SVG jednog primera) i upozorenja za Novicu. Isti izvor ({@link KandidatiZadatka}) kao izvlačenje pri
  * otvaranju runde, pa se editor i čas ne razilaze. Batch ({@link #za(Long, Collection)}) čita stablo predmeta jednom za
  * sve Zadatak slajdove, i uopšte samo kad ima ZADATAK slajda sa grupom. Samo čitanje.
  * <p>
@@ -52,11 +52,7 @@ public class ZadaciSlajdova {
         }
         StabloPredavanja stablo = zadaci.stream().anyMatch(s -> s.getGrupaZadataka() != null)
                 ? kandidati.stablo(predmetId) : null;
-        Map<Long, ZadatakSlajdaInfo> opisi = new HashMap<>();
-        for (Slajd s : zadaci) {
-            opisi.put(s.getId(), info(s, stablo));
-        }
-        return opisi;
+        return opisi(zadaci, stablo);
     }
 
     /** Opis jednog slajda, {@code null} za slajd koji nije ZADATAK. Za više slajdova istog predmeta {@link #za(Long, Collection)}. */
@@ -66,15 +62,34 @@ public class ZadaciSlajdova {
         }
         StabloPredavanja stablo = s.getGrupaZadataka() == null ? null
                 : kandidati.stablo(s.getPrezentacija().getPredmet().getId());
-        return info(s, stablo);
+        return opisi(List.of(s), stablo).get(s.getId());
     }
 
-    private static ZadatakSlajdaInfo info(Slajd s, StabloPredavanja stablo) {
+    /** Opisi po id-ju slajda; SVG primera svih slajdova jednim upitom (samo kad ima primera). */
+    private Map<Long, ZadatakSlajdaInfo> opisi(List<Slajd> zadaci, StabloPredavanja stablo) {
+        Map<Long, Long> primeri = new HashMap<>();
+        for (Slajd s : zadaci) {
+            Long primer = stablo == null || s.getGrupaZadataka() == null ? null
+                    : stablo.primer(stablo.opis(s.getGrupaZadataka().getId()), s.getZadatakNivo());
+            if (primer != null) {
+                primeri.put(s.getId(), primer);
+            }
+        }
+        Map<Long, String> svg = kandidati.svgTeksta(new HashSet<>(primeri.values()));
+        Map<Long, ZadatakSlajdaInfo> opisi = new HashMap<>();
+        for (Slajd s : zadaci) {
+            Long primer = primeri.get(s.getId());
+            opisi.put(s.getId(), info(s, stablo, primer == null ? null : svg.get(primer)));
+        }
+        return opisi;
+    }
+
+    private static ZadatakSlajdaInfo info(Slajd s, StabloPredavanja stablo, String primerSvgId) {
         GrupaZadataka grupa = s.getGrupaZadataka();
         Opis opis = grupa == null || stablo == null ? null : stablo.opis(grupa.getId());
         if (opis == null) {
             return new ZadatakSlajdaInfo(null, s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), s.getZadatakNivo(),
-                    null, List.of(), false, 0, BEZ_KANDIDATA, null, false, List.of(), List.of(OBRISANA));
+                    null, List.of(), false, 0, BEZ_KANDIDATA, null, false, List.of(), List.of(OBRISANA), null);
         }
         List<String> upozorenja = new ArrayList<>();
         if (opis.iskljucena()) {
@@ -92,6 +107,6 @@ public class ZadaciSlajdova {
         }
         return new ZadatakSlajdaInfo(opis.grupaId(), s.getZadatakVremeSekunde(), s.getZadatakBrojVarijanti(), nivo,
                 opis.naziv(), opis.putanja(), opis.list(), opis.brojKandidata(nivo), opis.poNivou(), opis.polja(),
-                opis.iskljucena(), opis.iskljucenePodgrupe(), List.copyOf(upozorenja));
+                opis.iskljucena(), opis.iskljucenePodgrupe(), List.copyOf(upozorenja), primerSvgId);
     }
 }
