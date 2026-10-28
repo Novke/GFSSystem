@@ -274,7 +274,8 @@ group's schema, the console and projector show results per variant and, on `Shif
   without one).
 - **Not done yet (BE-8):** activities in a scored run (attendance and solved tasks written to the lecture) are not implemented, also
   not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
-  edits in `PredavanjeService` must lock the lecture row first (plan task BE-8).
+  edits in `PredavanjeService` must lock the lecture row first (plan task BE-8). **That locking is already in place** since the
+  check-in work (see "Čekiranje"): every manual activity change locks the lecture row (`PredavanjeRepository.findByIdForUpdate`).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
   grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
@@ -781,6 +782,40 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
   `pokusaji` **only by the student-id key**, so tests that create HMAC-keyed rows track and delete their own keys), `PristupBravama` (lock names and wait times).
   `scripts/flyway-provera.sh` hardcodes `fw_<scenario>` databases: on a shared box run a copy that uses `fw_prijava_<scenario>` and `APP_PORT=18092`.
 
+## Čekiranje (student check-in by QR, studentski deo faza 1)
+
+Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy repo), section 4; plan next to it. Packages `entity|repository|service|rest|dto/cas`.
+- **Tables (V17):** `cekiranja` (one row per lecture and student, `vreme` = first scan, never changed; `uredjaj_hash` = SHA-256 of cookie
+  `gfs_uredjaj`), `cekiranja_na_cekanju` (one-time key of a student who scanned before logging in: SHA-256 only, 15 min, `iskorisceno`),
+  `predavanja.cekiranje_tajna` (32 chars from `TokenGenerator`, `@JsonIgnore`, never leaves the server) and `cekiranje_tajna_od`.
+- **Token (`CekiranjeToken`, pure static logic):** `<predavanjeId>.<h>`, `h` = first 22 chars of `base64url(HMAC-SHA256(tajna, id + ":" + w))`,
+  `w = floor(epochSeconds / 10)`; windows `w`, `w-1`, `w-2` are accepted (20-30 s), compared with `MessageDigest.isEqual`. The secret is created by
+  the teacher view (`GET /predavanja/{id}/cekiranje`) with a compare-and-set update (`PredavanjeRepository.postaviTajnu`), renewed when older than
+  5 h, and cleared by `zavrsiPredavanje`.
+- **`CekiranjeService`** (`READ_COMMITTED`): `skeniraj(token, studentId?, uredjajHash)` (logged in: check-in + class state; anonymous: a key),
+  `potvrdi(kljuc, studentId, uredjajHash)` (consumes the key under `findByKljucHashForUpdate`; the check-in gets the scan time), `stanje(studentId)`
+  (latest check-in of the last 5 h, finished lecture or not; the newest active run of a live lecture the student was not expelled from),
+  `zaNastavnika(predavanjeId)` (token, window end, list with "kasnio" > 15 min after the first check-in and "isti telefon kao"). Group rule:
+  `Utility.smeNaNastavuGrupe`; a lecture without a group admits nobody. A check-in adds `PRISUSTVO` only when the student has no activity on the
+  lecture (raise, never lower) and bumps `posecenost`.
+- **Lock order:** check-in and every manual activity change in `PredavanjeService` (`dodajPrisutnog`, `skloniPrisutnog`, `dodajZadatak`,
+  `skloniZadatak`, `dodajZadatakSaZvezdicom`, `updateAktivnostNapomenu`, `zavrsiPredavanje`) lock the lecture row first; check-in **never** locks a run
+  row. A manual add of a student who is already present returns the lecture unchanged (no more 400 "vec zabelezeno"); removing attendance deletes the
+  check-in too (the phone stops following the class).
+- **Uživo:** `UcesnikService.prijavi` gives a logged-in student 403 `Izbačen si iz ovog izvođenja.` when they have an expelled row in that run, and,
+  for a scored run with a lecture, 403 `Prvo se čekiraj: skeniraj QR sa table.` without a check-in on that lecture in the last 5 h (also for an
+  existing participant); order: `Potrebna je prijava studenta.`, then expelled, then check-in. `NastavnickoStanje` ends with `brojOcekivanih`
+  (non-expelled participants plus students on class who are neither participants nor expelled; without a lecture just the participants) and
+  `brojCekiranih` (`null` without a lecture). `JavnoStanje` and every phone snapshot are unchanged.
+- **REST:** `CasPublicRest` `/public/nalog/cas`: `POST skeniraj` ANONIMNO (409 `Odjavi se kao nastavnik.` with a teacher session), `POST potvrdi`
+  and `GET ""` STUDENT; `skeniraj`/`potvrdi` set `gfs_uredjaj` (`Kolacici.UREDJAJ`, 365 days, `Lax`) when missing. `CekiranjeRest`
+  `GET /predavanja/{id}/cekiranje` ADMIN. Messages: `QR je istekao. Skeniraj ponovo sa table.` (410), `Čekiranje za ovaj čas je završeno.` (410),
+  `Nisi u grupi ovog predavanja. Javi se nastavniku.` (403), `Čekiranje je isteklo. Skeniraj QR ponovo.` (410). Cleanup: `CiscenjePrijave` deletes
+  keys expired or used more than 1 h ago.
+- **Tests:** `V17MigracijaDbTest`, `CekiranjeTokenTest`, `CekiranjeServiceDbTest` (incl. parallel double tap), `PredavanjeAktivnostiDbTest`
+  (lock wait), `CekiranjeUzivoDbTest` (expelled, scored run, `brojOcekivanih`), `CasPublicRestIT` (whole chain, cookie, no secret in JSON); shared
+  JDBC fixtures `service/cas/CasPodaci` (times always from Java, never MySQL `now()`).
+
 ## Build & Run
 
 ```bash
@@ -838,7 +873,10 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `kodovi_za_prijavu.nacin` (`NOT NULL DEFAULT 'MEJL'`); strips a `/YYYY` suffix from `studenti.indeks` when it equals `godina` and the short form
   collides with no other row of that year; phones of `studenti` and `prijave` to E.164 only for unambiguous forms (`+...` without separators, `00...`,
   `0` + 7-10 digits -> `+381`, `381` + 8-10 digits), the rest stays as typed; all idempotent and additive (an older image reads the text columns
-  unchanged). **Next free version: `V17`.**
+  unchanged). `V17` = check-in (`V17__cekiranje.sql`, branch `feature/studentski-portal`; provisional, re-check against `origin/staging`
+  before the merge): tables `cekiranja` (`UNIQUE(predavanje_id, student_id)`, index `(student_id, vreme)`, FKs `ON DELETE CASCADE`) and
+  `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
+  maps none of it, rollback needs no DB work). **Next free version: `V18`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose
