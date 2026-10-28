@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import tri.novica.gfssystem.dto.predavanje.UpdatePredavanjeCmd;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.service.PredavanjeService;
 
@@ -88,6 +89,22 @@ class PredavanjeAktivnostiDbTest {
 
     @Test
     void zakljucavaRedPredavanja() throws Exception {
+        cekaZakljucanRed(() -> predavanjeService.dodajPrisutnog(predavanje, ana));
+        assertEquals(List.of("PRISUSTVO"), d.aktivnosti(predavanje, ana));
+    }
+
+    @Test
+    void izmenaIPosecenostCekajuZakljucanRed() throws Exception {
+        // bezbednosni pregled: ceo red bi inače vratio staro stanje (npr. otvorio završeno predavanje ili staru tajnu)
+        UpdatePredavanjeCmd cmd = new UpdatePredavanjeCmd();
+        cmd.setTema("Nova tema");
+        cekaZakljucanRed(() -> predavanjeService.updatePredavanje(predavanje, cmd));
+        cekaZakljucanRed(() -> predavanjeService.updatePosecenost(predavanje));
+        assertEquals("Nova tema", jdbc.queryForObject("select tema from predavanja where id = ?", String.class, predavanje));
+    }
+
+    /** {@code radnja} u drugoj niti počinje dok jedna transakcija drži red predavanja i završava tek posle nje. */
+    private void cekaZakljucanRed(Runnable radnja) throws Exception {
         ExecutorService ex = Executors.newFixedThreadPool(2);
         AtomicLong pustioU = new AtomicLong();
         AtomicLong dodaoU = new AtomicLong();
@@ -105,7 +122,7 @@ class PredavanjeAktivnostiDbTest {
             }));
             assertTrue(zakljucano.await(30, TimeUnit.SECONDS));
             Future<?> dodaj = ex.submit(() -> {
-                predavanjeService.dodajPrisutnog(predavanje, ana);
+                radnja.run();
                 dodaoU.set(System.nanoTime());
             });
             drzi.get(30, TimeUnit.SECONDS);
@@ -113,7 +130,6 @@ class PredavanjeAktivnostiDbTest {
         } finally {
             ex.shutdownNow();
         }
-        assertTrue(dodaoU.get() > pustioU.get(), "ručna izmena je završila pre nego što je zaključavanje pušteno");
-        assertEquals(List.of("PRISUSTVO"), d.aktivnosti(predavanje, ana));
+        assertTrue(dodaoU.get() > pustioU.get(), "izmena je završila pre nego što je zaključavanje pušteno");
     }
 }

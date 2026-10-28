@@ -91,8 +91,8 @@ class V17MigracijaDbTest {
         Long bora = db.queryForObject("select id from studenti where indeks = 'GD918'", Long.class);
         db.update("insert into cekiranja (predavanje_id, student_id, vreme) values (?, ?, now(6))", predavanjeId, ana);
         db.update("insert into cekiranja (predavanje_id, student_id, vreme) values (?, ?, now(6))", predavanjeId, bora);
-        db.update("insert into cekiranja_na_cekanju (kljuc_hash, predavanje_id, skenirano, istice) values (repeat('a', 64), ?, now(6), now(6))",
-                predavanjeId);
+        db.update("insert into cekiranja_na_cekanju (kljuc_hash, predavanje_id, skenirano, istice, uredjaj_hash)"
+                + " values (repeat('a', 64), ?, now(6), now(6), repeat('b', 64))", predavanjeId);
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () -> db.update(
                 "insert into cekiranja (predavanje_id, student_id, vreme) values (?, ?, now(6))", predavanjeId, ana));
 

@@ -67,8 +67,9 @@ public class CekiranjeService {
     /**
      * Skeniran QR. Neispravan, istekao ili tuđ token i predavanje bez važeće tajne: 410 {@value #QR_ISTEKAO}; završeno
      * predavanje: 410 {@value #CAS_ZAVRSEN}. Prijavljen student se čekira (403 {@value #TUDJA_GRUPA} van grupe) i dobija
-     * stanje časa tog predavanja; neprijavljen dobija jednokratni ključ (15 min, vezan za predavanje i trenutak skeniranja).
-     * {@code uredjajHash}: SHA-256 kolačića {@code gfs_uredjaj}.
+     * stanje časa tog predavanja; neprijavljen dobija jednokratni ključ (15 min, vezan za predavanje, trenutak skeniranja i
+     * telefon). Jedan važeći ključ po telefonu i predavanju: novo skeniranje poništava prethodni, pa se ključevi ne prave
+     * na gomilu za druge. {@code uredjajHash}: SHA-256 kolačića {@code gfs_uredjaj} (REST ga uvek daje).
      */
     public SkeniranjeOdgovor skeniraj(String token, Optional<Long> studentId, String uredjajHash) {
         OptionalLong id = CekiranjeToken.predavanjeIz(token);
@@ -83,12 +84,15 @@ public class CekiranjeService {
             throw istekao();
         }
         if (studentId.isEmpty()) {
+            if (uredjajHash == null) throw new IllegalArgumentException("Ključ čekanja traži oznaku uređaja.");
+            naCekanjuRepository.obrisiNeiskorisceneZaUredjaj(p.getId(), uredjajHash);
             String kljuc = tokenGenerator.novi();
             CekiranjeNaCekanju k = new CekiranjeNaCekanju();
             k.setKljucHash(TokenHash.od(kljuc));
             k.setPredavanje(p);
             k.setSkenirano(sada);
             k.setIstice(sada.plus(KLJUC_TRAJE));
+            k.setUredjajHash(uredjajHash);
             naCekanjuRepository.save(k);
             return new SkeniranjeOdgovor(kljuc, null);
         }
@@ -97,20 +101,21 @@ public class CekiranjeService {
     }
 
     /**
-     * Čekiranje iz ključa posle prijave: ključ se troši jednom; nepoznat, istekao ili potrošen: 410 {@value #KLJUC_ISTEKAO}.
-     * Vreme čekiranja je trenutak skeniranja. Odbijeno čekiranje (tuđa grupa, završen čas) ne troši ključ (rollback).
+     * Čekiranje iz ključa posle prijave: ključ se troši jednom i samo sa telefona koji je skenirao (isti {@code gfs_uredjaj});
+     * nepoznat, istekao, potrošen ili sa drugog telefona: 410 {@value #KLJUC_ISTEKAO}, a ključ ostaje. Vreme i oznaka
+     * telefona čekiranja su iz skeniranja. Odbijeno čekiranje (tuđa grupa, završen čas) ne troši ključ (rollback).
      */
     public CasStanje potvrdi(String kljuc, long studentId, String uredjajHash) {
         if (kljuc == null || !TokenGenerator.FORMAT.matcher(kljuc).matches()) throw kljucIstekao();
         LocalDateTime sada = sada();
         CekiranjeNaCekanju k = naCekanjuRepository.findByKljucHashForUpdate(TokenHash.od(kljuc))
-                .filter(x -> x.getIskorisceno() == null && x.getIstice().isAfter(sada))
+                .filter(x -> x.getIskorisceno() == null && x.getIstice().isAfter(sada) && x.getUredjajHash().equals(uredjajHash))
                 .orElseThrow(CekiranjeService::kljucIstekao);
         k.setIskorisceno(sada);
         Predavanje p = predavanjeRepository.findByIdForUpdate(k.getPredavanje().getId())
                 .orElseThrow(CekiranjeService::kljucIstekao);
         if (zavrseno(p)) throw new SystemException(CAS_ZAVRSEN, HttpStatus.GONE);
-        Cekiranje c = upisi(p, student(studentId), k.getSkenirano(), uredjajHash);
+        Cekiranje c = upisi(p, student(studentId), k.getSkenirano(), k.getUredjajHash());
         return stanje(c, studentId);
     }
 

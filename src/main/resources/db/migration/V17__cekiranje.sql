@@ -36,8 +36,9 @@ CREATE TABLE IF NOT EXISTS `cekiranja_na_cekanju` (
   `skenirano` datetime(6) NOT NULL,
   `istice` datetime(6) NOT NULL,
   `iskorisceno` datetime(6) DEFAULT NULL,
+  `uredjaj_hash` char(64) NOT NULL,
   PRIMARY KEY (`kljuc_hash`),
-  KEY `idx_cekiranja_na_cekanju_predavanje` (`predavanje_id`),
+  KEY `idx_cekiranja_na_cekanju_uredjaj` (`predavanje_id`, `uredjaj_hash`),
   KEY `idx_cekiranja_na_cekanju_istice` (`istice`),
   CONSTRAINT `fk_cekiranja_na_cekanju_predavanje` FOREIGN KEY (`predavanje_id`) REFERENCES `predavanja` (`id`)
     ON DELETE CASCADE

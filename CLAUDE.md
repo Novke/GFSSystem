@@ -276,6 +276,8 @@ group's schema, the console and projector show results per variant and, on `Shif
   not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
   edits in `PredavanjeService` must lock the lecture row first (plan task BE-8). **That locking is already in place** since the
   check-in work (see "Čekiranje"): every manual activity change locks the lecture row (`PredavanjeRepository.findByIdForUpdate`).
+  BE-8 must write an activity only for a student with a **current check-in** on the lecture: removing attendance deletes the check-in
+  but keeps the student's participant row in a running scored run (security review 2026-10-28).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
   grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
@@ -786,20 +788,24 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
 
 Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy repo), section 4; plan next to it. Packages `entity|repository|service|rest|dto/cas`.
 - **Tables (V17):** `cekiranja` (one row per lecture and student, `vreme` = first scan, never changed; `uredjaj_hash` = SHA-256 of cookie
-  `gfs_uredjaj`), `cekiranja_na_cekanju` (one-time key of a student who scanned before logging in: SHA-256 only, 15 min, `iskorisceno`),
+  `gfs_uredjaj`), `cekiranja_na_cekanju` (one-time key of a student who scanned before logging in: SHA-256 only, 15 min, `iskorisceno`,
+  `uredjaj_hash` of the scanning phone),
   `predavanja.cekiranje_tajna` (32 chars from `TokenGenerator`, `@JsonIgnore`, never leaves the server) and `cekiranje_tajna_od`.
 - **Token (`CekiranjeToken`, pure static logic):** `<predavanjeId>.<h>`, `h` = first 22 chars of `base64url(HMAC-SHA256(tajna, id + ":" + w))`,
   `w = floor(epochSeconds / 10)`; windows `w`, `w-1`, `w-2` are accepted (20-30 s), compared with `MessageDigest.isEqual`. The secret is created by
   the teacher view (`GET /predavanja/{id}/cekiranje`) with a compare-and-set update (`PredavanjeRepository.postaviTajnu`), renewed when older than
   5 h, and cleared by `zavrsiPredavanje`.
 - **`CekiranjeService`** (`READ_COMMITTED`): `skeniraj(token, studentId?, uredjajHash)` (logged in: check-in + class state; anonymous: a key),
-  `potvrdi(kljuc, studentId, uredjajHash)` (consumes the key under `findByKljucHashForUpdate`; the check-in gets the scan time), `stanje(studentId)`
+  `potvrdi(kljuc, studentId, uredjajHash)` (consumes the key under `findByKljucHashForUpdate`, **only from the phone that scanned** (same
+  `gfs_uredjaj` hash, else 410 and the key stays), so a key posted to a group chat checks nobody in; the check-in gets the scan time and the scan
+  device; a new anonymous scan from the same phone deletes that phone's unused keys for the lecture, one pending key per phone), `stanje(studentId)`
   (latest check-in of the last 5 h, finished lecture or not; the newest active run of a live lecture the student was not expelled from),
   `zaNastavnika(predavanjeId)` (token, window end, list with "kasnio" > 15 min after the first check-in and "isti telefon kao"). Group rule:
   `Utility.smeNaNastavuGrupe`; a lecture without a group admits nobody. A check-in adds `PRISUSTVO` only when the student has no activity on the
   lecture (raise, never lower) and bumps `posecenost`.
 - **Lock order:** check-in and every manual activity change in `PredavanjeService` (`dodajPrisutnog`, `skloniPrisutnog`, `dodajZadatak`,
-  `skloniZadatak`, `dodajZadatakSaZvezdicom`, `updateAktivnostNapomenu`, `zavrsiPredavanje`) lock the lecture row first; check-in **never** locks a run
+  `skloniZadatak`, `dodajZadatakSaZvezdicom`, `updateAktivnostNapomenu`, `zavrsiPredavanje`, and `updatePredavanje`, `updatePosecenost`, `obrisi`,
+  because Hibernate writes the whole row and a stale entity would reopen a finished lecture or restore an old secret) lock the lecture row first; check-in **never** locks a run
   row. A manual add of a student who is already present returns the lecture unchanged (no more 400 "vec zabelezeno"); removing attendance deletes the
   check-in too (the phone stops following the class).
 - **Uživo:** `UcesnikService.prijavi` gives a logged-in student 403 `Izbačen si iz ovog izvođenja.` when they have an expelled row in that run, and,

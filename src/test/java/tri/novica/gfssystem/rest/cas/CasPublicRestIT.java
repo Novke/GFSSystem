@@ -113,14 +113,28 @@ class CasPublicRestIT {
     }
 
     @Test
-    void potvrdaKljucaPoslePrijave() throws Exception {
-        String kljuc = cekiranje.skeniraj(cekiranje.zaNastavnika(predavanje).token(), java.util.Optional.empty(), null).kljuc();
-        mvc.perform(post("/public/nalog/cas/potvrdi").header("Sec-Fetch-Site", "same-origin").cookie(studentskiKolacic(ana))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"kljuc\":\"" + kljuc + "\"}"))
+    void potvrdaKljucaPoslePrijaveSamoSaIstogTelefona() throws Exception {
+        Cookie telefon = new Cookie(Kolacici.UREDJAJ, "abcdefghjkmnpqrstuvwxyzABCDEFGHJ");
+        Cookie drugiTelefon = new Cookie(Kolacici.UREDJAJ, "BCDEFGHJKLMNPQRSTUVWXYZabcdefghj");
+        String kljuc = com.jayway.jsonpath.JsonPath.read(mvc.perform(post("/public/nalog/cas/skeniraj")
+                        .header("Sec-Fetch-Site", "same-origin").cookie(telefon)
+                        .contentType(MediaType.APPLICATION_JSON).content(telo(cekiranje.zaNastavnika(predavanje).token())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), "$.kljuc");
+        String potvrda = "{\"kljuc\":\"" + kljuc + "\"}";
+        // ključ poslat drugom telefonu (i telefon bez kolačića uređaja) ne čekira, a ključ ostaje
+        for (Cookie[] kolaci : new Cookie[][]{{studentskiKolacic(ana), drugiTelefon}, {studentskiKolacic(ana)}}) {
+            mvc.perform(post("/public/nalog/cas/potvrdi").header("Sec-Fetch-Site", "same-origin").cookie(kolaci)
+                            .contentType(MediaType.APPLICATION_JSON).content(potvrda))
+                    .andExpect(status().isGone())
+                    .andExpect(jsonPath("$.reason").value(CekiranjeService.KLJUC_ISTEKAO));
+        }
+        mvc.perform(post("/public/nalog/cas/potvrdi").header("Sec-Fetch-Site", "same-origin").cookie(studentskiKolacic(ana), telefon)
+                        .contentType(MediaType.APPLICATION_JSON).content(potvrda))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.predavanje.id").value(predavanje));
-        mvc.perform(post("/public/nalog/cas/potvrdi").header("Sec-Fetch-Site", "same-origin").cookie(studentskiKolacic(ana))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"kljuc\":\"" + kljuc + "\"}"))
+        mvc.perform(post("/public/nalog/cas/potvrdi").header("Sec-Fetch-Site", "same-origin").cookie(studentskiKolacic(ana), telefon)
+                        .contentType(MediaType.APPLICATION_JSON).content(potvrda))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.reason").value(CekiranjeService.KLJUC_ISTEKAO));
     }

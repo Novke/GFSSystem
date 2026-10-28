@@ -57,7 +57,7 @@ public class PredavanjeService {
      * {@code predavanje} postavlja na null (FK {@code domaci.predavanje_id}).
      */
     public void obrisi(Long id) {
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
         predavanje.getDomaci().forEach(d -> d.setPredavanje(null));
         predavanje.getDomaci().clear();
@@ -88,8 +88,12 @@ public class PredavanjeService {
         return mapper.map(predavanjeRepository.save(predavanje), PredavanjeDetails.class);
     }
 
+    /**
+     * Izmena, posećenost i brisanje zaključavaju red predavanja kao ručne aktivnosti i čekiranje: Hibernate upisuje ceo red,
+     * pa bi izmena učitana pre {@code zavrsiPredavanje} ili nove tajne čekiranja vratila staro stanje (bezbednosni pregled).
+     */
     public PredavanjeDetails updatePredavanje(Long id, UpdatePredavanjeCmd cmd) {
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
         mapper.map(cmd, predavanje);
@@ -99,7 +103,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails updatePosecenost(Long id){
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
         predavanje.setPosecenost(predavanje.getAktivnosti().size());

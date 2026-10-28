@@ -101,7 +101,7 @@ class CekiranjeServiceDbTest {
 
     @Test
     void neprijavljenDobijaKljucPaPotvrdom() {
-        SkeniranjeOdgovor o = cekiranje.skeniraj(token(predavanje), Optional.empty(), null);
+        SkeniranjeOdgovor o = cekiranje.skeniraj(token(predavanje), Optional.empty(), UREDJAJ_A);
         assertNull(o.stanje());
         assertTrue(o.kljuc().matches("^[A-Za-z0-9]{32}$"));
         assertEquals(0, d.brojCekiranja(predavanje));
@@ -119,20 +119,51 @@ class CekiranjeServiceDbTest {
 
     @Test
     void kljucJednokratan() {
-        String kljuc = cekiranje.skeniraj(token(predavanje), Optional.empty(), null).kljuc();
-        cekiranje.potvrdi(kljuc, ana, null);
-        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, bora, null));
+        String kljuc = cekiranje.skeniraj(token(predavanje), Optional.empty(), UREDJAJ_A).kljuc();
+        cekiranje.potvrdi(kljuc, ana, UREDJAJ_A);
+        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, bora, UREDJAJ_A));
         ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi("nepostojeci", ana, null));
         ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi("x".repeat(32), ana, null));
         assertTrue(d.aktivnosti(predavanje, bora).isEmpty());
     }
 
     @Test
+    void kljucVaziSamoSaTelefonaKojiJeSkenirao() {
+        // bezbednosni pregled: ključ poslat u grupu ne čekira nikoga na drugom telefonu
+        String kljuc = cekiranje.skeniraj(token(predavanje), Optional.empty(), UREDJAJ_A).kljuc();
+        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, bora, UREDJAJ_B));
+        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, bora, null));
+        assertEquals(0, d.brojCekiranja(predavanje));
+        // odbijen pokušaj ne troši ključ: telefon koji je skenirao ga i dalje potvrđuje
+        assertEquals(predavanje, cekiranje.potvrdi(kljuc, ana, UREDJAJ_A).predavanje().id());
+        assertEquals(UREDJAJ_A, jdbc.queryForObject(
+                "select uredjaj_hash from cekiranja where predavanje_id = ? and student_id = ?", String.class, predavanje, ana));
+    }
+
+    @Test
+    void novoSkeniranjeIstimTelefonomPonistavaKljuc() {
+        String t = token(predavanje);
+        String prvi = cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_A).kljuc();
+        String drugogTelefona = cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_B).kljuc();
+        String drugi = cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_A).kljuc();
+        assertEquals(2, (int) jdbc.queryForObject(
+                "select count(*) from cekiranja_na_cekanju where predavanje_id = ?", Integer.class, predavanje));
+        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(prvi, ana, UREDJAJ_A));
+        assertNotNull(cekiranje.potvrdi(drugi, ana, UREDJAJ_A).predavanje());
+        assertNotNull(cekiranje.potvrdi(drugogTelefona, bora, UREDJAJ_B).predavanje());
+        // iskorišćen ključ ostaje (čišćenje ga briše posle sat vremena), novo skeniranje ga ne dira
+        cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_A);
+        assertEquals(1, (int) jdbc.queryForObject(
+                "select count(*) from cekiranja_na_cekanju where predavanje_id = ? and iskorisceno is not null and uredjaj_hash = ?",
+                Integer.class, predavanje, UREDJAJ_A));
+    }
+
+    @Test
     void kljucIstekaoPosle15Min() {
-        String kljuc = cekiranje.skeniraj(token(predavanje), Optional.empty(), null).kljuc();
+        String kljuc = cekiranje.skeniraj(token(predavanje), Optional.empty(), UREDJAJ_A).kljuc();
         jdbc.update("update cekiranja_na_cekanju set istice = ? where predavanje_id = ?",
                 LocalDateTime.now(clock).minusSeconds(1), predavanje);
-        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, ana, null));
+        ocekuj(410, CekiranjeService.KLJUC_ISTEKAO, () -> cekiranje.potvrdi(kljuc, ana, UREDJAJ_A));
         assertEquals(0, d.brojCekiranja(predavanje));
     }
 
@@ -146,9 +177,9 @@ class CekiranjeServiceDbTest {
         String nedavni = CekiranjeToken.token(d.tajna(predavanje), predavanje, clock.millis() - 15_000);
         assertNotNull(cekiranje.skeniraj(nedavni, Optional.of(ana), null).stanje());
         ocekuj(410, CekiranjeService.QR_ISTEKAO, () -> cekiranje.skeniraj("nije-token", Optional.of(ana), null));
-        ocekuj(410, CekiranjeService.QR_ISTEKAO, () -> cekiranje.skeniraj(null, Optional.empty(), null));
+        ocekuj(410, CekiranjeService.QR_ISTEKAO, () -> cekiranje.skeniraj(null, Optional.empty(), UREDJAJ_A));
         ocekuj(410, CekiranjeService.QR_ISTEKAO,
-                () -> cekiranje.skeniraj("999999999.xxxxxxxxxxxxxxxxxxxxxx", Optional.empty(), null));
+                () -> cekiranje.skeniraj("999999999.xxxxxxxxxxxxxxxxxxxxxx", Optional.empty(), UREDJAJ_A));
     }
 
     @Test
@@ -157,7 +188,7 @@ class CekiranjeServiceDbTest {
         predavanjeService.zavrsiPredavanje(predavanje);
         assertNull(d.tajna(predavanje), "završetak briše tajnu");
         ocekuj(410, CekiranjeService.CAS_ZAVRSEN, () -> cekiranje.skeniraj(t, Optional.of(ana), null));
-        ocekuj(410, CekiranjeService.CAS_ZAVRSEN, () -> cekiranje.skeniraj(t, Optional.empty(), null));
+        ocekuj(410, CekiranjeService.CAS_ZAVRSEN, () -> cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_A));
     }
 
     @Test
@@ -192,9 +223,9 @@ class CekiranjeServiceDbTest {
         Long mladi = d.student(mladja, "Mladi");
         ocekuj(403, CekiranjeService.TUDJA_GRUPA, () -> cekiranje.skeniraj(t, Optional.of(mladi), null));
         // i preko ključa, a ključ ostaje neiskorišćen
-        String kljuc = cekiranje.skeniraj(t, Optional.empty(), null).kljuc();
-        ocekuj(403, CekiranjeService.TUDJA_GRUPA, () -> cekiranje.potvrdi(kljuc, tudj, null));
-        assertNotNull(cekiranje.potvrdi(kljuc, ana, null).predavanje());
+        String kljuc = cekiranje.skeniraj(t, Optional.empty(), UREDJAJ_A).kljuc();
+        ocekuj(403, CekiranjeService.TUDJA_GRUPA, () -> cekiranje.potvrdi(kljuc, tudj, UREDJAJ_A));
+        assertNotNull(cekiranje.potvrdi(kljuc, ana, UREDJAJ_A).predavanje());
         assertEquals(1, d.brojCekiranja(predavanje));
     }
 
@@ -392,11 +423,12 @@ class CekiranjeServiceDbTest {
     void ciscenjeBriseIstekleIIskorisceneKljuceve() {
         LocalDateTime sada = LocalDateTime.now(clock);
         String vazeci = "1".repeat(64), istekao = "2".repeat(64), iskoriscenDavno = "3".repeat(64), iskoriscenSkoro = "4".repeat(64);
-        String sql = "insert into cekiranja_na_cekanju (kljuc_hash, predavanje_id, skenirano, istice, iskorisceno) values (?, ?, ?, ?, ?)";
-        jdbc.update(sql, vazeci, predavanje, sada, sada.plusMinutes(15), null);
-        jdbc.update(sql, istekao, predavanje, sada.minusHours(3), sada.minusHours(2), null);
-        jdbc.update(sql, iskoriscenDavno, predavanje, sada.minusHours(3), sada.plusMinutes(5), sada.minusHours(2));
-        jdbc.update(sql, iskoriscenSkoro, predavanje, sada.minusMinutes(20), sada.plusMinutes(5), sada.minusMinutes(10));
+        String sql = "insert into cekiranja_na_cekanju (kljuc_hash, predavanje_id, skenirano, istice, iskorisceno, uredjaj_hash)"
+                + " values (?, ?, ?, ?, ?, ?)";
+        jdbc.update(sql, vazeci, predavanje, sada, sada.plusMinutes(15), null, UREDJAJ_A);
+        jdbc.update(sql, istekao, predavanje, sada.minusHours(3), sada.minusHours(2), null, UREDJAJ_A);
+        jdbc.update(sql, iskoriscenDavno, predavanje, sada.minusHours(3), sada.plusMinutes(5), sada.minusHours(2), UREDJAJ_A);
+        jdbc.update(sql, iskoriscenSkoro, predavanje, sada.minusMinutes(20), sada.plusMinutes(5), sada.minusMinutes(10), UREDJAJ_A);
         ciscenje.ocisti();
         assertEquals(List.of(vazeci, iskoriscenSkoro), jdbc.queryForList(
                 "select kljuc_hash from cekiranja_na_cekanju where predavanje_id = ? order by kljuc_hash", String.class, predavanje));
