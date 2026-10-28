@@ -108,7 +108,8 @@ class ZadatakStanjeTest {
         when(dodelaRepository.parovi(RUNDA)).thenReturn(List.of(new Object[]{1L, VAR_A}, new Object[]{2L, VAR_B}));
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), clock);
     }
 
     Ucesnik ucesnik(Long id, String ime) {
