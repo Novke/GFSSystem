@@ -46,7 +46,8 @@ public final class BankaPP {
 
     /**
      * Kopija sa podrazumevanim vrednostima: tekstovi bez razmaka na krajevima, prazna jedinica {@code null}, odstupanje 0
-     * {@code APSOLUTNO}, {@code zanemariVelicinu} i {@code zanemariRazmake} {@code true}; opcije samo za JEDAN_TACAN i
+     * {@code APSOLUTNO}, {@code zanemariVelicinu} i {@code zanemariRazmake} {@code true}, {@code zanemariVodeceNule}
+     * {@code true} samo za uključen TEKST, inače {@code null} (= isključeno, kao šema od pre te opcije); opcije samo za JEDAN_TACAN i
      * VISE_TACNIH, a opciji bez id-ja se dodeljuje sledeći slobodan id (iznad najvećeg datog, od 1). Ne proverava pravila.
      * Za izmenu sačuvane šeme vidi {@link #normalizujPolja(List, List)}.
      */
@@ -86,7 +87,8 @@ public final class BankaPP {
                 prazanUNull(p.jedinica()),
                 p.zanemariVelicinu() == null ? Boolean.TRUE : p.zanemariVelicinu(),
                 p.zanemariRazmake() == null ? Boolean.TRUE : p.zanemariRazmake(),
-                opcijsko ? normalizujOpcije(p.opcije(), najveciSacuvan) : null);
+                opcijsko ? normalizujOpcije(p.opcije(), najveciSacuvan) : null,
+                p.tip() == TipPolja.TEKST && Boolean.TRUE.equals(p.zanemariVodeceNule()) ? Boolean.TRUE : null);
     }
 
     private static List<PoljeOpcija> normalizujOpcije(List<PoljeOpcija> opcije, long najveciSacuvan) {
