@@ -1,19 +1,47 @@
 package tri.novica.gfssystem.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.Predavanje;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface PredavanjeRepository extends JpaRepository<Predavanje, Long>, JpaSpecificationExecutor<Predavanje> {
+
+    /**
+     * Zaključava red predavanja (SELECT ... FOR UPDATE) do kraja transakcije: čekiranje i ručne izmene aktivnosti idu
+     * redom (spec studentskog dela 4.5). Nikad posle zaključanog reda izvođenja.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Predavanje p where p.id = :id")
+    Optional<Predavanje> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * Nova tajna QR-a za čekiranje, samo ako predavanje nije završeno i tajne nema ili je napravljena pre {@code granica}
+     * (compare-and-set: dva prozora u istoj sekundi ne prave dve tajne). Vraća broj izmenjenih redova (0 ili 1).
+     */
+    @Modifying
+    @Query("""
+            update Predavanje p set p.cekiranjeTajna = :tajna, p.cekiranjeTajnaOd = :sada
+            where p.id = :id and (p.zavrseno is null or p.zavrseno = false)
+              and (p.cekiranjeTajna is null or p.cekiranjeTajnaOd is null or p.cekiranjeTajnaOd < :granica)""")
+    int postaviTajnu(@Param("id") Long id, @Param("tajna") String tajna, @Param("sada") LocalDateTime sada,
+                     @Param("granica") LocalDateTime granica);
+
+    /** Trenutna tajna iz baze (posle neuspelog {@link #postaviTajnu}: drugi zahtev ju je upravo postavio). */
+    @Query("select p.cekiranjeTajna from Predavanje p where p.id = :id and p.cekiranjeTajna is not null")
+    Optional<String> tajna(@Param("id") Long id);
 
     @Query("select max(p.rb) from Predavanje p")
     Integer findPoslednjiRB();
