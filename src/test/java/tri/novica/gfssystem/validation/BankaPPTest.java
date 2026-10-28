@@ -78,6 +78,17 @@ class BankaPPTest {
     }
 
     @Test
+    void normalizujVodeceNuleSamoZaUkljucenTekst() {
+        Polje ukljuceno = new Polje("a", "x", TipPolja.TEKST, null, null, null, null, null, null, true);
+        Polje iskljuceno = new Polje("b", "y", TipPolja.TEKST, null, null, null, null, null, null, false);
+        Polje broj = new Polje("c", "z", TipPolja.BROJ, null, null, null, null, null, null, true);
+        List<Polje> n = BankaPP.normalizujPolja(List.of(ukljuceno, iskljuceno, broj));
+        assertEquals(Boolean.TRUE, n.get(0).zanemariVodeceNule());
+        assertNull(n.get(1).zanemariVodeceNule(), "false se čuva kao null (isključeno), kao stara šema");
+        assertNull(n.get(2).zanemariVodeceNule(), "BROJ već poredi vrednost, opcija ne važi");
+    }
+
+    @Test
     void normalizujBrisePrazneOpcijeKodNeopcijskihTipova() {
         Polje p = new Polje("a", "x", TipPolja.TEKST, null, null, null, null, null, List.of(op(1L, "A"), op(2L, "B")));
         assertNull(BankaPP.normalizujPolja(List.of(p)).get(0).opcije());

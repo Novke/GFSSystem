@@ -322,7 +322,12 @@ variant with `ikadOdobrena` are never deleted, neither on a new render nor on de
   `oznaka` 1-200 chars (a plain description, e.g. `Dekadna vrednost`; a list letter `a)` only when the task text itself has parts with
   those letters, never on a one-field schema: the projector and the overview hide the label of a single field, the phone strips a
   leading `a) ` there; the MCP guide `vodic-banka.md` teaches the same, `VodicTest.vodicBankaUciOznakeBezSlova`), `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
-  with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`).
+  with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`),
+  `zanemariVodeceNule` (last component of `Polje`, default off; stored only when `true`, so an existing schema column stays the same):
+  `01111111` = `1111111` (`OcenaPolja.bezVodecihNula`: zeros at the start, after an optional sign, followed by a letter or digit, so
+  `0.101` stays). Only where a leading zero does not change the result (sums, differences, conversions in a base); never for a
+  fixed-width representation (complement, 8 bits), where `00000101` is not `101`. It is part of the round snapshot like every
+  schema property, so a round graded before it keeps its result until it is regraded.
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
   without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,
   under the lock: `BankaPP.normalizujPolja(polja, sacuvana)`), so a client that omits ids (MCP) never gets the id of an option removed in the same
