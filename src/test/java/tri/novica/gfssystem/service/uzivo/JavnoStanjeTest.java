@@ -629,7 +629,8 @@ class JavnoStanjeTest {
             if (r != null) {
                 if (r.opcije() != null) r.opcije().forEach(o -> assertNull(o.tacna()));
                 if (r.tekstovi() != null) r.tekstovi().forEach(t -> assertNull(t.tacan()));
-                if (r.brojevi() != null) assertNull(r.brojevi().uOdstupanju());
+                if (r.brojevi() != null) r.brojevi().vrednosti().forEach(v -> assertNull(v.tacan()));
+                assertNull(r.tacnih());
             }
         }
         if (!rezultati) assertNull(st.rezultat());
@@ -708,24 +709,46 @@ class JavnoStanjeTest {
     }
 
     @Test
-    void brojUOdstupanjuTekPosleTacan() {
-        // "u odstupanju x/y" govori koliko je tačnih: u javnom rezultatu tek kad je tačan odgovor prikazan
+    void brojTacnostVrednostiIBrojTacnihTekPosleTacan() {
+        // oznaka tačno/netačno po vrednosti i broj tačnih govore koliko je tačnih: u javnom rezultatu tek posle TACAN
         na(TipPitanja.BROJ, Faza.ZATVORENO);
         iz.setRezultatiPrikazani(true);
         odgovor(trenutna(), ucesnik(31L, "Ana"), 1000, true).setBroj(9.8);
         odgovor(trenutna(), ucesnik(32L, "Bojan"), 0, false).setBroj(3.0);
 
-        RezultatBrojevi pre = service.javno(IZ).rezultat().brojevi();
-        assertNull(pre.uOdstupanju());
-        assertEquals((9.8 + 3.0) / 2, pre.medijana());
-        assertEquals(2, pre.najcesce().size());
-        // projektor isto (Space pre C), a konzola vidi broj tačnih uživo
-        assertNull(service.nastavnicko(IZ).javniRezultat().brojevi().uOdstupanju());
-        assertEquals(1, service.nastavnicko(IZ).rezultat().brojevi().uOdstupanju());
+        Rezultat pre = service.javno(IZ).rezultat();
+        assertNull(pre.tacnih());
+        assertEquals(List.of(new BrojStavka(3.0, 1, null), new BrojStavka(9.8, 1, null)), pre.brojevi().vrednosti());
+        // projektor isto (Space pre C), a konzola vidi tačnost uživo
+        assertEquals(pre, service.nastavnicko(IZ).javniRezultat());
+        Rezultat konzola = service.nastavnicko(IZ).rezultat();
+        assertEquals(1, konzola.tacnih());
+        assertEquals(List.of(new BrojStavka(3.0, 1, false), new BrojStavka(9.8, 1, true)), konzola.brojevi().vrednosti());
 
+        // dok se odgovara TACAN se ne vidi ni kad je uključen
         iz.setTacanPrikazan(true);
-        assertEquals(1, service.javno(IZ).rezultat().brojevi().uOdstupanju());
-        assertEquals(1, service.nastavnicko(IZ).javniRezultat().brojevi().uOdstupanju());
+        iz.setFaza(Faza.OTVORENO);
+        assertNull(service.javno(IZ).rezultat().tacnih());
+        iz.setFaza(Faza.ZATVORENO);
+
+        Rezultat posle = service.javno(IZ).rezultat();
+        assertEquals(1, posle.tacnih());
+        assertEquals(List.of(false, true), posle.brojevi().vrednosti().stream().map(BrojStavka::tacan).toList());
+        assertEquals(posle, service.nastavnicko(IZ).javniRezultat());
+    }
+
+    @Test
+    void opcijeBrojTacnihTekPosleTacan() {
+        na(TipPitanja.JEDAN_TACAN, Faza.ZATVORENO);
+        iz.setRezultatiPrikazani(true);
+        odgovor(trenutna(), ucesnik(31L, "Ana"), 1000, true).setOpcije("121");
+        odgovor(trenutna(), ucesnik(32L, "Bojan"), 0, false).setOpcije("122");
+        assertNull(service.javno(IZ).rezultat().tacnih());
+        assertNull(service.nastavnicko(IZ).javniRezultat().tacnih());
+        assertEquals(1, service.nastavnicko(IZ).rezultat().tacnih());
+        iz.setTacanPrikazan(true);
+        assertEquals(1, service.javno(IZ).rezultat().tacnih());
+        assertEquals(1, service.nastavnicko(IZ).javniRezultat().tacnih());
     }
 
     @Test

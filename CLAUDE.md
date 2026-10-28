@@ -108,6 +108,9 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 `rest/uzivo`, `dto/uzivo` and the WebSocket part in `config/`; schema in Flyway `V7__uzivo.sql` (idempotent; originally V5, renumbered after the redesign's V6).
 - **Teacher REST** (outside `/public`, behind basic-auth on staging/prod): `/prezentacije`, `/slajdovi`, `/mediji`,
   `/izvodjenja` (commands `POST /izvodjenja/{id}/komande`, moderation, results).
+- **Runs of a lecture:** `GET /izvodjenja` takes three optional filters, `prezentacijaId`, `status` and `predavanjeId` (runs bound to that lecture;
+  newest first, same `IzvodjenjeInfo` rows). The lecture screen lists "Prezentacije na ovom predavanju" with it. `PredavanjeDetails.predmet` carries
+  `{id, naziv}` (the front picks the subject's presentations by that id).
 - `NastavnickoStanje.pocetakMs` (epoch ms, zona `Clock`-a) je osnova štoperice u konzoli i daljinskom; vremena u stanju su uvek epoch ms.
 - **PLATNO slide (slide builder, phase 1; `V8__platno.sql`):** `TipSlajda.PLATNO` holds a canvas document in `slajdovi.platno`
   (JSON, <= 1 MB): `dto/uzivo/platno/*` (records `Platno`, `Sloj` = TEKST|SLIKA|OBLIK|TABELA|FORMULA|CRTEZ, `Animacija`, ...).
@@ -189,6 +192,15 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - **"Ni ranije"** (`StanjeService`): phones get `JavnoStanje`; the projector renders `NastavnickoStanje.javniRezultat`
   and `javnaRangLista`, built by the same methods. The only difference: phones get option texts in the result only when
   text is allowed (PITANJE mode or Detalji); the projector always has them.
+- **Question results** (`RezultatBuilder`, pure; `tacanPrikazan` = teacher always, public only after `TACAN` on a closed question):
+  `Rezultat.tacnih` (last field) = correct answers among `ukupno` (one correct option; for VISE_TACNIH exactly the set of correct
+  options; BROJ within `Ocenjivac.uOdstupanju`; KRATAK_TEKST among the normalized accepted answers), `null` for ANKETA, SKALA, an
+  estimate, open KRATAK_TEKST or while correctness is hidden; in the public result it counts only the answers that result shows
+  (hidden text groups excluded). BROJ (`RezultatBrojevi.vrednosti`) lists **every** distinct value (no median since 2026-10-28, no
+  top-10 cap: at most one per participant, like the text groups; exact double equality, `-0` = `0`), most frequent first, then by
+  value, each `BrojStavka.tacan` (`null` while hidden or for an estimate). The order never depends on correctness, so it leaks nothing
+  before `TACAN`. `RezultatTekst.tacan` as before. Tests: `RezultatBuilderTest`, `JavnoStanjeTest` (`brojTacnostVrednostiIBrojTacnihTekPosleTacan`,
+  `opcijeBrojTacnihTekPosleTacan` and the all-states matrix: no `tacan`/`tacnih` before `TACAN`).
 - **Publishing** (`UzivoObjavljivac`): event listeners run after commit on the request/STOMP thread and only mark the
   run dirty (never read the DB or wait for a lock there). Reading and sending happen on the publisher thread under a
   per-run lock, one `StanjeService.snimci` read per run: a command, timer, moderation or kick (`IzvodjenjePromenjeno`,
@@ -250,7 +262,11 @@ group's schema, the console and projector show results per variant and, on `Shif
   `RESENJE` on a closed round, or correct values before `TACAN` on a closed round; the public state carries no variant content at
   all. The projector (`NastavnickiZadatak.javniRezultat`) follows three independent switches (results, TACAN, RESENJE). The teacher
   API (`/izvodjenja/{id}/stanje`, `/rezultati`, teacher STOMP) carries everything, so on prod the task is only safe while the teacher
-  API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot).
+  API is protected (see the wrapper README). Overview: `RezultatPitanja.zadatak` (`PregledZadatka`, `slajdId` from the snapshot);
+  each `UcesnikZadatka` carries `polja` (`kljuc -> tacno`) and `uneto` (`kljuc -> text` as entered, schema order, built by the pure
+  `UnetoZadatka` from the snapshot: BROJ as typed plus the field's unit, TEKST as typed, options by their text joined with `, `,
+  an option missing from the snapshot as `#id`). `uneto` exists only in the teacher overview (`GET /izvodjenja/{id}/rezultati`),
+  never in a phone projection or `javniRezultat` (`ZadatakStanjeTest.unetoNosiSamoPregled`).
 - **Student identity seam:** `security/IdentitetStudenta` (`studentId(request)`, `dostupno()`); `NemaIdentiteta` is the bean only when no
   other exists (`IdentitetAutoKonfig`, `@ConditionalOnMissingBean`). Without the login project a scored run (`PokreniCmd.boduje`) is 409
   `Prijava studenata još nije dostupna.`; on branch `feature/prijava` the seam is live: `NalogIdentitet` (see "Prijava") replaces
@@ -260,7 +276,7 @@ group's schema, the console and projector show results per variant and, on `Shif
   not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
   edits in `PredavanjeService` must lock the lecture row first (plan task BE-8).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
-  grading, SVG survival, overview), `OcenaZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
+  grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
 
 ## Banka zadataka (faza 1)
@@ -303,7 +319,9 @@ variant with `ikadOdobrena` are never deleted, neither on a new render nor on de
   existing name just changes its medium).
 - **JSON schema of `polja` (`grupe_zadataka.polja`, text column, `[]` = work on paper)** is a list of `Polje {kljuc, oznaka, tip, odstupanje,
   odstupanjeTip, jedinica, zanemariVelicinu, zanemariRazmake, opcije[{id, tekst}]}`; <= 10 fields, `kljuc` `^[a-z][a-z0-9]{0,9}$` and unique,
-  `oznaka` 1-200 chars, `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
+  `oznaka` 1-200 chars (a plain description, e.g. `Dekadna vrednost`; a list letter `a)` only when the task text itself has parts with
+  those letters, never on a one-field schema: the projector and the overview hide the label of a single field, the phone strips a
+  leading `a) ` there; the MCP guide `vodic-banka.md` teaches the same, `VodicTest.vodicBankaUciOznakeBezSlova`), `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
   with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`).
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
   without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,

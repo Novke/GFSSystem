@@ -329,29 +329,21 @@ public class StanjeService {
         List<RezultatOpcija> opcije = r.opcije().stream()
                 .map(o -> new RezultatOpcija(o.id(), null, o.broj(), o.tacna()))
                 .toList();
-        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala());
+        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala(), r.tacnih());
     }
 
     /**
      * Javni rezultat trenutnog pitanja ({@code NastavnickoStanje.javniRezultat} za projektor, a kroz
      * {@link #rezultatZaTelefon} i {@code JavnoStanje.rezultat}): samo kad su rezultati prikazani i runda je javna
-     * ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (i broj "u odstupanju", koji govori koliko je tačnih)
-     * tek kad je tačan odgovor prikazan na zatvorenom pitanju. Tekstovi opcija su uvek tu (projektor).
+     * ({@link #javnaRunda}), bez sakrivenih tekstova, a tačnost (oznake opcija, vrednosti i tekstova i broj tačnih) tek kad
+     * je tačan odgovor prikazan na zatvorenom pitanju ({@link RezultatBuilder}). Tekstovi opcija su uvek tu (projektor).
      */
     Rezultat javniRezultat(Podaci p) {
         Izvodjenje iz = p.iz();
         if (!iz.isRezultatiPrikazani()) return null;
         PitanjeRunda runda = javnaRunda(p, TokIzvodjenja.trenutni(iz, p.slajdovi()));
         if (runda == null) return null;
-        boolean tacan = tacanVidljiv(iz);
-        Rezultat r = rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacan);
-        if (r == null) return null;
-        if (!tacan && r.brojevi() != null && r.brojevi().uOdstupanju() != null) {
-            RezultatBrojevi b = r.brojevi();
-            return new Rezultat(r.tip(), r.ukupno(), r.opcije(), new RezultatBrojevi(b.medijana(), null, b.najcesce()),
-                    r.tekstovi(), r.skala());
-        }
-        return r;
+        return rezultat(snimak(runda), p.odgovoriRunde(runda.getId()), true, tacanVidljiv(iz));
     }
 
     /**
@@ -473,8 +465,8 @@ public class StanjeService {
     // ---------------------------------------------------------------- lista i rezultati
 
     /** Izvođenja (filteri opcioni), najnovija prva; brojevi učesnika i pitanja sa po jednim upitom za celu listu. */
-    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status) {
-        List<Izvodjenje> lista = izvodjenjeRepository.findZaListu(prezentacijaId, status);
+    public List<IzvodjenjeInfo> lista(Long prezentacijaId, StatusIzvodjenja status, Long predavanjeId) {
+        List<Izvodjenje> lista = izvodjenjeRepository.findZaListu(prezentacijaId, status, predavanjeId);
         if (lista.isEmpty()) return List.of();
         List<Long> ids = lista.stream().map(Izvodjenje::getId).toList();
         Map<Long, Long> ucesnika = brojevi(ucesnikRepository.brojPoIzvodjenju(ids));
@@ -535,9 +527,11 @@ public class StanjeService {
             Long varijantaId = dodele.get(u.getId());
             if (varijantaId == null) continue;
             ZadatakRezultatBuilder.OdgovorZadatka o = poUcesniku.get(u.getId());
-            String naziv = s.varijanta(varijantaId).map(VarijantaSnimak::naziv).orElse(null);
+            VarijantaSnimak v = s.varijanta(varijantaId).orElse(null);
+            String naziv = v == null ? null : v.naziv();
             lista.add(new UcesnikZadatka(u.getId(), u.getIme(), varijantaId, naziv, o != null,
-                    o == null ? null : o.tacno(), o == null ? null : ishod(o.polja())));
+                    o == null ? null : o.tacno(), o == null ? null : ishod(o.polja()),
+                    o == null ? null : UnetoZadatka.tekstovi(v, o.polja())));
         }
         Map<Long, Integer> nivoi = new LinkedHashMap<>();
         if (s.varijante() != null) {

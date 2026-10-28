@@ -56,6 +56,30 @@ class RezultatBuilderTest {
         assertNull(r.skala());
     }
 
+    @Test void opcijeTacnihJedanIzbor() {
+        PitanjeSnimak p = snimak(TipPitanja.JEDAN_TACAN, tri(), null, null, null, null);
+        List<Odgovor> l = List.of(opc("10"), opc("10"), opc("12"), opc("x"));
+        assertEquals(2, RezultatBuilder.izgradi(p, l, true, true).tacnih());
+        assertNull(RezultatBuilder.izgradi(p, l, true, false).tacnih());
+    }
+
+    @Test void viseTacnihTacnoSamoCeoSkup() {
+        List<OpcijaSnimak> o = List.of(new OpcijaSnimak(10L, 1, "A", true), new OpcijaSnimak(11L, 2, "B", false),
+                new OpcijaSnimak(12L, 3, "C", true));
+        PitanjeSnimak p = snimak(TipPitanja.VISE_TACNIH, o, null, null, null, null);
+        Rezultat r = RezultatBuilder.izgradi(p, List.of(opc("10,12"), opc("12, 10"), opc("10"), opc("10,11,12"), opc("")),
+                false, true);
+        assertEquals(2, r.tacnih());
+        assertEquals(5, r.ukupno());
+    }
+
+    @Test void anketaISkalaNemajuTacnih() {
+        PitanjeSnimak a = snimak(TipPitanja.ANKETA, List.of(new OpcijaSnimak(10L, 1, "A", false)), null, null, null, null);
+        assertNull(RezultatBuilder.izgradi(a, List.of(opc("10")), false, true).tacnih());
+        PitanjeSnimak s = snimak(TipPitanja.SKALA, null, null, null, null, null);
+        assertNull(RezultatBuilder.izgradi(s, List.of(skala(3)), false, true).tacnih());
+    }
+
     @Test void tacnaNullKadNijePrikazana() {
         PitanjeSnimak p = snimak(TipPitanja.JEDAN_TACAN, tri(), null, null, null, null);
         Rezultat r = RezultatBuilder.izgradi(p, List.of(opc("10")), true, false);
@@ -92,51 +116,66 @@ class RezultatBuilderTest {
 
     // --- broj ---
 
-    @Test void medijanaNeparnogIParnog() {
+    @Test void brojSveVrednostiPoBrojuPaPoVrednostiBezMedijane() {
         PitanjeSnimak p = snimak(TipPitanja.BROJ, null, null, null, null, null);
-        Rezultat n = RezultatBuilder.izgradi(p, List.of(broj(5), broj(1), broj(3)), false, false);
-        assertEquals(3.0, n.brojevi().medijana());
-        Rezultat par = RezultatBuilder.izgradi(p, List.of(broj(4), broj(1), broj(3), broj(10)), false, false);
-        assertEquals(3.5, par.brojevi().medijana());
-        assertEquals(4, par.ukupno());
-        assertNull(par.opcije());
+        Rezultat r = RezultatBuilder.izgradi(p, List.of(broj(7), broj(3), broj(3), broj(5), broj(5), broj(9)), false, true);
+        assertEquals(List.of(new BrojStavka(3, 2, null), new BrojStavka(5, 2, null), new BrojStavka(7, 1, null),
+                new BrojStavka(9, 1, null)), r.brojevi().vrednosti());
+        assertEquals(6, r.ukupno());
+        assertNull(r.opcije());
+        assertNull(r.tacnih(), "procena (bez tačne vrednosti): nema broja tačnih ni oznaka");
     }
 
-    @Test void medijanaBezOdgovora() {
-        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, null, null, null, null);
-        Rezultat r = RezultatBuilder.izgradi(p, List.of(), false, false);
-        assertNull(r.brojevi().medijana());
-        assertTrue(r.brojevi().najcesce().isEmpty());
+    @Test void brojBezOdgovora() {
+        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, 10.0, 0.0, OdstupanjeTip.APSOLUTNO, null);
+        Rezultat r = RezultatBuilder.izgradi(p, List.of(), false, true);
+        assertTrue(r.brojevi().vrednosti().isEmpty());
+        assertEquals(0, r.tacnih());
     }
 
-    @Test void uOdstupanjuSamoSaTacnimBrojem() {
-        PitanjeSnimak procena = snimak(TipPitanja.BROJ, null, null, null, null, null);
-        assertNull(RezultatBuilder.izgradi(procena, List.of(broj(10)), false, false).brojevi().uOdstupanju());
-
-        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, 10.0, 1.0, OdstupanjeTip.APSOLUTNO, null);
-        Rezultat r = RezultatBuilder.izgradi(p, List.of(broj(10), broj(10.9), broj(11.1), broj(8)), false, false);
-        assertEquals(2, r.brojevi().uOdstupanju());
-
-        PitanjeSnimak pr = snimak(TipPitanja.BROJ, null, 100.0, 10.0, OdstupanjeTip.PROCENAT, null);
-        Rezultat rp = RezultatBuilder.izgradi(pr, List.of(broj(90), broj(110), broj(111)), false, false);
-        assertEquals(2, rp.brojevi().uOdstupanju());
-    }
-
-    @Test void najcescePoBrojuPaPoVrednosti() {
-        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, null, null, null, null);
-        Rezultat r = RezultatBuilder.izgradi(p, List.of(broj(7), broj(3), broj(3), broj(5), broj(5), broj(9)), false, false);
-        List<BrojStavka> n = r.brojevi().najcesce();
-        assertEquals(List.of(new BrojStavka(3, 2), new BrojStavka(5, 2), new BrojStavka(7, 1), new BrojStavka(9, 1)), n);
-    }
-
-    @Test void najcesceNajviseDeset() {
+    @Test void brojBezOgranicenjaStavki() {
+        // ranije najviše 10 najčešćih: sada su sve vrednosti čipovi (front ograničava prikaz)
         PitanjeSnimak p = snimak(TipPitanja.BROJ, null, null, null, null, null);
         List<Odgovor> l = new ArrayList<>();
-        for (int i = 1; i <= 15; i++) l.add(broj(i));
+        for (int i = 1; i <= 40; i++) l.add(broj(i));
         Rezultat r = RezultatBuilder.izgradi(p, l, false, false);
-        assertEquals(10, r.brojevi().najcesce().size());
-        assertEquals(1.0, r.brojevi().najcesce().get(0).vrednost());
-        assertEquals(10.0, r.brojevi().najcesce().get(9).vrednost());
+        assertEquals(40, r.brojevi().vrednosti().size());
+        assertEquals(1.0, r.brojevi().vrednosti().get(0).vrednost());
+        assertEquals(40.0, r.brojevi().vrednosti().get(39).vrednost());
+    }
+
+    @Test void brojNeZaokruzujeIMinusNulaJeNula() {
+        // 3,14 i 3,141 su dva različita odgovora (ranije ih je prikaz na dve decimale spajao u "3,14")
+        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, null, null, null, null);
+        Rezultat r = RezultatBuilder.izgradi(p, List.of(broj(3.14), broj(3.141), broj(-0.0), broj(0)), false, false);
+        assertEquals(List.of(new BrojStavka(0, 2, null), new BrojStavka(3.14, 1, null), new BrojStavka(3.141, 1, null)),
+                r.brojevi().vrednosti());
+    }
+
+    @Test void brojTacanPoVrednostiIBrojTacnihPoOdstupanju() {
+        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, 10.0, 1.0, OdstupanjeTip.APSOLUTNO, null);
+        Rezultat r = RezultatBuilder.izgradi(p, List.of(broj(10), broj(10.9), broj(11.1), broj(8), broj(10)), false, true);
+        assertEquals(List.of(new BrojStavka(10, 2, true), new BrojStavka(8, 1, false), new BrojStavka(10.9, 1, true),
+                new BrojStavka(11.1, 1, false)), r.brojevi().vrednosti());
+        assertEquals(3, r.tacnih());
+
+        PitanjeSnimak pr = snimak(TipPitanja.BROJ, null, 100.0, 10.0, OdstupanjeTip.PROCENAT, null);
+        Rezultat rp = RezultatBuilder.izgradi(pr, List.of(broj(90), broj(110), broj(111)), false, true);
+        assertEquals(2, rp.tacnih());
+        assertEquals(List.of(true, true, false), rp.brojevi().vrednosti().stream().map(BrojStavka::tacan).toList());
+    }
+
+    @Test void brojTacnostSkrivenaDokNijePrikazanaIRedosledIsti() {
+        // pre TACAN ni oznake ni broj tačnih, a redosled ne zavisi od tačnosti (ne odaje tačnu vrednost)
+        PitanjeSnimak p = snimak(TipPitanja.BROJ, null, 10.0, 0.0, OdstupanjeTip.APSOLUTNO, null);
+        List<Odgovor> l = List.of(broj(12), broj(12), broj(10), broj(11));
+        Rezultat pre = RezultatBuilder.izgradi(p, l, true, false);
+        assertNull(pre.tacnih());
+        assertTrue(pre.brojevi().vrednosti().stream().allMatch(v -> v.tacan() == null));
+        Rezultat posle = RezultatBuilder.izgradi(p, l, true, true);
+        assertEquals(pre.brojevi().vrednosti().stream().map(BrojStavka::vrednost).toList(),
+                posle.brojevi().vrednosti().stream().map(BrojStavka::vrednost).toList());
+        assertEquals(1, posle.tacnih());
     }
 
     // --- kratak tekst ---
@@ -200,12 +239,26 @@ class RezultatBuilderTest {
         Rezultat prikazan = RezultatBuilder.izgradi(p, l, true, true);
         assertEquals(Boolean.TRUE, prikazan.tekstovi().stream().filter(t -> t.kljuc().equals("cvrstoca")).findFirst().orElseThrow().tacan());
         assertEquals(Boolean.FALSE, prikazan.tekstovi().stream().filter(t -> t.kljuc().equals("beton")).findFirst().orElseThrow().tacan());
+        assertNull(skriven.tacnih());
+        assertEquals(1, prikazan.tacnih());
+    }
+
+    @Test void tekstTacnihBezSakrivenihUJavnom() {
+        PitanjeSnimak p = snimak(TipPitanja.KRATAK_TEKST, null, null, null, null, List.of("Njutn"));
+        List<Odgovor> l = List.of(tekst("njutn"), tekst("Njutn ", true), tekst("beton"));
+        Rezultat javni = RezultatBuilder.izgradi(p, l, true, true);
+        assertEquals(1, javni.ukupno());
+        assertEquals(0, javni.tacnih(), "cela grupa sa sakrivenim odgovorom je van javnog rezultata, i u broju tačnih");
+        Rezultat nastavnik = RezultatBuilder.izgradi(p, l, false, true);
+        assertEquals(3, nastavnik.ukupno());
+        assertEquals(2, nastavnik.tacnih());
     }
 
     @Test void tekstBezPrihvatljivihNemaTacan() {
         PitanjeSnimak p = snimak(TipPitanja.KRATAK_TEKST, null, null, null, null, List.of());
         Rezultat r = RezultatBuilder.izgradi(p, List.of(tekst("x")), false, true);
         assertNull(r.tekstovi().get(0).tacan());
+        assertNull(r.tacnih());
     }
 
     // --- skala ---

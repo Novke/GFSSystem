@@ -140,6 +140,19 @@ class VodicTest {
         }
         assertEquals(EnumSet.allOf(TipPolja.class), tipovi, "primer šeme pokriva sve tipove polja");
         assertTrue(odgovora >= 1, "vodič ima primer odgovora");
+        for (Polje polje : sema) {
+            assertFalse(polje.oznaka().matches("(?s)^\\(?[a-z0-9]{1,2}\\).*"),
+                    "primer ne uči slovo ispred oznake kad ga tekst zadatka nema: " + polje.oznaka());
+        }
+    }
+
+    /** Oznaka polja: slovo samo kad zadatak ima delove sa tim slovima, jedno polje nikad (tabla i pregled ga ne prikazuju). */
+    @Test
+    void vodicBankaUciOznakeBezSlova() {
+        String s = tekst(VodicTema.BANKA);
+        assertFalse(s.contains("`a) dekadni`"), "stari primer oznake sa slovom");
+        assertTrue(s.contains("`Dekadna vrednost`"));
+        assertTrue(s.contains("šema sa jednim poljem nikad nema slovo"));
     }
 
     @Test
