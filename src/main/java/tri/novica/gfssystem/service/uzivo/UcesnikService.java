@@ -14,6 +14,8 @@ import tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja;
 import tri.novica.gfssystem.entity.uzivo.Ucesnik;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.StudentRepository;
+import tri.novica.gfssystem.repository.cas.CekiranjeRepository;
+import tri.novica.gfssystem.service.cas.CekiranjeService;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -37,6 +39,10 @@ public class UcesnikService {
     public static final String NEPOZNAT_KOD = "Izvođenje sa ovim kodom ne postoji ili je završeno.";
     public static final String POPUNJENO = "Izvođenje je popunjeno.";
     public static final String POTREBNA_PRIJAVA = "Potrebna je prijava studenta.";
+    /** Prijavljen student koga je nastavnik izbacio iz ovog izvođenja ne ulazi ponovo (spec studentskog dela 4.7). */
+    public static final String IZBACEN = "Izbačen si iz ovog izvođenja.";
+    /** Bodovano izvođenje sa predavanja traži čekiranje na tom predavanju u poslednjih 5 h (spec studentskog dela 4.6). */
+    public static final String PRVO_CEKIRANJE = "Prvo se čekiraj: skeniraj QR sa table.";
     /** Spec 2.12: najviše 300 (neizbačenih) učesnika po izvođenju. */
     static final int MAX_UCESNIKA = 300;
     private static final Pattern KOD = Pattern.compile("^\\d{6}$");
@@ -48,6 +54,7 @@ public class UcesnikService {
     private final ZadatakDodelaService zadatakDodelaService;
     private final TokenGenerator tokenGenerator;
     private final ApplicationEventPublisher publisher;
+    private final CekiranjeRepository cekiranjeRepository;
     private final Clock clock;
 
     /**
@@ -99,7 +106,9 @@ public class UcesnikService {
      * 400 za neispravno ime, 409 kad izvođenje već ima 300 učesnika. Sa {@code studentId} (prijavljen student koji
      * postoji) ukucano ime se ignoriše: ime je {@link ImenaUcesnika#imeStudenta} (nikad 400), a učesnik nosi studenta;
      * ako izvođenje već ima neizbačenog učesnika tog studenta, isti red dobija nov token (stari prestaje da važi), bez
-     * novog reda i bez granice od 300. Bez studenta bodovan run je 403, pre provere imena. Učesnik koji uđe dok je
+     * novog reda i bez granice od 300. Bez studenta bodovan run je 403, pre provere imena. Student izbačen iz ovog
+     * izvođenja: 403 {@value #IZBACEN}; bodovan run sa predavanja bez čekiranja studenta na njemu u poslednjih 5 h: 403
+     * {@value #PRVO_CEKIRANJE} (i za postojećeg učesnika); obe pre ikakvog upisa. Učesnik koji uđe dok je
      * otvorena ZADATAK runda odmah dobija svoj zadatak ({@link ZadatakDodelaService#dodeliNovom}, pod istim zaključanim
      * redom izvođenja; isti student i dalje ima tačno jednu dodelu). Ne menja verziju stanja (verzija raste po komandi),
      * ali objavljuje promenu: broj i imena učesnika.
@@ -118,6 +127,15 @@ public class UcesnikService {
                 throw new SystemException(POTREBNA_PRIJAVA, HttpStatus.FORBIDDEN);
             }
             return novi(iz, imenaUcesnika.validiraj(ime), null);
+        }
+        if (ucesnikRepository.existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(iz.getId(), student.getId())) {
+            throw new SystemException(IZBACEN, HttpStatus.FORBIDDEN);
+        }
+        // učesnik sa drugog telefona prolazi samo uz čekiranje, kao i nov (kod iz WhatsApp grupe ne vodi u bodovano od kuće)
+        if (iz.isBoduje() && iz.getPredavanje() != null && !cekiranjeRepository
+                .existsByPredavanjeIdAndStudentIdAndVremeGreaterThanEqual(iz.getPredavanje().getId(), student.getId(),
+                        LocalDateTime.now(clock).minus(CekiranjeService.NA_CASU))) {
+            throw new SystemException(PRVO_CEKIRANJE, HttpStatus.FORBIDDEN);
         }
         Optional<Ucesnik> postojeci =
                 ucesnikRepository.findFirstByIzvodjenjeIdAndStudentIdAndIzbacenFalse(iz.getId(), student.getId());

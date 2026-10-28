@@ -67,6 +67,8 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/nalog/prijava"),
             new Pravilo(POST, "/public/nalog/pomoc"),
             new Pravilo(GET, "/public/nalog/stanje"),
+            // čekiranje QR-om: prijavljen se čekira odmah, neprijavljen dobija ključ (student iz sesije, ako postoji)
+            new Pravilo(POST, "/public/nalog/cas/skeniraj"),
             // Moodle LTI 1.3 (prijava i start su i izuzeti iz provere porekla)
             new Pravilo(GET, "/public/lti/prijava"),
             new Pravilo(POST, "/public/lti/prijava"),
@@ -82,6 +84,9 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/nalog/ja"),
             new Pravilo(POST, "/public/nalog/odjava"),
             new Pravilo(POST, "/public/nalog/odjava-svuda"),
+            // čekiranje iz ključa posle prijave i stanje časa (telefon prati čas)
+            new Pravilo(POST, "/public/nalog/cas/potvrdi"),
+            new Pravilo(GET, "/public/nalog/cas"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

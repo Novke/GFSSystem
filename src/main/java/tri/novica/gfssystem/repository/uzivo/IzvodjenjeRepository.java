@@ -39,6 +39,13 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
 
     Optional<Izvodjenje> findByAktivanKod(String kod);
 
+    /** Aktivna izvođenja predavanja, najnovije prvo, sa prezentacijom (telefon na času ulazi u najnovije). */
+    @Query("""
+            select i from Izvodjenje i join fetch i.prezentacija
+            where i.predavanje.id = :predavanjeId and i.status = tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja.AKTIVNO
+            order by i.pocetak desc, i.id desc""")
+    List<Izvodjenje> findAktivnaZaPredavanje(@Param("predavanjeId") Long predavanjeId);
+
     /**
      * Id aktivnog izvođenja sa kodom (pre zaključavanja). Samo id: entitet učitan pre {@link #findByIdForUpdate}
      * ostao bi u persistence context-u sa stanjem od pre čekanja na zaključavanje.

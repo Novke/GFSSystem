@@ -120,7 +120,8 @@ class NastavnickoStanjeTest {
         when(odgovorRepository.findAllByRundaIzvodjenjeId(IZ)).thenReturn(odgovori);
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {

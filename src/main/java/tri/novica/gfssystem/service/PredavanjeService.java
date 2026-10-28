@@ -17,6 +17,7 @@ import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.entity.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
+import tri.novica.gfssystem.repository.cas.CekiranjeRepository;
 import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.SkolskaGodina;
@@ -43,6 +44,7 @@ public class PredavanjeService {
     private final GrupaRepository grupaRepository;
     private final StudentRepository studentRepository;
     private final AktivnostRepository aktivnostRepository;
+    private final CekiranjeRepository cekiranjeRepository;
     private final ModelMapper mapper;
 
     public PredavanjeDetails findById(Long id) {
@@ -55,7 +57,7 @@ public class PredavanjeService {
      * {@code predavanje} postavlja na null (FK {@code domaci.predavanje_id}).
      */
     public void obrisi(Long id) {
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
         predavanje.getDomaci().forEach(d -> d.setPredavanje(null));
         predavanje.getDomaci().clear();
@@ -86,8 +88,12 @@ public class PredavanjeService {
         return mapper.map(predavanjeRepository.save(predavanje), PredavanjeDetails.class);
     }
 
+    /**
+     * Izmena, posećenost i brisanje zaključavaju red predavanja kao ručne aktivnosti i čekiranje: Hibernate upisuje ceo red,
+     * pa bi izmena učitana pre {@code zavrsiPredavanje} ili nove tajne čekiranja vratila staro stanje (bezbednosni pregled).
+     */
     public PredavanjeDetails updatePredavanje(Long id, UpdatePredavanjeCmd cmd) {
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
         mapper.map(cmd, predavanje);
@@ -97,7 +103,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails updatePosecenost(Long id){
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, HttpStatus.NOT_FOUND));
 
         predavanje.setPosecenost(predavanje.getAktivnosti().size());
@@ -108,7 +114,7 @@ public class PredavanjeService {
 
 
     public PredavanjeDetails dodajPrisutnog(Long predavanjeId, Long studentId) {
-        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
@@ -121,9 +127,10 @@ public class PredavanjeService {
         Aktivnost aktivnost = new Aktivnost(predavanje, student, TipAktivnosti.PRISUSTVO);
         Set<Aktivnost> aktivnosti = predavanje.getAktivnosti();
 
-        aktivnosti.forEach(a -> {
-            if (a.equals(aktivnost)) throw new SystemException("Prisustvo studenta je vec zabelezeno!", HttpStatus.BAD_REQUEST);
-        });
+        // već prisutan (npr. čekirao se QR-om u istoj sekundi): ništa se ne menja, bez greške (spec studentskog dela 4.5)
+        if (aktivnosti.stream().anyMatch(a -> a.getStudent().getId().equals(student.getId()))) {
+            return mapper.map(predavanje, PredavanjeDetails.class);
+        }
 
         aktivnosti.add(aktivnost);
         predavanje.setAktivnosti(aktivnosti);
@@ -136,7 +143,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails skloniPrisutnog(Long predavanjeId, Long studentId) {
-        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
@@ -149,6 +156,8 @@ public class PredavanjeService {
 
         predavanje.getAktivnosti().remove(aktivnost);
         aktivnostRepository.delete(aktivnost);
+        // "nije bio tu" znači i "ne prati prezentacije": telefon prestaje da prati čas (spec studentskog dela 4.5)
+        cekiranjeRepository.deleteByPredavanjeIdAndStudentId(predavanjeId, studentId);
         //POSECENOST--
         predavanje.umanjiPosecenost();
 
@@ -157,7 +166,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails dodajZadatak(Long predavanjeId, Long studentId) {
-        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
@@ -175,7 +184,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails skloniZadatak(Long predavanjeId, Long studentId) {
-        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
@@ -193,7 +202,7 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails dodajZadatakSaZvezdicom(Long predavanjeId, Long studentId) {
-        Predavanje predavanje = predavanjeRepository.findById(predavanjeId)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(predavanjeId)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + predavanjeId, HttpStatus.NOT_FOUND));
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
@@ -211,6 +220,9 @@ public class PredavanjeService {
     }
 
     public PredavanjeAktivnostInfo updateAktivnostNapomenu(Long id, UpdateAktivnostNapomenaCmd cmd) {
+        Long predavanjeId = aktivnostRepository.findPredavanjeIdById(id)
+                .orElseThrow(() -> new SystemException("Aktivnost ne postoji!", HttpStatus.NOT_FOUND));
+        predavanjeRepository.findByIdForUpdate(predavanjeId);
         Aktivnost aktivnost = aktivnostRepository.findById(id)
                 .orElseThrow(() -> new SystemException("Aktivnost ne postoji!", HttpStatus.NOT_FOUND));
 
@@ -226,10 +238,13 @@ public class PredavanjeService {
     }
 
     public PredavanjeDetails zavrsiPredavanje(Long id) {
-        Predavanje predavanje = predavanjeRepository.findById(id)
+        Predavanje predavanje = predavanjeRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Predavanje ne postoji! ID = " + id, 404));
 
         predavanje.setZavrseno(true);
+        // tokeni QR-a sa ovog časa više ništa ne vrede (spec studentskog dela 4.3)
+        predavanje.setCekiranjeTajna(null);
+        predavanje.setCekiranjeTajnaOd(null);
         return mapper.map(predavanje, PredavanjeDetails.class);
     }
 

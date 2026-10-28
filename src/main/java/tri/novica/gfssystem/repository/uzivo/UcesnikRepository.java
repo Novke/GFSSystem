@@ -27,6 +27,13 @@ public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
     /** Neizbačen učesnik izvođenja iza kog je student (isti student opet ulazi kao isti učesnik). */
     Optional<Ucesnik> findFirstByIzvodjenjeIdAndStudentIdAndIzbacenFalse(Long izvodjenjeId, Long studentId);
 
+    /** Da li je student izbačen iz izvođenja (ne ulazi ponovo, telefon na času ga ne vodi u to izvođenje). */
+    boolean existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(Long izvodjenjeId, Long studentId);
+
+    /** Studenti izbačenih učesnika izvođenja (brojanje očekivanih u konzoli ih preskače). */
+    @Query("select distinct u.student.id from Ucesnik u where u.izvodjenje.id = :id and u.izbacen = true and u.student is not null")
+    List<Long> findIzbaceniStudentIds(@Param("id") Long izvodjenjeId);
+
     /** Broj neizbačenih učesnika po izvođenju: redovi {@code [izvodjenjeId, broj]}. */
     @Query("""
             select u.izvodjenje.id, count(u) from Ucesnik u

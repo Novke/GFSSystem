@@ -7,9 +7,12 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.dto.uzivo.*;
+import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.repository.cas.CekiranjeRepository;
 import tri.novica.gfssystem.repository.uzivo.*;
+import tri.novica.gfssystem.service.cas.CekiranjeService;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -47,6 +50,7 @@ public class StanjeService {
     private final JsonMapper jsonMapper;
     private final PlatnoJson platnoJson;
     private final ZadaciSlajdova zadaci;
+    private final CekiranjeRepository cekiranjeRepository;
     private final Clock clock;
 
     /**
@@ -114,6 +118,7 @@ public class StanjeService {
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
+        Set<Long> naCasu = naCasu(p);
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
                 TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
@@ -128,7 +133,34 @@ public class StanjeService {
                 povezanost.brojPovezanih(p.ucesnici().stream().map(Ucesnik::getId).toList()),
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
-                iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr));
+                iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr),
+                brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size());
+    }
+
+    /**
+     * Studenti na času predavanja izvođenja (čekirani u poslednjih 5 h, predavanje živo); {@code null} kad izvođenje nema
+     * predavanje.
+     */
+    private Set<Long> naCasu(Podaci p) {
+        Predavanje pred = p.iz().getPredavanje();
+        if (pred == null) return null;
+        return new HashSet<>(cekiranjeRepository.studentiNaCasu(pred.getId(),
+                LocalDateTime.now(clock).minus(CekiranjeService.NA_CASU)));
+    }
+
+    /**
+     * Unija neizbačenih učesnika (svaki kao sebe, i bez naloga) i studenata na času koji nisu učesnici ovog izvođenja,
+     * ni neizbačeni ni izbačeni (spec studentskog dela 4.7).
+     */
+    private int brojOcekivanih(Podaci p, Set<Long> naCasu) {
+        int broj = p.ucesnici().size();
+        if (naCasu == null || naCasu.isEmpty()) return broj;
+        Set<Long> jos = new HashSet<>(naCasu);
+        p.ucesnici().forEach(u -> {
+            if (u.getStudent() != null) jos.remove(u.getStudent().getId());
+        });
+        jos.removeAll(ucesnikRepository.findIzbaceniStudentIds(p.iz().getId()));
+        return broj + jos.size();
     }
 
     // ---------------------------------------------------------------- zadatak

@@ -11,10 +11,15 @@ import tri.novica.gfssystem.entity.Student;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AktivnostRepository extends JpaRepository<Aktivnost, Long> {
     List<Aktivnost> findAllByStudentGrupaAndPredavanjePredmet(Grupa grupa, Predmet predmet);
+
+    /** Id predavanja aktivnosti (bez učitavanja entiteta): red predavanja se zaključava pre izmene aktivnosti. */
+    @Query("select a.predavanje.id from Aktivnost a where a.id = :id")
+    Optional<Long> findPredavanjeIdById(@Param("id") Long id);
 
     List<Aktivnost> findAllByStudentAndPredavanjePredmetOrderByPredavanjeDatumAsc(Student student, Predmet predmet);
 

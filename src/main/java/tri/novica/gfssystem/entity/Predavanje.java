@@ -3,9 +3,15 @@ package tri.novica.gfssystem.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.springframework.lang.NonNull;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -32,6 +38,15 @@ public class Predavanje {
     private String tema;
     private Integer posecenost = 0;
     private Boolean zavrseno = false;
+    /**
+     * HMAC tajna QR-a za čekiranje (32 znaka iz {@code TokenGenerator}); nastaje kad nastavnik prvi put otvori QR, briše
+     * se kad se predavanje završi i menja se kad je starija od 5 h ({@code cekiranjeTajnaOd}). Nikad ne izlazi iz servera.
+     */
+    @JsonIgnore @ToString.Exclude
+    @JdbcTypeCode(SqlTypes.CHAR) @Column(length = 32)
+    private String cekiranjeTajna;
+    @JsonIgnore
+    private LocalDateTime cekiranjeTajnaOd;
 
     @OneToMany(mappedBy = "predavanje", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     private Set<Domaci> domaci = new HashSet<>();

@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
  *       samo važeće stanje);</li>
  *   <li>{@code lti_povezivanja} ({@code __Host-gfs_lti_par}, rok 30 minuta): istekla ili iskorišćena pre više od sat vremena;</li>
  *   <li>{@code nastavnicke_sesije} i {@code studentski_uredjaji}: istekli ili opozvani pre više od 30 dana;</li>
+ *   <li>{@code cekiranja_na_cekanju} (ključ čekanja, rok 15 minuta): istekli ili iskorišćeni pre više od sat vremena;</li>
  *   <li>{@code obavestenja}: rešena pre više od 180 dana (otvorena se ne brišu). Pravilo "najviše jedno
  *       {@code PREVISE_KODOVA} na 24 sata" čita i rešena obaveštenja, a ona se ovde čiste tek posle 180 dana.</li>
  * </ul>
@@ -40,7 +41,7 @@ public class CiscenjePrijave {
 
     /** Koliko je redova obrisano po tabelama. */
     public record Obrisano(int pokusaji, int kodovi, int ltiStanja, int ltiPovezivanja, int nastavnickeSesije,
-                           int uredjaji, int obavestenja) {
+                           int uredjaji, int obavestenja, int kljuceviCekiranja) {
     }
 
     private final JdbcTemplate jdbc;
@@ -69,7 +70,10 @@ public class CiscenjePrijave {
                 brisi("studentski_uredjaji",
                         "delete from studentski_uredjaji where istice < ? or (opozvan is not null and opozvan < ?)", sesije, sesije),
                 brisi("obavestenja", "delete from obavestenja where reseno is not null and reseno < ?",
-                        sada.minus(RESENA_OBAVESTENJA)));
+                        sada.minus(RESENA_OBAVESTENJA)),
+                brisi("cekiranja_na_cekanju",
+                        "delete from cekiranja_na_cekanju where istice < ? or (iskorisceno is not null and iskorisceno < ?)",
+                        lti, lti));
         log.info("Čišćenje prijave: {}", o);
         return o;
     }

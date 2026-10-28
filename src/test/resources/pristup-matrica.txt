@@ -107,6 +107,7 @@ DELETE /predavanja/{id} ADMIN
 GET /predavanja/{id} ADMIN
 PATCH /predavanja/{id} ADMIN
 PUT /predavanja/{id} ADMIN
+GET /predavanja/{id}/cekiranje ADMIN
 PUT /predavanja/{id}/posecenost ADMIN
 PATCH /predavanja/{id}/prisustvo ADMIN
 PATCH /predavanja/{id}/zadatak ADMIN
@@ -142,6 +143,9 @@ GET /public/lti/prijava ANONIMNO
 POST /public/lti/prijava ANONIMNO
 POST /public/lti/start ANONIMNO
 GET /public/mediji/{id} ANONIMNO
+GET /public/nalog/cas STUDENT
+POST /public/nalog/cas/potvrdi STUDENT
+POST /public/nalog/cas/skeniraj ANONIMNO
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 POST /public/nalog/odjava STUDENT
