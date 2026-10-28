@@ -192,6 +192,15 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - **"Ni ranije"** (`StanjeService`): phones get `JavnoStanje`; the projector renders `NastavnickoStanje.javniRezultat`
   and `javnaRangLista`, built by the same methods. The only difference: phones get option texts in the result only when
   text is allowed (PITANJE mode or Detalji); the projector always has them.
+- **Question results** (`RezultatBuilder`, pure; `tacanPrikazan` = teacher always, public only after `TACAN` on a closed question):
+  `Rezultat.tacnih` (last field) = correct answers among `ukupno` (one correct option; for VISE_TACNIH exactly the set of correct
+  options; BROJ within `Ocenjivac.uOdstupanju`; KRATAK_TEKST among the normalized accepted answers), `null` for ANKETA, SKALA, an
+  estimate, open KRATAK_TEKST or while correctness is hidden; in the public result it counts only the answers that result shows
+  (hidden text groups excluded). BROJ (`RezultatBrojevi.vrednosti`) lists **every** distinct value (no median since 2026-10-28, no
+  top-10 cap: at most one per participant, like the text groups; exact double equality, `-0` = `0`), most frequent first, then by
+  value, each `BrojStavka.tacan` (`null` while hidden or for an estimate). The order never depends on correctness, so it leaks nothing
+  before `TACAN`. `RezultatTekst.tacan` as before. Tests: `RezultatBuilderTest`, `JavnoStanjeTest` (`brojTacnostVrednostiIBrojTacnihTekPosleTacan`,
+  `opcijeBrojTacnihTekPosleTacan` and the all-states matrix: no `tacan`/`tacnih` before `TACAN`).
 - **Publishing** (`UzivoObjavljivac`): event listeners run after commit on the request/STOMP thread and only mark the
   run dirty (never read the DB or wait for a lock there). Reading and sending happen on the publisher thread under a
   per-run lock, one `StanjeService.snimci` read per run: a command, timer, moderation or kick (`IzvodjenjePromenjeno`,

@@ -9,14 +9,13 @@ import java.util.stream.Collectors;
 
 /** Zbirni rezultat jedne runde iz snimka pitanja i odgovora. Čiste funkcije, bez baze. */
 public final class RezultatBuilder {
-    private static final int NAJCESCE = 10;
-
     private RezultatBuilder() {}
 
     /**
      * @param javno         rezultat za publiku: sakriveni odgovori (i cela grupa kratkih odgovora sa bar jednim
      *                      sakrivenim) se izostavljaju; nastavnički rezultat ih zadržava i označava
-     * @param tacanPrikazan tek tada {@code tacna}/{@code tacan} nisu {@code null}
+     * @param tacanPrikazan tek tada {@code tacna}/{@code tacan} i {@link Rezultat#tacnih} nisu {@code null} (redosled stavki
+     *                      ne zavisi od tačnosti, pa ni on ne odaje tačan odgovor pre toga)
      */
     public static Rezultat izgradi(PitanjeSnimak p, List<Odgovor> odgovori, boolean javno, boolean tacanPrikazan) {
         List<Odgovor> svi = odgovori == null ? List.of() : odgovori;
@@ -28,14 +27,46 @@ public final class RezultatBuilder {
                 .filter(o -> p.tip() != TipPitanja.KRATAK_TEKST || !sakriveniKljucevi.contains(kljuc(o.getTekst())))
                 .toList();
         int ukupno = koristi.size();
+        Integer tacnih = tacanPrikazan && p.imaTacanOdgovor()
+                ? (int) koristi.stream().filter(o -> tacan(p, o)).count() : null;
         return switch (p.tip()) {
             case JEDAN_TACAN, VISE_TACNIH, ANKETA, TACNO_NETACNO ->
-                    new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null);
-            case BROJ -> new Rezultat(p.tip(), ukupno, null, brojevi(p, koristi), null, null);
+                    new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null, tacnih);
+            case BROJ -> new Rezultat(p.tip(), ukupno, null, brojevi(p, koristi, tacanPrikazan), null, null, tacnih);
             case KRATAK_TEKST -> new Rezultat(p.tip(), ukupno, null, null,
-                    tekstovi(p, koristi, sakriveniKljucevi, tacanPrikazan), null);
-            case SKALA -> new Rezultat(p.tip(), ukupno, null, null, null, skala(koristi));
+                    tekstovi(p, koristi, sakriveniKljucevi, tacanPrikazan), null, tacnih);
+            case SKALA -> new Rezultat(p.tip(), ukupno, null, null, null, skala(koristi), null);
         };
+    }
+
+    /**
+     * Da li je odgovor tačan po snimku (isto pravilo kao {@link Ocenjivac#tacno}, ali bez izuzetka za neispravan zapis, koji
+     * nije tačan): jedan izbor tačne opcije, kod "više tačnih" tačno skup tačnih, broj u odstupanju, tekst među prihvatljivima.
+     */
+    static boolean tacan(PitanjeSnimak p, Odgovor o) {
+        return switch (p.tip()) {
+            case JEDAN_TACAN, TACNO_NETACNO -> {
+                Set<Long> ids = izabrane(o.getOpcije());
+                yield ids.size() == 1 && tacneOpcije(p).containsAll(ids);
+            }
+            case VISE_TACNIH -> {
+                Set<Long> ids = izabrane(o.getOpcije());
+                yield !ids.isEmpty() && ids.equals(tacneOpcije(p));
+            }
+            case BROJ -> o.getBroj() != null && Boolean.TRUE.equals(Ocenjivac.uOdstupanju(p, o.getBroj()));
+            case KRATAK_TEKST -> o.getTekst() != null && prihvatljivi(p).contains(kljuc(o.getTekst()));
+            case ANKETA, SKALA -> false;
+        };
+    }
+
+    private static Set<Long> tacneOpcije(PitanjeSnimak p) {
+        return p.opcije() == null ? Set.of()
+                : p.opcije().stream().filter(OpcijaSnimak::tacna).map(OpcijaSnimak::id).collect(Collectors.toSet());
+    }
+
+    private static Set<String> prihvatljivi(PitanjeSnimak p) {
+        return p.prihvatljiviOdgovori() == null ? Set.of()
+                : p.prihvatljiviOdgovori().stream().map(Normalizacija::tekst).collect(Collectors.toSet());
     }
 
     private static List<RezultatOpcija> opcije(PitanjeSnimak p, List<Odgovor> odgovori, boolean tacanPrikazan) {
@@ -66,23 +97,22 @@ public final class RezultatBuilder {
         return ids;
     }
 
-    private static RezultatBrojevi brojevi(PitanjeSnimak p, List<Odgovor> odgovori) {
-        List<Double> vrednosti = odgovori.stream().map(Odgovor::getBroj).filter(Objects::nonNull).sorted().toList();
-        Double medijana = null;
-        int n = vrednosti.size();
-        if (n > 0) medijana = n % 2 == 1 ? vrednosti.get(n / 2) : (vrednosti.get(n / 2 - 1) + vrednosti.get(n / 2)) / 2.0;
-        Integer uOdstupanju = null;
-        if (p.brojTacno() != null) {
-            uOdstupanju = (int) vrednosti.stream().filter(v -> Boolean.TRUE.equals(Ocenjivac.uOdstupanju(p, v))).count();
-        }
+    /**
+     * Sve različite vrednosti (bez zaokruživanja: 3,14 i 3,141 su dve stavke; {@code -0} je {@code 0}), najčešće prve, pa
+     * rastuće po vrednosti. Bez ograničenja broja stavki: najviše jedna po učesniku (do 300), kao i grupe kratkog teksta.
+     */
+    private static RezultatBrojevi brojevi(PitanjeSnimak p, List<Odgovor> odgovori, boolean tacanPrikazan) {
         Map<Double, Integer> broj = new HashMap<>();
-        for (Double v : vrednosti) broj.merge(v, 1, Integer::sum);
-        List<BrojStavka> najcesce = broj.entrySet().stream()
+        for (Odgovor o : odgovori) {
+            Double v = o.getBroj();
+            if (v != null) broj.merge(v == 0 ? 0.0 : v, 1, Integer::sum);
+        }
+        boolean oceni = tacanPrikazan && p.brojTacno() != null;
+        List<BrojStavka> vrednosti = broj.entrySet().stream()
                 .sorted(Map.Entry.<Double, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
-                .limit(NAJCESCE)
-                .map(e -> new BrojStavka(e.getKey(), e.getValue()))
+                .map(e -> new BrojStavka(e.getKey(), e.getValue(), oceni ? Ocenjivac.uOdstupanju(p, e.getKey()) : null))
                 .toList();
-        return new RezultatBrojevi(medijana, uOdstupanju, najcesce);
+        return new RezultatBrojevi(vrednosti);
     }
 
     private static List<RezultatTekst> tekstovi(PitanjeSnimak p, List<Odgovor> odgovori, Set<String> sakriveniKljucevi,
@@ -92,8 +122,7 @@ public final class RezultatBuilder {
             if (o.getTekst() == null) continue;
             grupe.computeIfAbsent(kljuc(o.getTekst()), k -> new ArrayList<>()).add(o.getTekst().trim());
         }
-        Set<String> prihvatljivi = p.prihvatljiviOdgovori() == null ? Set.of()
-                : p.prihvatljiviOdgovori().stream().map(Normalizacija::tekst).collect(Collectors.toSet());
+        Set<String> prihvatljivi = prihvatljivi(p);
         boolean proveriTacnost = tacanPrikazan && !prihvatljivi.isEmpty();
         return grupe.entrySet().stream()
                 .map(e -> new RezultatTekst(e.getKey(), najcesciOblik(e.getValue()), e.getValue().size(),
