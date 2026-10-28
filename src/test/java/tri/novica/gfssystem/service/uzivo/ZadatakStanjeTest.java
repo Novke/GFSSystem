@@ -98,7 +98,7 @@ class ZadatakStanjeTest {
         u2 = ucesnik(2L, "Bojan");
 
         ZadatakSlajdaInfo info = new ZadatakSlajdaInfo(3L, null, 4, null, "2 → 10", List.of(new GrupaPutanja(3L, "2 → 10")),
-                true, 6, List.of(0, 6, 0), POLJA, false, List.of(), List.of());
+                true, 6, List.of(0, 6, 0), POLJA, false, List.of(), List.of(), "primer-svg");
         when(zadaci.za(eq(7L), anyList())).thenReturn(Map.of(SLAJD, info));
         when(izvodjenjeRepository.findSaVezama(IZ)).thenReturn(Optional.of(iz));
         when(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(1L)).thenReturn(List.of(slajd));
@@ -171,7 +171,7 @@ class ZadatakStanjeTest {
 
     void javnoBezTajni() {
         String j = json(service.javno(IZ));
-        for (String t : List.of("svg-", "res-", "4545", "1313")) {
+        for (String t : List.of("svg-", "res-", "4545", "1313", "primer-svg")) {
             assertFalse(j.contains(t), () -> "javno stanje odaje " + t + ": " + j);
         }
     }
@@ -192,7 +192,7 @@ class ZadatakStanjeTest {
             javnoBezTajni();
             LicnoStanje l = service.licno(IZ, 1L);
             String j = json(l);
-            for (String t : List.of("svg-b", "res-b", "1313")) {
+            for (String t : List.of("svg-b", "res-b", "1313", "primer-svg")) {
                 assertFalse(j.contains(t), opis + ": lično odaje tuđu varijantu " + t);
             }
             assertEquals(c.faza() != Faza.CEKA, j.contains("svg-a"), opis);
@@ -224,6 +224,7 @@ class ZadatakStanjeTest {
             assertTrue(j.contains("svg-a"), f.toString());
             assertFalse(j.contains("res-"), f.toString());
             assertFalse(j.contains("svg-b"), f.toString());
+            assertFalse(j.contains("primer-svg"), f.toString() + ": primer iz editora ne ide na telefon");
             assertEquals(VAR_A, p.licno().zadatak().varijantaId());
         }
     }
@@ -246,6 +247,7 @@ class ZadatakStanjeTest {
 
         String javni = json(z.javniRezultat());
         assertFalse(javni.contains("res-"), "projektor bez rešenja pre RESENJE");
+        assertFalse(javni.contains("primer-svg"), "primer iz editora nije u rezultatu projektora");
         assertNull(z.javniRezultat().varijante().getFirst().polja().getFirst().tacno(), "projektor bez tačnog pre TACAN");
         assertFalse(javni.contains("1313"), "tačno za B (niko ga nije uneo) se ne vidi pre TACAN");
         assertNull(z.javniRezultat().varijante().getFirst().tacnih());

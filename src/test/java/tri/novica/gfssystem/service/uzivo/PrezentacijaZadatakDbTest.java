@@ -170,6 +170,12 @@ class PrezentacijaZadatakDbTest {
 
     // ---------------------------------------------------------------- opis i upozorenja
 
+    /** SVG prve (najmanji id) AKTIVNE varijante grupe. */
+    String prviSvg(long grupa) {
+        return jdbc.queryForObject("select render_svg_id from varijante where grupa_id = ? and status = 'AKTIVNA' "
+                + "order by id limit 1", String.class, grupa);
+    }
+
     @Test
     void zadatakNadListomImaOpisSemuIBrojKandidata() {
         Long id = nova("Zadaci");
@@ -191,6 +197,8 @@ class PrezentacijaZadatakDbTest {
         assertFalse(z.iskljucena());
         assertEquals(List.of(), z.iskljucenePodgrupe());
         assertEquals(List.of(), z.upozorenja());
+        assertEquals(prviSvg(l), z.primerSvgId(), "primer za editor: prva varijanta lista");
+        assertEquals(prviSvg(l), service.detalji(id).slajdovi().get(0).zadatak().primerSvgId(), "isti primer i kroz batch");
         assertNull(d.pitanje());
         assertNull(d.naslov());
     }
@@ -201,6 +209,7 @@ class PrezentacijaZadatakDbTest {
 
         assertEquals(0, d.zadatak().brojAktivnihVarijanti());
         assertEquals(List.of(BEZ_AKTIVNIH), d.zadatak().upozorenja());
+        assertNull(d.zadatak().primerSvgId(), "bez kandidata nema primera");
         assertNull(d.zadatak().vremeSekunde());
         assertNull(d.zadatak().brojVarijanti());
     }
@@ -407,5 +416,6 @@ class PrezentacijaZadatakDbTest {
 
         assertEquals(1, service.slajd(d.id()).zadatak().brojAktivnihVarijanti());
         assertEquals(List.of(), service.slajd(d.id()).zadatak().upozorenja());
+        assertEquals(prviSvg(p), service.slajd(d.id()).zadatak().primerSvgId());
     }
 }

@@ -223,6 +223,10 @@ group's schema, the console and projector show results per variant and, on `Shif
   (1-50 or null = all active). `SlajdCmd.zadatak` / `SlajdDetails.zadatak` (`ZadatakSlajdaInfo`: path, leaf or not, candidates, schema
   for a leaf, exclusions, warnings, built by `ZadaciSlajdova` in one batch per request). The group must be of the same subject,
   purpose PREDAVANJE (400 otherwise); a deleted group leaves the slide without one (warning, 409 on opening).
+  `ZadatakSlajdaInfo.primerSvgId` (last component) is the text SVG of one candidate for the editor's example: the lowest variant id in
+  the first leaf (tree order) that has a candidate of the slide's level (`StabloPredavanja.primer`, from `min(v.id)` of the same
+  aggregate query, plus one batch query `svgTeksta` for all slides). It reaches only teacher views (editor, console state); MCP
+  (`McpZadatakSazetak`) leaves it out and no phone or projector projection carries it.
 - **Candidates and drawing** (`service/banka/KandidatiZadatka`, `service/uzivo/IzborVarijanti`): AKTIVNE variants with a render SVG in the
   leaves under the node, excluded subtrees (`iskljucene_teme`) skipped with a warning; `min(N, candidates)` drawn alternately per leaf.
   Randomness only from the `java.util.Random` bean (tests: `SeedRandom`).

@@ -98,14 +98,18 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
     List<Object[]> zaPonistavanje(@Param("serija") String serija);
 
     /**
-     * AKTIVNE varijante sa gotovim SVG-om po grupi i nivou, jedan upit: redovi {@code [grupaId, nivo, broj]}, grupe bez
-     * njih nisu tu (kandidati slajda Zadatak po nivou, {@code KandidatiZadatka}).
+     * AKTIVNE varijante sa gotovim SVG-om po grupi i nivou, jedan upit: redovi {@code [grupaId, nivo, broj, najmanjiId]}, grupe
+     * bez njih nisu tu (kandidati slajda Zadatak po nivou i primer za editor, {@code KandidatiZadatka}).
      */
     @Query("""
-            select v.grupa.id, v.nivo, count(v) from Varijanta v
+            select v.grupa.id, v.nivo, count(v), min(v.id) from Varijanta v
             where v.grupa.id in :ids and v.status = tri.novica.gfssystem.entity.banka.StatusVarijante.AKTIVNA
             and v.renderSvg is not null group by v.grupa.id, v.nivo""")
     List<Object[]> aktivneSaSvgPoGrupiINivou(@Param("ids") Collection<Long> ids);
+
+    /** SVG teksta zadatih varijanti, redovi {@code [varijantaId, svgId]} (varijante bez SVG-a nisu tu). */
+    @Query("select v.id, v.renderSvg.id from Varijanta v where v.id in :ids and v.renderSvg is not null")
+    List<Object[]> svgTeksta(@Param("ids") Collection<Long> ids);
 
     /**
      * AKTIVNE varijante zadatih grupa sa SVG-om teksta (inner join: bez njega varijanta nije kandidat) i, kad ga ima,
