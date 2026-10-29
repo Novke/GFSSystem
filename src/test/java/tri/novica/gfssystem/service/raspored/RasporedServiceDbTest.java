@@ -210,4 +210,77 @@ class RasporedServiceDbTest {
             return null;
         });
     }
+
+    // ------------------------------------------------------------------ pregled posle PR-a, tačke 3 i 4
+
+    @Test
+    void preklapanjeIstogTerminaUDrugomPerioduJe400() {
+        RasporedDetails a = d.period(OD, DO, 5, d.stavka(grupa, 3, "10:00", "13:00"));
+        // "Kopiraj u novi" sa preklopljenim datumima: isti predmet, grupa, dan i početak
+        SystemException ex = assertThrows(SystemException.class, () -> rasporedi.kreiraj(cmd("Kopija",
+                LocalDate.of(2031, 1, 1), LocalDate.of(2031, 6, 30), 5, d.stavka(grupa, 3, "10:00", "12:00"))));
+        assertEquals(400, ex.getCode());
+        assertEquals("Termin 1 već postoji u rasporedu „Raspored " + d.cas.oznaka + "“ (1. 10. 2030. – 31. 1. 2031.): isti "
+                + "predmet, grupa, dan i početak u periodima koji se preklapaju. Promeni datume važenja ili ukloni termin.",
+                ex.getMessage());
+
+        // preklapanje od dva dana bez srede (čet 30. 1. i pet 31. 1.), drugi početak, druga grupa: dozvoljeno
+        d.zapamti(rasporedi.kreiraj(cmd("Bez srede", LocalDate.of(2031, 1, 30), LocalDate.of(2031, 3, 1), 5,
+                d.stavka(grupa, 3, "10:00", "13:00"))));
+        d.zapamti(rasporedi.kreiraj(cmd("Drugi početak", OD, DO, 5, d.stavka(grupa, 3, "14:00", "15:00"))));
+        d.zapamti(rasporedi.kreiraj(cmd("Druga grupa", OD, DO, 5, d.stavka(grupa2, 3, "10:00", "13:00"))));
+
+        // izmena perioda se ne poredi sa samom sobom
+        RasporedDetails izm = rasporedi.izmeni(a.id(), cmd("Isti", OD, DO, 5,
+                new StavkaCmd(a.stavke().get(0).id(), d.cas.predmetId, grupa, 3, LocalTime.of(10, 0), LocalTime.of(13, 0))));
+        assertEquals(a.stavke().get(0).id(), izm.stavke().get(0).id());
+    }
+
+    void otkazi(Long stavka, LocalDate datum) {
+        jdbc.update("insert into otkazani_termini (stavka_id, datum, napomena, otkazano) values (?, ?, ?, ?)", stavka, datum,
+                "n", SADA);
+    }
+
+    int brojOtkazanih(Long stavka) {
+        return jdbc.queryForObject("select count(*) from otkazani_termini where stavka_id = ?", Integer.class, stavka);
+    }
+
+    @Test
+    void izmenaKojaUkidaBudutaOtkazivanjaIhBrojiIBrise() {
+        RasporedDetails r = d.period(OD, DO, 5, d.stavka(grupa, 3, "10:00", "13:00"), d.stavka(grupa2, 4, "10:00", "12:00"));
+        StavkaInfo sreda = r.stavke().get(0);
+        StavkaInfo cetvrtak = r.stavke().get(1);
+        otkazi(sreda.id(), LocalDate.of(2030, 10, 30));  // prošlo: ne broji se i ne dira
+        otkazi(sreda.id(), LocalDate.of(2030, 11, 13));
+        otkazi(sreda.id(), LocalDate.of(2031, 1, 29));
+        otkazi(cetvrtak.id(), LocalDate.of(2030, 11, 14));
+
+        RasporedDetails det = rasporedi.detalj(r.id());
+        assertEquals(List.of(LocalDate.of(2030, 11, 13), LocalDate.of(2031, 1, 29)), det.stavke().get(0).otkazani());
+        assertEquals(List.of(LocalDate.of(2030, 11, 14)), det.stavke().get(1).otkazani());
+        assertEquals(0, det.izgubljenaOtkazivanja());
+
+        // isti termini: ništa se ne gubi
+        RasporedDetails ista = rasporedi.izmeni(r.id(), cmd("Isti", OD, DO, 5,
+                new StavkaCmd(sreda.id(), d.cas.predmetId, grupa, 3, LocalTime.of(11, 0), LocalTime.of(13, 0)),
+                new StavkaCmd(cetvrtak.id(), d.cas.predmetId, grupa2, 4, LocalTime.of(10, 0), LocalTime.of(12, 0))));
+        assertEquals(0, ista.izgubljenaOtkazivanja());
+
+        // kraći period (29. 1. ispada) i četvrtak prelazi u petak: dva izgubljena, redovi obrisani
+        RasporedDetails izm = rasporedi.izmeni(r.id(), cmd("Kraći", OD, LocalDate.of(2031, 1, 15), 5,
+                new StavkaCmd(sreda.id(), d.cas.predmetId, grupa, 3, LocalTime.of(11, 0), LocalTime.of(13, 0)),
+                new StavkaCmd(cetvrtak.id(), d.cas.predmetId, grupa2, 5, LocalTime.of(10, 0), LocalTime.of(12, 0))));
+        assertEquals(2, izm.izgubljenaOtkazivanja());
+        assertEquals(List.of(LocalDate.of(2030, 11, 13)), izm.stavke().get(0).otkazani());
+        assertEquals(List.of(), izm.stavke().get(1).otkazani());
+        assertEquals(2, brojOtkazanih(sreda.id()), "prošlo i 13. 11. ostaju");
+        assertEquals(0, brojOtkazanih(cetvrtak.id()));
+
+        // druga grupa srede: stavka se pravi iznova, otkazivanje 13. 11. se gubi (FK CASCADE)
+        RasporedDetails izm2 = rasporedi.izmeni(r.id(), cmd("Kraći", OD, LocalDate.of(2031, 1, 15), 5,
+                new StavkaCmd(sreda.id(), d.cas.predmetId, grupa2, 3, LocalTime.of(11, 0), LocalTime.of(13, 0))));
+        d.zapamtiStavke(izm2);
+        assertEquals(1, izm2.izgubljenaOtkazivanja());
+        assertEquals(0, brojOtkazanih(sreda.id()));
+    }
 }
