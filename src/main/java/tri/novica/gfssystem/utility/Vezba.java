@@ -7,7 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Redni broj vežbe prezentacije ({@code prezentacije.vezba}, V19): 0-99, {@code null} = bez broja. Prezentacija koja
+ * Redni broj vežbe prezentacije ({@code prezentacije.vezba}, V21): 0-99, {@code null} = bez broja. Prezentacija koja
  * pokriva više vežbi nosi prvu ("Vežbe 3 i 4 – zadaci" = 3).
  */
 public final class Vezba {
@@ -16,7 +16,7 @@ public final class Vezba {
     public static final int MAX = 99;
     public static final String GRANICE = "Broj vežbe mora biti od 0 do 99.";
 
-    /** Isto pravilo kao popuna u {@code V19__vezba_prezentacije.sql}: naziv počinje sa "Vežbe N" ili "Vezbe N". */
+    /** Isto pravilo kao popuna u {@code V21__vezba_prezentacije.sql}: naziv počinje sa "Vežbe N" ili "Vezbe N". */
     private static final Pattern NAZIV = Pattern.compile("^\\s*ve[zž]be\\s+(\\d{1,2})(?!\\d)",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 

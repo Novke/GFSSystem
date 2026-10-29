@@ -19,7 +19,7 @@ class VezbaTest {
     }
 
     @Test
-    void brojIzNazivaKaoPopunaV19() {
+    void brojIzNazivaKaoPopunaV21() {
         assertEquals(1, Vezba.izNaziva("Vežbe 1 – zadaci"));
         assertEquals(1, Vezba.izNaziva("Vezbe 1 - Brojevni sistemi, prevodjenje"));
         assertEquals(3, Vezba.izNaziva("Vežbe 3 i 4 – zadaci"));

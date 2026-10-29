@@ -99,7 +99,7 @@ public class McpPrezentacije {
             throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
         }
         if (cmd.vezba() == null) {
-            // Klod najčešće ne navede broj; naziv "Vežbe N ..." ga daje kao i popuna u V19
+            // Klod najčešće ne navede broj; naziv "Vežbe N ..." ga daje kao i popuna u V21
             cmd = new CreatePrezentacijaCmd(cmd.predmetId(), cmd.naziv(), cmd.opis(), cmd.tema(),
                     Vezba.izNaziva(cmd.naziv()));
         }

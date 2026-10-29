@@ -27,7 +27,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Broj vežbe, vrsta i izbor prezentacija nad pravom MySQL bazom (V19): kolona i popuna iz naziva, pravljenje, kopija,
+ * Broj vežbe, vrsta i izbor prezentacija nad pravom MySQL bazom (V21): kolona i popuna iz naziva, pravljenje, kopija,
  * {@code PATCH}, vrsta iz slajdova i izbor po grupi iz pravih izvođenja. Bez {@code @Transactional}: sve se commit-uje.
  */
 @SpringBootTest
@@ -104,9 +104,9 @@ class PrezentacijaRedosledDbTest {
         Long b = nova("Vezbe 12 - ponavljanje", null).id();
         Long c = nova("Upoznavanje", null).id();
         Long d = nova("Vežbe 2", 7).id();
-        String sql = new ClassPathResource("db/migration/V19__vezba_prezentacije.sql")
+        String sql = new ClassPathResource("db/migration/V21__vezba_prezentacije.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
-        // V19 još jednom nad postojećom kolonom: bez greške, popunjava samo NULL redove (jedna veza: @promenljive)
+        // V21 još jednom nad postojećom kolonom: bez greške, popunjava samo NULL redove (jedna veza: @promenljive)
         jdbc.execute((ConnectionCallback<Void>) veza -> {
             try (Statement st = veza.createStatement()) {
                 for (String naredba : sql.replaceAll("(?m)^--.*$", "").split(";")) {
