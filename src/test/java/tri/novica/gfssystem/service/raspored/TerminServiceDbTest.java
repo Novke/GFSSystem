@@ -117,8 +117,9 @@ class TerminServiceDbTest {
 
     @Test
     void otkazivanjeIVracanjeSaMejlovima() {
-        PromenaTerminaOdgovor o = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), "  sednica veća  "));
+        PromenaTerminaOdgovor o = termini.otkazi(tc(stavka, DANAS.plusDays(7), "  sednica veća  "));
         assertEquals(2, o.obavesteno(), "Ana i Ceda (starija generacija) imaju adresu, Bora nema");
+        assertEquals(0, o.neposlato());
         assertTrue(o.termin().otkazan());
         assertEquals("sednica veća", o.termin().napomena());
         List<MejlPoruka> m = mejl.cekaj(2).stream().sorted(Comparator.comparing(MejlPoruka::za)).toList();
@@ -129,42 +130,69 @@ class TerminServiceDbTest {
 
         // ponovljeno: samo napomena, bez mejlova
         mejl.ocisti();
-        PromenaTerminaOdgovor p = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        PromenaTerminaOdgovor p = termini.otkazi(tc(stavka, DANAS.plusDays(7), null));
         assertEquals(0, p.obavesteno());
         assertNull(p.termin().napomena());
         assertEquals(1, (int) jdbc.queryForObject("select count(*) from otkazani_termini where stavka_id = ?", Integer.class,
                 stavka));
 
-        PromenaTerminaOdgovor v = termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        PromenaTerminaOdgovor v = termini.vrati(tc(stavka, DANAS.plusDays(7), null));
         assertFalse(v.termin().otkazan());
         assertEquals(2, v.obavesteno());
         List<MejlPoruka> m2 = mejl.cekaj(2);
         assertTrue(m2.stream().allMatch(x -> x.naslov().startsWith("Čas se ipak održava: ")), m2.toString());
         assertTrue(m2.stream().noneMatch(x -> x.telo().contains("Napomena")));
         mejl.ocisti();
-        assertEquals(0, termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null)).obavesteno(), "neotkazan: ništa");
+        assertEquals(0, termini.vrati(tc(stavka, DANAS.plusDays(7), null)).obavesteno(), "neotkazan: ništa");
         assertTrue(mejl.poslate().isEmpty());
+    }
+
+    /** {@code TerminCmd} bez izbora slanja ({@code posaljiMejl == null}, kao stariji klijent): mejl se šalje. */
+    static TerminCmd tc(Long stavkaId, LocalDate datum, String napomena) {
+        return new TerminCmd(stavkaId, datum, napomena, null);
+    }
+
+    @Test
+    void bezMejlaKadNastavnikIskljuciIJednaPorukaPoAdresi() {
+        // "Pošalji mejl studentima" isključeno: termin se otkazuje i vraća, poruka nema
+        PromenaTerminaOdgovor o = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), "sednica", false));
+        assertTrue(o.termin().otkazan());
+        assertEquals(0, o.obavesteno());
+        assertEquals(0, o.neposlato());
+        PromenaTerminaOdgovor v = termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null, false));
+        assertFalse(v.termin().otkazan());
+        assertEquals(0, v.obavesteno());
+        assertTrue(mejl.poslate().isEmpty());
+
+        // ista adresa kod dva studenta (velika i mala slova): jedna poruka
+        d.mejl(ceda, " ANA@Example.test ");
+        PromenaTerminaOdgovor p = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(14), null, true));
+        assertEquals(1, p.obavesteno());
+        assertEquals(0, p.neposlato());
+        assertEquals(1, mejl.cekaj(1).size());
     }
 
     @Test
     void otkazivanjeNeSaljeKadMejlNijePodesen() {
         mejl.dostupan(false);
-        assertEquals(0, termini.otkazi(new TerminCmd(stavka, DANAS, null)).obavesteno());
+        PromenaTerminaOdgovor o = termini.otkazi(tc(stavka, DANAS, null));
+        assertEquals(0, o.obavesteno());
+        assertEquals(2, o.neposlato(), "Ana i Ceda imaju adresu, a slanje nije podešeno");
         assertTrue(termini.termini(DANAS, 1).stream().filter(t -> t.stavkaId().equals(stavka)).findFirst().orElseThrow()
                 .otkazan());
     }
 
     @Test
     void provereOtkazivanja() {
-        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(1), null)));
-        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(new TerminCmd(-1L, DANAS, null)));
-        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.vrati(new TerminCmd(stavka, null, null)));
-        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(new TerminCmd(stavka, DANAS.minusDays(7), null)));
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(tc(stavka, DANAS.plusDays(1), null)));
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(tc(-1L, DANAS, null)));
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.vrati(tc(stavka, null, null)));
+        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(tc(stavka, DANAS.minusDays(7), null)));
         ocekuj(400, "Napomena može imati najviše 200 znakova.",
-                () -> termini.otkazi(new TerminCmd(stavka, DANAS, "x".repeat(201))));
+                () -> termini.otkazi(tc(stavka, DANAS, "x".repeat(201))));
         sat.postavi(SADA.withHour(10));
-        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(new TerminCmd(stavka, DANAS, null)));
-        ocekuj(409, TerminService.POCEO, () -> termini.vrati(new TerminCmd(stavka, DANAS, null)));
+        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(tc(stavka, DANAS, null)));
+        ocekuj(409, TerminService.POCEO, () -> termini.vrati(tc(stavka, DANAS, null)));
     }
 
     // ---------------------------------------------------------------- početna
@@ -194,7 +222,7 @@ class TerminServiceDbTest {
         assertEquals(DANAS.plusDays(7), s.termin().datum());
 
         // otkazan sledeći termin se preskače
-        termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        termini.otkazi(tc(stavka, DANAS.plusDays(7), null));
         assertEquals(DANAS.plusDays(14), pregled.kontrolnaTabla().sledece().termin().datum());
 
         // završen današnji bez predavanja se ne nudi (posle 13 h)

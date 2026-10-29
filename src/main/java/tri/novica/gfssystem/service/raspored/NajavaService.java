@@ -94,7 +94,7 @@ public class NajavaService {
 
     /**
      * "Neću doći" (ponovljeno samo menja razlog). 404 {@value #NIJE_TVOJ} za stavku koja ne postoji ili ne važi za
-     * studenta i datum koji nije termin, 409 {@value #POCEO} i {@value #OTKAZAN}, 400 za predug razlog. Kad broj najava
+     * studenta, datum koji nije termin i termin van narednih {@value #NAREDNIH} (isti prozor kao kartica), 409 {@value #POCEO} i {@value #OTKAZAN}, 400 za predug razlog. Kad broj najava
      * termina pređe prag perioda: jedno obaveštenje nastavniku ({@link ObavestenjeServis#mnogoNajava}).
      */
     public StudentskiTermin najavi(long studentId, NajavaCmd cmd) {
@@ -132,7 +132,8 @@ public class NajavaService {
     }
 
     /**
-     * Provera da stavka važi za studenta (bez brave), pa red stavke {@code FOR UPDATE}, pa termin, početak i otkazivanje.
+     * Provera da stavka važi za studenta (bez brave), pa red stavke {@code FOR UPDATE}, pa termin, početak, prozor
+     * narednih {@value #NAREDNIH} i otkazivanje.
      * Redosled brava: red stavke, pa (u {@code mnogoNajava}) MySQL brava mejla nastavniku.
      */
     private RasporedStavka zakljucaj(long studentId, NajavaCmd cmd) {
@@ -147,6 +148,10 @@ public class NajavaService {
         }
         if (Termini.poceo(sada, cmd.datum(), s.getPocetak())) {
             throw new SystemException(POCEO, HttpStatus.CONFLICT);
+        }
+        if (!Termini.naredni(s, sada, NAREDNIH).contains(cmd.datum())) {
+            // samo termini koje kartica pokazuje (naredna NAREDNIH po stavci), ne bilo koji budući datum perioda
+            throw nijeTvoj();
         }
         if (otkazani.existsByStavkaIdAndDatum(s.getId(), cmd.datum())) {
             throw new SystemException(OTKAZAN, HttpStatus.CONFLICT);

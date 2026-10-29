@@ -9,17 +9,22 @@ import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.dto.raspored.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predmet;
+import tri.novica.gfssystem.entity.raspored.OtkazanTermin;
 import tri.novica.gfssystem.entity.raspored.Raspored;
 import tri.novica.gfssystem.entity.raspored.RasporedStavka;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
+import tri.novica.gfssystem.repository.raspored.OtkazanTerminRepository;
 import tri.novica.gfssystem.repository.raspored.RasporedRepository;
+import tri.novica.gfssystem.repository.raspored.RasporedStavkaRepository;
 import tri.novica.gfssystem.utility.Brojaci;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Function;
@@ -44,6 +49,8 @@ public class RasporedService {
     static final String NE_POSTOJI = "Raspored ne postoji.";
 
     private final RasporedRepository rasporedi;
+    private final RasporedStavkaRepository stavkeRepo;
+    private final OtkazanTerminRepository otkazani;
     private final PredmetRepository predmeti;
     private final GrupaRepository grupe;
     private final Clock clock;
@@ -59,23 +66,30 @@ public class RasporedService {
 
     @Transactional(readOnly = true)
     public RasporedDetails detalj(Long id) {
-        return details(rasporedi.findById(id).orElseThrow(RasporedService::nePostoji));
+        return details(rasporedi.findById(id).orElseThrow(RasporedService::nePostoji), 0);
     }
 
     public RasporedDetails kreiraj(RasporedCmd cmd) {
         Ocisceno c = proveri(cmd);
+        proveriPreklapanje(null, c);
         Raspored r = new Raspored();
         r.setKreirano(LocalDateTime.now(clock));
         primeni(r, c);
         for (Nova n : c.stavke()) {
             r.getStavke().add(nova(r, n));
         }
-        return details(rasporedi.saveAndFlush(r));
+        return details(rasporedi.saveAndFlush(r), 0);
     }
 
+    /**
+     * Izmena celog perioda. Otkazani termini od danas koje izmena ukida (stavka obrisana ili napravljena iznova, drugi dan,
+     * datum van novog perioda) se brišu, da se ne vrate sami kad se raspored opet promeni, i broje u
+     * {@code izgubljenaOtkazivanja}; forma na to upozorava pre čuvanja (iz {@code StavkaInfo.otkazani}).
+     */
     public RasporedDetails izmeni(Long id, RasporedCmd cmd) {
         Raspored r = rasporedi.findByIdForUpdate(id).orElseThrow(RasporedService::nePostoji);
         Ocisceno c = proveri(cmd);
+        List<OtkazanTermin> buduca = otkazani.odDatumaZaRaspored(id, LocalDate.now(clock));
         Map<Long, RasporedStavka> postojece = r.getStavke().stream()
                 .collect(Collectors.toMap(RasporedStavka::getId, Function.identity()));
         Set<Long> zadrzane = new HashSet<>();
@@ -102,13 +116,20 @@ public class RasporedService {
                 nove.add(n);
             }
         }
+        proveriPreklapanje(id, c);
         primeni(r, c);
+        // stavka odlazi ili termin više nije termin: otkazivanje se briše (i učitano, da flush ne vidi vezu na obrisanu stavku)
+        List<OtkazanTermin> izgubljena = buduca.stream()
+                .filter(o -> !zadrzane.contains(o.getStavka().getId()) || !Termini.jeTermin(o.getStavka(), o.getDatum()))
+                .toList();
+        otkazani.deleteAll(izgubljena);
+        otkazani.flush();
         r.getStavke().removeIf(s -> !zadrzane.contains(s.getId()));
         rasporedi.flush();
         for (Nova n : nove) {
             r.getStavke().add(nova(r, n));
         }
-        return details(rasporedi.saveAndFlush(r));
+        return details(rasporedi.saveAndFlush(r), izgubljena.size());
     }
 
     /** Briše period sa stavkama, otkazivanjima i najavama (FK CASCADE); obaveštenja ostaju. */
@@ -202,6 +223,37 @@ public class RasporedService {
         return new Ocisceno(naziv, cmd.vaziOd(), cmd.vaziDo(), prag, stavke);
     }
 
+    /**
+     * Ista stavka (predmet, grupa, dan, početak) ne sme da postoji u drugom periodu kad se periodi preklapaju u bar jednom
+     * takvom danu: 400 sa nazivom i datumima tog perioda. "Kopiraj u novi" sa preklopljenim datumima zato pada ovde.
+     * (Dva istovremena upisa novih perioda mogu da prođu oba; nastavnik je jedan, pa brava nije uvedena.)
+     */
+    private void proveriPreklapanje(Long id, Ocisceno c) {
+        List<RasporedStavka> druge = stavkeRepo.uDrugimPeriodima(id == null ? -1L : id, c.vaziOd(), c.vaziDo());
+        if (druge.isEmpty()) {
+            return;
+        }
+        for (Nova n : c.stavke()) {
+            for (RasporedStavka d : druge) {
+                Raspored dr = d.getRaspored();
+                if (!d.getPredmet().getId().equals(n.predmet().getId()) || !d.getGrupa().getId().equals(n.grupa().getId())
+                        || d.getDan() != n.dan() || !d.getPocetak().equals(n.pocetak())) {
+                    continue;
+                }
+                LocalDate od = c.vaziOd().isAfter(dr.getVaziOd()) ? c.vaziOd() : dr.getVaziOd();
+                LocalDate doDatuma = c.vaziDo().isBefore(dr.getVaziDo()) ? c.vaziDo() : dr.getVaziDo();
+                if (!Termini.uProzoru(od, doDatuma, n.dan(), od, doDatuma).isEmpty()) {
+                    throw greska("Termin " + n.rb() + " već postoji u rasporedu „" + dr.getNaziv() + "“ ("
+                            + DATUM.format(dr.getVaziOd()) + " – " + DATUM.format(dr.getVaziDo())
+                            + "): isti predmet, grupa, dan i početak u periodima koji se preklapaju. Promeni datume "
+                            + "važenja ili ukloni termin.");
+                }
+            }
+        }
+    }
+
+    private static final DateTimeFormatter DATUM = DateTimeFormatter.ofPattern("d. M. yyyy.");
+
     private static void primeni(Raspored r, Ocisceno c) {
         r.setNaziv(c.naziv());
         r.setVaziOd(c.vaziOd());
@@ -222,14 +274,23 @@ public class RasporedService {
 
     // ------------------------------------------------------------------ mapiranje
 
-    static RasporedDetails details(Raspored r) {
+    private RasporedDetails details(Raspored r, int izgubljena) {
+        Map<Long, List<LocalDate>> otk = new HashMap<>();
+        if (r.getId() != null) {
+            for (OtkazanTermin o : otkazani.odDatumaZaRaspored(r.getId(), LocalDate.now(clock))) {
+                if (Termini.jeTermin(o.getStavka(), o.getDatum())) {
+                    otk.computeIfAbsent(o.getStavka().getId(), k -> new ArrayList<>()).add(o.getDatum());
+                }
+            }
+        }
         List<StavkaInfo> stavke = r.getStavke().stream()
                 .sorted(Comparator.comparingInt(RasporedStavka::getDan).thenComparing(RasporedStavka::getPocetak)
                         .thenComparing(RasporedStavka::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(s -> new StavkaInfo(s.getId(), predmet(s.getPredmet()), grupa(s.getGrupa()), s.getDan(),
-                        s.getPocetak(), s.getKraj()))
+                        s.getPocetak(), s.getKraj(), otk.getOrDefault(s.getId(), List.of())))
                 .toList();
-        return new RasporedDetails(r.getId(), r.getNaziv(), r.getVaziOd(), r.getVaziDo(), r.getPragNajava(), stavke);
+        return new RasporedDetails(r.getId(), r.getNaziv(), r.getVaziOd(), r.getVaziDo(), r.getPragNajava(), stavke,
+                izgubljena);
     }
 
     static PredmetInfo predmet(Predmet p) {
