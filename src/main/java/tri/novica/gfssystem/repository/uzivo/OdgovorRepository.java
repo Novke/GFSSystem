@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.uzivo.Odgovor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,4 +34,13 @@ public interface OdgovorRepository extends JpaRepository<Odgovor, Long> {
     @Modifying(flushAutomatically = true)
     @Query("delete from Odgovor o where o.runda.id in (select r.id from PitanjeRunda r where r.izvodjenje.id = :id)")
     void deleteAllByIzvodjenjeId(@Param("id") Long izvodjenjeId);
+
+    /**
+     * Odgovori neizbačenih učesnika više izvođenja, samo brojevi za rang tačnosti: redovi
+     * {@code [rundaId, ucesnikId, tacno, vremeMs, varijantaId, poeni]}, po vremenu prijema.
+     */
+    @Query("""
+            select o.runda.id, o.ucesnik.id, o.tacno, o.vremeMs, o.varijantaId, o.poeni from Odgovor o
+            where o.runda.izvodjenje.id in :ids and o.ucesnik.izbacen = false order by o.kreirano, o.id""")
+    List<Object[]> findZaRang(@Param("ids") Collection<Long> ids);
 }

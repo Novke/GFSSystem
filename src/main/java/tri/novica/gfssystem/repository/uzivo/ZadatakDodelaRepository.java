@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import tri.novica.gfssystem.entity.uzivo.ZadatakDodela;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,4 +30,8 @@ public interface ZadatakDodelaRepository extends JpaRepository<ZadatakDodela, Lo
     /** Dodele svih rundi izvođenja: redovi {@code [rundaId, ucesnikId, varijantaId]}. */
     @Query("select d.runda.id, d.ucesnik.id, d.varijanta.id from ZadatakDodela d where d.runda.izvodjenje.id = :izvodjenjeId")
     List<Object[]> paroviIzvodjenja(@Param("izvodjenjeId") Long izvodjenjeId);
+
+    /** Dodele svih rundi više izvođenja: redovi {@code [rundaId, ucesnikId, varijantaId]}. */
+    @Query("select d.runda.id, d.ucesnik.id, d.varijanta.id from ZadatakDodela d where d.runda.izvodjenje.id in :ids")
+    List<Object[]> findZaRang(@Param("ids") Collection<Long> ids);
 }

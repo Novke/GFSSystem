@@ -51,6 +51,8 @@ public class StanjeService {
     private final PlatnoJson platnoJson;
     private final ZadaciSlajdova zadaci;
     private final CekiranjeRepository cekiranjeRepository;
+    private final RangTacnostiService rangTacnosti;
+    private final RangPrikazRegistar rangPrikazi;
     private final Clock clock;
 
     /**
@@ -109,16 +111,23 @@ public class StanjeService {
         ZadatakRunda zr = zadatakRunda(p, trenutni, false);
         Map<Long, Odgovor> odgovorUcesnika = new HashMap<>();
         odgovoriRunde.forEach(o -> odgovorUcesnika.putIfAbsent(o.getUcesnik().getId(), o));
+        SnimakRunde snimakRunde = runda == null ? null : snimak(runda);
         List<UcesnikStanje> ucesnici = p.ucesnici().stream()
                 .map(u -> {
-                    Odgovor o = zr == null ? null : odgovorUcesnika.get(u.getId());
+                    Odgovor o = odgovorUcesnika.get(u.getId());
+                    Long varijantaId = zr == null ? null : p.dodeleRunde().get(u.getId());
                     return new UcesnikStanje(u.getId(), u.getIme(), poeni.getOrDefault(u.getId(), 0),
-                            povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId()),
-                            zr == null ? null : p.dodeleRunde().get(u.getId()), o == null ? null : o.getTacno());
+                            povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId()), varijantaId,
+                            o == null ? null : o.getTacno(), o == null ? null : o.getVremeMs(),
+                            kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven());
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
         Set<Long> naCasu = naCasu(p);
+        RangPrikaz rangPrikaz = iz.isRangListaPrikazana() ? rangPrikazi.prikaz(iz.getId()) : null;
+        List<RangTacnostiStavka> javniRangTacnosti = rangPrikaz == null
+                || (rangPrikaz == RangPrikaz.IZVODJENJE && iz.isTakmicenje()) ? null
+                : rangTacnosti.zaProjektor(iz, rangPrikaz, tacanVidljiv(iz) ? null : iz.getTrenutnaRundaId());
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
                 TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
@@ -134,7 +143,17 @@ public class StanjeService {
                 ucesnici, rang.subList(0, Math.min(RANG_NASTAVNIK, rang.size())),
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
                 iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr),
-                brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size());
+                brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size(), javniRangTacnosti, rangPrikaz,
+                rangTacnosti.imaRangPredavanja(iz));
+    }
+
+    /** Kratak prikaz odgovora u trenutnoj rundi ({@link KratakOdgovor}); {@code null} bez odgovora. */
+    private String kratakOdgovor(SnimakRunde snimak, ZadatakRunda zr, Long varijantaId, Odgovor o) {
+        if (o == null || snimak == null) return null;
+        if (snimak instanceof PitanjeSnimak ps) return KratakOdgovor.pitanje(ps, o);
+        if (zr == null) return null;
+        Long vid = o.getVarijantaId() != null ? o.getVarijantaId() : varijantaId;
+        return KratakOdgovor.zadatak(zr.snimak().varijanta(vid).orElse(null), polja(o));
     }
 
     /**
@@ -379,13 +398,15 @@ public class StanjeService {
     }
 
     /**
-     * Javna rang-lista ({@code JavnoStanje.rangLista} i {@code NastavnickoStanje.javnaRangLista}): top 5 bez id-jeva,
-     * samo kad je prikazana ili na kraju takmičenja, i bez poena trenutne runde pre TACAN
-     * ({@link #javniBodovniOdgovori}).
+     * Javna rang-lista takmičenja ({@code JavnoStanje.rangLista} i {@code NastavnickoStanje.javnaRangLista}): top 5 bez
+     * id-jeva, samo u takmičenju, kad je prikazana ({@code L}, ne rang predavanja) ili na kraju, i bez poena trenutne runde
+     * pre TACAN ({@link #javniBodovniOdgovori}). Van takmičenja {@code L} prikazuje rang tačnosti, koji telefoni ne dobijaju.
      */
     List<RangStavka> javnaRangLista(Podaci p) {
         Izvodjenje iz = p.iz();
-        if (!iz.isRangListaPrikazana() && !(iz.getPrikaz() == Prikaz.KRAJ && iz.isTakmicenje())) return null;
+        if (!iz.isTakmicenje()) return null;
+        boolean prikazana = iz.isRangListaPrikazana() && rangPrikazi.prikaz(iz.getId()) == RangPrikaz.IZVODJENJE;
+        if (!prikazana && iz.getPrikaz() != Prikaz.KRAJ) return null;
         return RangLista.izracunaj(p.ucesnici(), javniBodovniOdgovori(p)).stream()
                 .limit(RANG_JAVNO)
                 .map(st -> new RangStavka(st.mesto(), null, st.ime(), st.poeni()))
