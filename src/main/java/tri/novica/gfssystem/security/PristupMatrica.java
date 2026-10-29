@@ -87,6 +87,10 @@ public final class PristupMatrica {
             // čekiranje iz ključa posle prijave i stanje časa (telefon prati čas)
             new Pravilo(POST, "/public/nalog/cas/potvrdi"),
             new Pravilo(GET, "/public/nalog/cas"),
+            // naredni časovi i najava odsustva (student samo iz sesije)
+            new Pravilo(GET, "/public/nalog/casovi"),
+            new Pravilo(POST, "/public/nalog/casovi/najavi"),
+            new Pravilo(POST, "/public/nalog/casovi/povuci"),
             // nalog studenta, faze 2 i 3 (spec studentskog dela 12.7): predmeti, istorija, vežbanje, pregled, ocena; svaki
             // servis ograničava po studentu iz sesije i njegovim grupama (tuđe = 404)
             new Pravilo(GET, "/public/nalog/predmeti"),

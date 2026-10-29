@@ -156,6 +156,9 @@ GET /public/mediji/{id} ANONIMNO
 GET /public/nalog/cas STUDENT
 POST /public/nalog/cas/potvrdi STUDENT
 POST /public/nalog/cas/skeniraj ANONIMNO
+GET /public/nalog/casovi STUDENT
+POST /public/nalog/casovi/najavi STUDENT
+POST /public/nalog/casovi/povuci STUDENT
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 POST /public/nalog/odjava STUDENT
@@ -179,6 +182,14 @@ GET /public/uzivo/{kod} ANONIMNO
 GET /public/uzivo/{kod}/ja ANONIMNO
 POST /public/uzivo/{kod}/prijava ANONIMNO
 GET /public/ws ANONIMNO
+GET /rasporedi ADMIN
+POST /rasporedi ADMIN
+GET /rasporedi/termini ADMIN
+POST /rasporedi/termini/otkazi ADMIN
+POST /rasporedi/termini/vrati ADMIN
+DELETE /rasporedi/{id} ADMIN
+GET /rasporedi/{id} ADMIN
+PUT /rasporedi/{id} ADMIN
 DELETE /slajdovi/{id} ADMIN
 GET /slajdovi/{id} ADMIN
 PUT /slajdovi/{id} ADMIN

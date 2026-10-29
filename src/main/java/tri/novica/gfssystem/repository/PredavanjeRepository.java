@@ -65,6 +65,16 @@ public interface PredavanjeRepository extends JpaRepository<Predavanje, Long>, J
             group by p.predmet.id""")
     List<Object[]> brojPredavanjaZaStudentaPoPredmetu(@Param("grupaId") Long grupaId, @Param("studentId") Long studentId);
 
+    /**
+     * Predavanja sa grupom u prozoru, po (predmet, grupa, datum): redovi {@code [predmetId, grupaId, datum, najveći id]}
+     * (termin rasporeda ima predavanje kad postoji red istog predmeta, grupe i datuma).
+     */
+    @Query("""
+            select p.predmet.id, p.grupa.id, p.datum, max(p.id) from Predavanje p
+            where p.grupa is not null and p.datum between :od and :doDatuma
+            group by p.predmet.id, p.grupa.id, p.datum""")
+    List<Object[]> poPredmetuGrupiIDatumu(@Param("od") LocalDate od, @Param("doDatuma") LocalDate doDatuma);
+
     /** Predavanja predmeta za pokretanje prezentacije: nezavršena ili od {@code danas}, najnovija prva. */
     @Query("""
             select p from Predavanje p join fetch p.predmet left join fetch p.grupa

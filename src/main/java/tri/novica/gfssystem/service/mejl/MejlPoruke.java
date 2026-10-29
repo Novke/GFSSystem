@@ -2,6 +2,8 @@ package tri.novica.gfssystem.service.mejl;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tri.novica.gfssystem.service.raspored.PromenaTermina;
+import tri.novica.gfssystem.service.raspored.TerminOpis;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,9 +22,40 @@ public class MejlPoruke {
     private static final int MAX_IME = 40;
 
     private final String logoUrl;
+    /** Adresa naloga studenta ({@code <prvi https URL iz gfs.front.url>/nalog}), ili null bez https URL-a. */
+    private final String nalogUrl;
 
     public MejlPoruke(@Value("${gfs.front.url:}") String frontUrl) {
         this.logoUrl = logo(frontUrl);
+        String l = this.logoUrl;
+        this.nalogUrl = l == null ? null : l.substring(0, l.length() - LOGO.length()) + "nalog";
+    }
+
+    /**
+     * Promena termina studentu (spec najave odsustva, odeljak 6): "Nema časa" ili "Čas se ipak održava". Predmet, datum i
+     * vreme su iz baze, {@code napomena} je tekst nastavnika; ništa što je student ukucao. Naslov nosi predmet i datum.
+     */
+    public MejlPoruka terminStudentu(String za, String ime, PromenaTermina promena) {
+        TerminOpis t = promena.termin();
+        String i = ime(ime);
+        boolean otkazan = promena.vrsta() == PromenaTermina.Vrsta.OTKAZAN;
+        String naslov = (otkazan ? "Nema časa: " : "Čas se ipak održava: ") + t.predmet() + ", " + t.dan() + " "
+                + t.datumKratko();
+        List<String> uvod = new ArrayList<>();
+        uvod.add(otkazan
+                ? "Čas iz predmeta " + t.predmet() + " " + t.uDan() + " " + t.datumPun() + " (" + t.blok() + ") se ne održava."
+                : "Čas iz predmeta " + t.predmet() + " " + t.uDan() + " " + t.datumPun() + " (" + t.blok()
+                + ") se ipak održava, po rasporedu.");
+        if (otkazan && promena.napomena() != null && !promena.napomena().isBlank()) {
+            uvod.add("Napomena nastavnika: " + promena.napomena());
+        }
+        List<String> posle = new ArrayList<>();
+        posle.add(nalogUrl == null ? "Naredne časove vidiš na svom nalogu u aplikaciji GFS."
+                : "Naredne časove vidiš na svom nalogu: " + nalogUrl);
+        posle.add("Ovaj mejl je stigao jer je čas u tvom rasporedu (grupa " + t.grupa() + ").");
+        MejlSablon.Sadrzaj s = new MejlSablon.Sadrzaj(i == null ? "Zdravo!" : "Zdravo, " + i + "!", uvod, null, posle,
+                logoUrl);
+        return new MejlPoruka(za, naslov, MejlSablon.tekst(s), MejlSablon.html(s));
     }
 
     /**
