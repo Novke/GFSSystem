@@ -12,7 +12,9 @@ import tri.novica.gfssystem.dto.pregled.SledecePredavanjeInfo;
 import tri.novica.gfssystem.dto.raspored.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.PregledService;
+import tri.novica.gfssystem.dto.portal.PodesavanjaNaloga;
 import tri.novica.gfssystem.service.mejl.LazniMejlServis;
+import tri.novica.gfssystem.service.portal.PodesavanjaStudentaServis;
 import tri.novica.gfssystem.service.mejl.MejlPoruka;
 
 import java.time.LocalDate;
@@ -47,6 +49,7 @@ class TerminServiceDbTest {
     @Autowired PregledService pregled;
     @Autowired RasporedSatConfig.Sat sat;
     @Autowired LazniMejlServis mejl;
+    @Autowired PodesavanjaStudentaServis podesavanja;
     @Autowired JdbcTemplate jdbc;
 
     RasporedPodaci d;
@@ -170,6 +173,29 @@ class TerminServiceDbTest {
         assertEquals(1, p.obavesteno());
         assertEquals(0, p.neposlato());
         assertEquals(1, mejl.cekaj(1).size());
+    }
+
+    @Test
+    void studentKojiJeIskljucioMejlNeDobijaNiOtkazNiVracanje() {
+        podesavanja.sacuvaj(ana, new PodesavanjaNaloga(false));
+        PromenaTerminaOdgovor o = termini.otkazi(tc(stavka, DANAS.plusDays(7), null));
+        assertEquals(1, o.obavesteno(), "samo Ceda; Ana je na tabu Ja isključila mejl");
+        assertEquals(0, o.neposlato(), "isključen mejl nije neposlat");
+        assertEquals(List.of("ceda@example.test"), mejl.cekaj(1).stream().map(MejlPoruka::za).toList());
+        mejl.ocisti();
+        PromenaTerminaOdgovor v = termini.vrati(tc(stavka, DANAS.plusDays(7), null));
+        assertEquals(1, v.obavesteno());
+        assertEquals(0, v.neposlato());
+        assertEquals(List.of("ceda@example.test"), mejl.cekaj(1).stream().map(MejlPoruka::za).toList());
+    }
+
+    @Test
+    void iskljucenMejlNijeNeposlatKadSlanjeNijePodeseno() {
+        podesavanja.sacuvaj(ana, new PodesavanjaNaloga(false));
+        mejl.dostupan(false);
+        PromenaTerminaOdgovor o = termini.otkazi(tc(stavka, DANAS, null));
+        assertEquals(0, o.obavesteno());
+        assertEquals(1, o.neposlato(), "samo Ceda bi dobila mejl; Ana ga je isključila");
     }
 
     @Test

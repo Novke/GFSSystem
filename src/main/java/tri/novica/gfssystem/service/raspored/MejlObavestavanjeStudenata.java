@@ -10,11 +10,13 @@ import tri.novica.gfssystem.service.mejl.MejlPoruka;
 import tri.novica.gfssystem.service.mejl.MejlPoruke;
 import tri.novica.gfssystem.service.mejl.MejlPosleCommita;
 import tri.novica.gfssystem.service.mejl.MejlServis;
+import tri.novica.gfssystem.service.portal.PodesavanjaStudentaServis;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * {@link ObavestavanjeStudenata} mejlom: jedna poruka po adresi (adrese se porede bez razlike velikih i malih slova, bez
@@ -22,6 +24,11 @@ import java.util.Map;
  * kodovi za prijavu na {@code mejlIzvrsilac} nikad ne čekaju iza talasa otkazivanja. Pun red: poruka se ne šalje i broji
  * se kao {@code neposlato}; bez SMTP-a ništa se ne šalje i svi primaoci su {@code neposlato}. Log: samo vrsta, id stavke
  * i brojevi (nikad adresa ni ime).
+ * <p>
+ * Podešavanje studenta ({@link PodesavanjaStudentaServis}, tab "Ja": "Javi mi mejlom kad je čas otkazan"; važi i za
+ * "čas se ipak održava"): student koji ga je isključio se izbacuje pre spajanja istih adresa, pa ne ulazi ni u
+ * {@code poslato} ni u {@code neposlato} (oba broje samo studente kojima bi poruka stvarno išla). Kad dva studenta dele
+ * adresu a jedan je isključio mejl, drugi i dalje dobija poruku.
  */
 @Component
 @Slf4j
@@ -31,22 +38,29 @@ public class MejlObavestavanjeStudenata implements ObavestavanjeStudenata {
     private final MejlPoruke poruke;
     private final MejlPosleCommita slanje;
     private final TaskExecutor izvrsilac;
+    private final PodesavanjaStudentaServis podesavanja;
 
     public MejlObavestavanjeStudenata(MejlServis mejl, MejlPoruke poruke, MejlPosleCommita slanje,
-                                      @Qualifier("mejlStudentimaIzvrsilac") TaskExecutor izvrsilac) {
+                                      @Qualifier("mejlStudentimaIzvrsilac") TaskExecutor izvrsilac,
+                                      PodesavanjaStudentaServis podesavanja) {
         this.mejl = mejl;
         this.poruke = poruke;
         this.slanje = slanje;
         this.izvrsilac = izvrsilac;
+        this.podesavanja = podesavanja;
     }
 
     @Override
     public Ishod obavesti(List<Student> studenti, PromenaTermina promena) {
+        List<Student> saAdresom = studenti.stream().filter(s -> s.getEmail() != null && !s.getEmail().isBlank()).toList();
+        if (saAdresom.isEmpty()) {
+            return Ishod.NISTA;
+        }
+        Set<Long> neZele = podesavanja.bezMejlaOtkazanogCasa(saAdresom.stream().map(Student::getId).toList());
         Map<String, Student> poAdresi = new LinkedHashMap<>();
-        for (Student s : studenti) {
-            String adresa = s.getEmail() == null ? "" : s.getEmail().strip();
-            if (!adresa.isEmpty()) {
-                poAdresi.putIfAbsent(adresa.toLowerCase(Locale.ROOT), s);
+        for (Student s : saAdresom) {
+            if (!neZele.contains(s.getId())) {
+                poAdresi.putIfAbsent(s.getEmail().strip().toLowerCase(Locale.ROOT), s);
             }
         }
         if (poAdresi.isEmpty()) {
