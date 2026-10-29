@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.IdCmd;
 import tri.novica.gfssystem.dto.aktivnost.UpdateAktivnostNapomenaCmd;
 import tri.novica.gfssystem.dto.predavanje.*;
+import tri.novica.gfssystem.dto.uzivo.RangPredavanja;
 import tri.novica.gfssystem.service.PredavanjeService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 import tri.novica.gfssystem.utility.PageableUtil;
 
 import java.time.LocalDate;
@@ -21,6 +23,7 @@ import java.util.List;
 public class PredavanjeRest {
 
     private final PredavanjeService predavanjeService;
+    private final RangTacnostiService rangTacnostiService;
 
     /**
      * Lista predavanja za UI: filteri su opcioni, {@code page}/{@code size} (podrazumevano 25, najviše 100) i
@@ -44,6 +47,13 @@ public class PredavanjeRest {
     @ResponseStatus(HttpStatus.OK)
     public PredavanjeDetails view(@PathVariable Long id){
         return predavanjeService.findById(id);
+    }
+
+    /** Rang tačnosti predavanja: zbir svih Uživo izvođenja predavanja (i dok traje). */
+    @GetMapping("/{id}/rang")
+    @ResponseStatus(HttpStatus.OK)
+    public RangPredavanja rang(@PathVariable Long id) {
+        return rangTacnostiService.zaPredavanje(id);
     }
 
     @DeleteMapping("/{id}")

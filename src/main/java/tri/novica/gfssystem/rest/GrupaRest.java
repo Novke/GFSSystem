@@ -18,9 +18,11 @@ import tri.novica.gfssystem.dto.grupa.WaLinkInfo;
 import tri.novica.gfssystem.dto.pregled.GrupaPregledInfo;
 import tri.novica.gfssystem.dto.pregled.PrisustvoMatricaInfo;
 import tri.novica.gfssystem.dto.student.StudentInfo;
+import tri.novica.gfssystem.dto.uzivo.UzivoGrupe;
 import tri.novica.gfssystem.service.GrupaService;
 import tri.novica.gfssystem.service.PregledGrupeService;
 import tri.novica.gfssystem.service.StudentService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -35,6 +37,7 @@ public class GrupaRest {
     private final GrupaService grupaService;
     private final StudentService studentService;
     private final PregledGrupeService pregledGrupeService;
+    private final RangTacnostiService rangTacnostiService;
 
     @GetMapping
     @ResponseBody
@@ -69,6 +72,14 @@ public class GrupaRest {
     @ResponseStatus(HttpStatus.OK)
     public List<StudentInfo> findAllStudents(@PathVariable Long id){
         return studentService.findAllByGroup(id);
+    }
+
+    /** Rang tačnosti studenata grupe kroz Uživo izvođenja; filteri opcioni (predmet, školska godina). */
+    @GetMapping("/{id}/uzivo")
+    @ResponseStatus(HttpStatus.OK)
+    public UzivoGrupe uzivo(@PathVariable Long id, @RequestParam(required = false) Long predmetId,
+                            @RequestParam(required = false) Integer godina) {
+        return rangTacnostiService.zaGrupu(id, predmetId, godina);
     }
 
     /** G1 + G2: brojke grupe i statistika po studentu; bez {@code predmetId} preko svih predmeta. */

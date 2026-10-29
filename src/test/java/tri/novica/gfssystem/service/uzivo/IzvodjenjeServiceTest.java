@@ -50,6 +50,7 @@ class IzvodjenjeServiceTest {
     @Mock PrezentacijaRepository prezentacijaRepository;
     @Mock SlajdRepository slajdRepository;
     @Mock PitanjeRundaRepository rundaRepository;
+    @Mock RangTacnostiService rangTacnosti;
     @Mock OdgovorRepository odgovorRepository;
     @Mock UcesnikRepository ucesnikRepository;
     @Mock PredavanjeRepository predavanjeRepository;
@@ -136,7 +137,8 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, zadatakDodelaService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                stanjeService, zadatakDodelaService, rangTacnosti,
+                new RangPrikazRegistar(), imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {
@@ -666,9 +668,14 @@ class IzvodjenjeServiceTest {
         assertGreska(409, "Ovo pitanje nema tačan odgovor.", TipKomande.TACAN);
         assertGreska(409, "Tajmer radi samo dok je pitanje otvoreno.", TipKomande.TAJMER);
 
-        // bez takmičenja
+        // bez takmičenja rang (tačnosti) radi; rang predavanja traži predavanje sa još izvođenja
         iz.setTakmicenje(false);
-        assertGreska(409, "Takmičenje nije uključeno.", TipKomande.RANG_LISTA);
+        k(TipKomande.RANG_LISTA);
+        assertTrue(iz.isRangListaPrikazana());
+        k(TipKomande.RANG_LISTA);
+        assertFalse(iz.isRangListaPrikazana());
+        assertGreska(409, "Predavanje nema druga izvođenja.", TipKomande.RANG_PREDAVANJA);
+        assertFalse(iz.isRangListaPrikazana());
 
         // nepostojeći slajd
         for (Integer indeks : new Integer[]{99, 4, -2, null}) {
@@ -1166,6 +1173,7 @@ class IzvodjenjeServiceTest {
     @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI", "NIVO"},
             mode = EnumSource.Mode.EXCLUDE)
     void svakaKomandaZakljucavaObjavljujeIVracaStanje(TipKomande tip) {
+        when(rangTacnosti.imaRangPredavanja(iz)).thenReturn(true);
         doS2Zatvoreno();
         proveriKomandu(tip);
     }

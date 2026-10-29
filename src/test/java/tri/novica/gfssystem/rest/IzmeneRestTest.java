@@ -17,6 +17,7 @@ import tri.novica.gfssystem.service.OcenjivanjeService;
 import tri.novica.gfssystem.service.PregledGrupeService;
 import tri.novica.gfssystem.service.StudentService;
 import tri.novica.gfssystem.service.TestService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -29,6 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class IzmeneRestTest {
 
     @Autowired MockMvc mvc;
+    @MockitoBean RangTacnostiService rangTacnostiService;
     @MockitoBean GrupaService grupe;
     @MockitoBean StudentService studenti;
     @MockitoBean TestService testovi;

@@ -117,7 +117,8 @@ class JavnoStanjeTest {
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
                 ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci,
-                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), clock);
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
+                org.mockito.Mockito.mock(RangTacnostiService.class), new RangPrikazRegistar(), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {

@@ -11,6 +11,7 @@ import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.uzivo.IzvodjenjeService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 import tri.novica.gfssystem.service.uzivo.StanjeService;
 
 import java.time.LocalDateTime;
@@ -36,6 +37,7 @@ class IzvodjenjeRestTest {
     @Autowired MockMvc mvc;
     @MockitoBean IzvodjenjeService service;
     @MockitoBean StanjeService stanjeService;
+    @MockitoBean RangTacnostiService rangTacnostiService;
 
     @Test
     void komandaVracaStanje() throws Exception {
