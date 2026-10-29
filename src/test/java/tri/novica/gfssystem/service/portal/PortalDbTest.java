@@ -430,12 +430,12 @@ class PortalDbTest {
         assertEquals(List.of(), statistika.statistika(d.predmetId, g2, null, null));
     }
 
-    // ---------------------------------------------------------------- prvo punjenje (V19)
+    // ---------------------------------------------------------------- prvo punjenje (V20)
 
-    /** Dva INSERT-a prvog punjenja iz V19, tačno kako su u migraciji. */
+    /** Dva INSERT-a prvog punjenja iz V20, tačno kako su u migraciji. */
     static List<String> prvoPunjenje() throws Exception {
         String sql;
-        try (var in = PortalDbTest.class.getResourceAsStream("/db/migration/V19__studentski_portal.sql")) {
+        try (var in = PortalDbTest.class.getResourceAsStream("/db/migration/V20__studentski_portal.sql")) {
             sql = new String(Objects.requireNonNull(in).readAllBytes(), StandardCharsets.UTF_8);
         }
         List<String> rez = new ArrayList<>();

@@ -1,6 +1,6 @@
--- V19: studentski portal, faze 2 i 3 (spec docs/superpowers/specs/2026-10-28-studentski-portal-design.md, odeljci 5, 6
--- i 12 u deploy repou). Privremen broj: V18 uzima najava odsustva; pri merge-u u staging dobija sledeći slobodan (pre
--- merge-a proveriti origin/staging). Aditivno: samo nove tabele. Starija slika ih ne mapira (ddl-auto=validate prolazi,
+-- V20: studentski portal, faze 2 i 3 (spec docs/superpowers/specs/2026-10-28-studentski-portal-design.md, odeljci 5, 6
+-- i 12 u deploy repou). Privremen broj: V18 uzima najava odsustva, V19 redosled prezentacija (V19__vezba_prezentacije);
+-- pri merge-u u staging dobija sledeći slobodan (pre merge-a proveriti origin/staging). Aditivno: samo nove tabele. Starija slika ih ne mapira (ddl-auto=validate prolazi,
 -- rollback bez rada na bazi). Idempotentno kao V2-V17 (CREATE TABLE IF NOT EXISTS, prvo punjenje "ako ne postoji").
 --
 -- otvorene_teme: tip (čvor banke PREDAVANJE) otvoren za vežbanje grupi studenata; izvor CAS (kraj izvođenja, listovi
