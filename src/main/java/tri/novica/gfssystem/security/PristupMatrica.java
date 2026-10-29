@@ -87,6 +87,18 @@ public final class PristupMatrica {
             // čekiranje iz ključa posle prijave i stanje časa (telefon prati čas)
             new Pravilo(POST, "/public/nalog/cas/potvrdi"),
             new Pravilo(GET, "/public/nalog/cas"),
+            // nalog studenta, faze 2 i 3 (spec studentskog dela 12.7): predmeti, istorija, vežbanje, pregled, ocena; svaki
+            // servis ograničava po studentu iz sesije i njegovim grupama (tuđe = 404)
+            new Pravilo(GET, "/public/nalog/predmeti"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prisustvo"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/vezbanje"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/moji-zadaci"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prezentacije"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/ocena"),
+            new Pravilo(GET, "/public/nalog/prezentacije/{id}"),
+            new Pravilo(POST, "/public/nalog/vezbanje"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/provera"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/resenje"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

@@ -14,6 +14,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.service.portal.TemeZaVezbanje;
 import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
@@ -58,6 +59,7 @@ class IzvodjenjeServiceTest {
     @Mock RokPlaner rokPlaner;
     @Mock StanjeService stanjeService;
     @Mock ZadatakDodelaService zadatakDodelaService;
+    @Mock TemeZaVezbanje temeZaVezbanje;
     @Mock ImenaUcesnika imenaUcesnika;
     @Mock IdentitetStudenta identitet;
     @Mock ApplicationEventPublisher publisher;
@@ -136,7 +138,7 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, zadatakDodelaService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                stanjeService, zadatakDodelaService, temeZaVezbanje, imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {

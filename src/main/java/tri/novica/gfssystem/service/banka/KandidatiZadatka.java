@@ -144,6 +144,49 @@ public class KandidatiZadatka {
                     Arrays.stream(poNivou).boxed().toList());
         }
 
+        /** Svi čvorovi stabla redom stabla (koreni po {@code rb}, pa dubinski), za redosled tipova na nalogu studenta. */
+        public List<Long> redom() {
+            List<Long> ids = new ArrayList<>();
+            for (Cvor c : cvorovi.values()) {
+                if (c.roditeljId() == null || !cvorovi.containsKey(c.roditeljId())) {
+                    podstabloDubinski(c, ids, new HashSet<>());
+                }
+            }
+            return List.copyOf(ids);
+        }
+
+        private void podstabloDubinski(Cvor c, List<Long> ids, Set<Long> vidjeni) {
+            if (c == null || !vidjeni.add(c.id())) {
+                return;
+            }
+            ids.add(c.id());
+            for (Long d : c.deca()) {
+                podstabloDubinski(cvorovi.get(d), ids, vidjeni);
+            }
+        }
+
+        /**
+         * Svi čvorovi podstabla, sa samim čvorom i sa isključenim podgrupama (zatvaranje za vežbanje briše zapise celog
+         * podstabla); prazno kad čvora nema u stablu.
+         */
+        public List<Long> podstablo(Long grupaId) {
+            Cvor cvor = grupaId == null ? null : cvorovi.get(grupaId);
+            if (cvor == null) {
+                return List.of();
+            }
+            List<Long> ids = new ArrayList<>();
+            Deque<Cvor> red = new ArrayDeque<>(List.of(cvor));
+            while (!red.isEmpty()) {
+                Cvor c = red.removeFirst();
+                if (ids.contains(c.id())) {
+                    continue;
+                }
+                ids.add(c.id());
+                c.deca().forEach(d -> red.addLast(cvorovi.get(d)));
+            }
+            return List.copyOf(ids);
+        }
+
         private Cvor roditelj(Cvor c) {
             return c.roditeljId() == null ? null : cvorovi.get(c.roditeljId());
         }

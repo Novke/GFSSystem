@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.service.portal.TemeZaVezbanje;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
@@ -88,6 +89,7 @@ public class IzvodjenjeService {
     private final RokPlaner rokPlaner;
     private final StanjeService stanjeService;
     private final ZadatakDodelaService zadatakDodelaService;
+    private final TemeZaVezbanje temeZaVezbanje;
     private final ImenaUcesnika imenaUcesnika;
     private final IdentitetStudenta identitet;
     private final ApplicationEventPublisher publisher;
@@ -345,6 +347,7 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
+        temeZaVezbanje.prikazan(iz, s.getId());   // studentski pregled: slajd vidljiv grupi posle kraja izvođenja
         if (!TokIzvodjenja.saRundama(s)) {
             iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
@@ -618,6 +621,8 @@ public class IzvodjenjeService {
         iz.setStatus(StatusIzvodjenja.ZAVRSENO);
         iz.setAktivanKod(null);
         iz.setKraj(sada());
+        // pre brisanja rundi kod "Ne čuvaj": izvučeni tipovi se otvaraju grupi za vežbanje tek sada (spec studentskog dela 5.3)
+        temeZaVezbanje.krajIzvodjenja(iz);
         if (!iz.isCuvanje()) {
             // runde se brišu, pa ni faza pitanja više ne postoji
             iz.setTrenutnaRundaId(null);
