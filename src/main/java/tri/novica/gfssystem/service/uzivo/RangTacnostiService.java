@@ -348,7 +348,11 @@ public class RangTacnostiService {
 
     /** Runda za rang iz snimka: ključ slajda kao u stanju (posle brisanja slajda iz snimka), varijante za ZADATAK. */
     Runda runda(PitanjeRunda r) {
-        SnimakRunde s = jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
+        return runda(r, jsonMapper.readValue(r.getSnimak(), SnimakRunde.class));
+    }
+
+    /** Isto iz već pročitanog snimka (lična tačnost u {@code StanjeService}). */
+    static Runda runda(PitanjeRunda r, SnimakRunde s) {
         Object kljuc = r.getSlajdId() != null ? r.getSlajdId()
                 : s.slajdId() != null ? s.slajdId() : "runda-" + r.getId();
         Map<Long, Varijanta> varijante = null;

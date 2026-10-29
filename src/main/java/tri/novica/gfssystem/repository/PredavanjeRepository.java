@@ -75,6 +75,24 @@ public interface PredavanjeRepository extends JpaRepository<Predavanje, Long>, J
             group by p.predmet.id, p.grupa.id, p.datum""")
     List<Object[]> poPredmetuGrupiIDatumu(@Param("od") LocalDate od, @Param("doDatuma") LocalDate doDatuma);
 
+    /**
+     * Predavanja "u toku" za telefon studenta: današnja nezavršena predavanja sa grupom, gde je to studentova grupa ili
+     * (starija generacija koja sluša sa mlađom, isto pravilo kao stavke rasporeda) student već ima aktivnost ili
+     * čekiranje na predavanju istog predmeta i grupe, a na ovom predavanju još nije čekiran. Najnovije prvo.
+     */
+    @Query("""
+            select p from Predavanje p join fetch p.predmet join fetch p.grupa g
+            where p.datum = :danas and (p.zavrseno is null or p.zavrseno = false)
+              and (g.id = (select s.grupa.id from Student s where s.id = :studentId)
+                   or exists (select a.id from Aktivnost a where a.student.id = :studentId
+                              and a.predavanje.grupa = g and a.predavanje.predmet = p.predmet)
+                   or exists (select c.id from Cekiranje c where c.student.id = :studentId
+                              and c.predavanje.grupa = g and c.predavanje.predmet = p.predmet))
+              and not exists (select c2.id from Cekiranje c2 where c2.predavanje = p and c2.student.id = :studentId)
+            order by p.id desc""")
+    List<Predavanje> uTokuZaStudenta(@Param("studentId") Long studentId, @Param("danas") LocalDate danas,
+                                     Pageable pageable);
+
     /** Predavanja predmeta za pokretanje prezentacije: nezavršena ili od {@code danas}, najnovija prva. */
     @Query("""
             select p from Predavanje p join fetch p.predmet left join fetch p.grupa
