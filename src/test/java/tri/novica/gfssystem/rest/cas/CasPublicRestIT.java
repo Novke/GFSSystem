@@ -139,6 +139,23 @@ class CasPublicRestIT {
                 .andExpect(jsonPath("$.reason").value(CekiranjeService.KLJUC_ISTEKAO));
     }
 
+    /** Ključ je tačno {@code uToku} (front čita {@code s.uToku}), nikad {@code utoku}; posle čekiranja ga nema. */
+    @Test
+    void necekiranStudentVidiPredavanjeUTokuPodKljucemUToku() throws Exception {
+        Cookie student = studentskiKolacic(ana);
+        mvc.perform(get("/public/nalog/cas").cookie(student))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.predavanje").doesNotExist())
+                .andExpect(jsonPath("$.uToku.predmet").value("Čas " + d.oznaka))
+                .andExpect(jsonPath("$.uToku.tema").value("Tema " + d.oznaka))
+                .andExpect(jsonPath("$.utoku").doesNotExist());
+        mvc.perform(post("/public/nalog/cas/skeniraj").header("Sec-Fetch-Site", "same-origin").cookie(student)
+                        .contentType(MediaType.APPLICATION_JSON).content(telo(cekiranje.zaNastavnika(predavanje).token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stanje.predavanje.id").value(predavanje))
+                .andExpect(jsonPath("$.stanje.uToku").doesNotExist());
+    }
+
     @Test
     void istekaoTokenJe410() throws Exception {
         mvc.perform(post("/public/nalog/cas/skeniraj").header("Sec-Fetch-Site", "same-origin")
