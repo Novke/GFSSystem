@@ -42,6 +42,13 @@ final class RasporedPodaci {
         return new StavkaCmd(null, cas.predmetId, grupaId, dan, LocalTime.parse(pocetak), LocalTime.parse(kraj));
     }
 
+    /** Period napravljen van {@link #period} (npr. direktno kroz {@code kreiraj}): briše se u {@link #obrisi()}. */
+    RasporedDetails zapamti(RasporedDetails r) {
+        periodi.add(r.id());
+        zapamtiStavke(r);
+        return r;
+    }
+
     void zapamtiStavke(RasporedDetails r) {
         r.stavke().forEach(x -> {
             if (!stavke.contains(x.id())) stavke.add(x.id());

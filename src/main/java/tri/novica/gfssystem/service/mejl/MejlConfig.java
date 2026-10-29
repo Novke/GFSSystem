@@ -44,6 +44,25 @@ public class MejlConfig {
     }
 
     /**
+     * Mejlovi studentima o promeni termina (otkazan čas, čas se ipak održava; {@code MejlObavestavanjeStudenata}): jedna nit
+     * i sopstveni red od 500 poruka ({@code gfs.mail.studenti.*}), odvojeno od {@code mejlIzvrsilac}, da kodovi za prijavu
+     * nikad ne čekaju iza talasa otkazivanja. Poruke se predaju direktno (posle commit-a, ne kroz {@code @Async}), pa pun red
+     * baca {@code TaskRejectedException} (podrazumevani {@code AbortPolicy}) i pozivalac broji šta nije stavljeno u red.
+     * 500 je i otprilike dnevna granica slanja ličnog Gmail naloga (README deploy repoa, "Raspored i najava odsustva").
+     */
+    @Bean("mejlStudentimaIzvrsilac")
+    public ThreadPoolTaskExecutor mejlStudentimaIzvrsilac(@Value("${gfs.mail.studenti.niti:1}") int niti,
+                                                          @Value("${gfs.mail.studenti.red:500}") int red) {
+        ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();
+        e.setCorePoolSize(niti);
+        e.setMaxPoolSize(niti);
+        e.setQueueCapacity(red);
+        e.setThreadNamePrefix("mejl-studenti-");
+        e.setWaitForTasksToCompleteOnShutdown(false);
+        return e;
+    }
+
+    /**
      * Spring Boot ne uključuje {@code mail.smtp.auth} sam od sebe: bez toga se korisnik i lozinka ne šalju (Gmail).
      * Uključuje se samo kad je korisnik podešen, pa Mailpit bez prijave radi sa praznim {@code GFS_MAIL_USER}.
      */

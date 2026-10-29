@@ -2,6 +2,10 @@ package tri.novica.gfssystem.dto.raspored;
 
 import java.time.LocalDate;
 
-/** Termin (stavka, datum) za otkazivanje ({@code napomena} do 200 znakova, ne mora) i vraćanje ({@code napomena} se ne čita). */
-public record TerminCmd(Long stavkaId, LocalDate datum, String napomena) {
+/**
+ * Termin (stavka, datum) za otkazivanje ({@code napomena} do 200 znakova, ne mora) i vraćanje ({@code napomena} se ne
+ * čita). {@code posaljiMejl} ("Pošalji mejl studentima"): {@code null} = da (stariji klijent), {@code false} = promena bez
+ * poruka studentima.
+ */
+public record TerminCmd(Long stavkaId, LocalDate datum, String napomena, Boolean posaljiMejl) {
 }

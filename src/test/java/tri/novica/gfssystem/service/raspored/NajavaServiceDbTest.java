@@ -165,6 +165,10 @@ class NajavaServiceDbTest {
         ocekuj(404, NajavaService.NIJE_TVOJ, () -> najave.najavi(ana, cmd(DANAS.plusDays(1), null)));
         ocekuj(404, NajavaService.NIJE_TVOJ, () -> najave.najavi(ana, cmd(LocalDate.of(2031, 2, 5), null)));
         ocekuj(404, NajavaService.NIJE_TVOJ, () -> najave.najavi(ana, cmd(null, null)));
+        // termin postoji, ali je peti po redu (kartica pokazuje naredna 4): 404 i za najavu i za povlačenje; četvrti prolazi
+        ocekuj(404, NajavaService.NIJE_TVOJ, () -> najave.najavi(ana, cmd(DANAS.plusDays(28), null)));
+        ocekuj(404, NajavaService.NIJE_TVOJ, () -> najave.povuci(ana, cmd(DANAS.plusDays(28), null)));
+        assertTrue(najave.najavi(ana, cmd(DANAS.plusDays(21), null)).najavljeno());
 
         najave.najavi(ana, cmd(DANAS, null));
         sat.postavi(SADA.withHour(10));
@@ -172,7 +176,7 @@ class NajavaServiceDbTest {
         ocekuj(409, NajavaService.POCEO, () -> najave.povuci(ana, cmd(DANAS, null)));
         ocekuj(409, NajavaService.POCEO, () -> najave.najavi(ana, cmd(DANAS.minusDays(7), null)));
 
-        termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), "sednica"));
+        termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), "sednica", null));
         ocekuj(409, NajavaService.OTKAZAN, () -> najave.najavi(ana, cmd(DANAS.plusDays(7), null)));
         StudentskiTermin otk = najave.naredni(ana).termini().get(0);
         assertTrue(otk.otkazan());
@@ -213,7 +217,7 @@ class NajavaServiceDbTest {
         assertEquals(1, mejl.poslate().size());
 
         // otkazivanje rešava obaveštenje
-        termini.otkazi(new TerminCmd(stavka, DANAS, null));
+        termini.otkazi(new TerminCmd(stavka, DANAS, null, null));
         assertTrue(d.reseno(kljuc));
     }
 
