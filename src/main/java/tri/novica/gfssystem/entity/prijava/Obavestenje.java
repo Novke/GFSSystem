@@ -11,8 +11,10 @@ import tri.novica.gfssystem.entity.Student;
 import java.time.LocalDateTime;
 
 /**
- * Obaveštenje za nastavnika (opšta tabela). {@code student} je null kad se odnosi na indeks koji ne postoji;
- * {@code podaci} je JSON string (običan text). Otvoreno = {@code reseno} null, nepročitano = {@code procitano} null.
+ * Obaveštenje za nastavnika (opšta tabela). {@code student} je null kad se odnosi na indeks koji ne postoji ili na termin
+ * ({@code MNOGO_NAJAVA}); {@code podaci} je JSON string (običan text). Otvoreno = {@code reseno} null, nepročitano =
+ * {@code procitano} null. {@code kljuc} (jedinstven, nullable) drži jedno obaveštenje po ključu, npr.
+ * {@code MNOGO_NAJAVA:<stavkaId>:<datum>}; stare vrste ga nemaju.
  */
 @Entity
 @Table(name = "obavestenja")
@@ -30,6 +32,8 @@ public class Obavestenje {
     private LocalDateTime kreirano;
     private LocalDateTime procitano;
     private LocalDateTime reseno;
+    @Column(length = 100, unique = true)
+    private String kljuc;
 
     @Override
     public boolean equals(Object o) {

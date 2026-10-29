@@ -861,6 +861,52 @@ Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy rep
   (lock wait), `CekiranjeUzivoDbTest` (expelled, scored run, `brojOcekivanih`), `CasPublicRestIT` (whole chain, cookie, no secret in JSON); shared
   JDBC fixtures `service/cas/CasPodaci` (times always from Java, never MySQL `now()`).
 
+## Raspored i najava odsustva (timetable, absence announcements)
+
+Spec `docs/superpowers/specs/2026-10-29-najava-odsustva-design.md` (deploy repo; decisions in section 11), plan next to it. Packages
+`entity|repository|service|rest|dto/raspored`, plus `dto/pregled/{TerminKratkoInfo,RasporedTablaInfo}`.
+- **Tables (V18):** `rasporedi` (period: `naziv`, `vazi_od`/`vazi_do`, `prag_najava` default 5; periods may overlap, old ones stay),
+  `raspored_stavke` (predmet, grupa required, ISO weekday `dan` 1-7, `pocetak`/`kraj`; **no DB unique key**, the duplicate check (predmet, grupa,
+  dan, pocetak) runs under the period row lock, so two lines can swap times in one `PUT`), `otkazani_termini` (`UNIQUE(stavka_id, datum)`,
+  optional `napomena`), `najave_odsustva` (`UNIQUE(stavka_id, datum, student_id)`, optional `razlog` <= 200), all `ON DELETE CASCADE`;
+  `obavestenja.kljuc` varchar(100) with a unique index (only `MNOGO_NAJAVA` sets it). **Termini (dates) are computed, never stored**
+  (`service/raspored/Termini`, pure static functions); a cancellation or announcement whose date stops being a termin after an edit simply stops
+  showing.
+- **Who a line applies to: one query**, `RasporedStavkaRepository.parovi(stavkaId?, studentId?, od)`: students of the line's group plus older
+  generations with an activity or a check-in on a lecture of the same predmet and grupa. Used by the student list, by every announce/withdraw check
+  and for cancellation mail recipients.
+- **`RasporedService`** (teacher): list, detail, create, `PUT` of the whole period with lines (a line with `id` keeps its row, announcements and
+  cancellations while predmet and grupa stay the same; changing either deletes the line and creates a new one, so announcements never move to
+  another group), delete (cascade; notifications stay). Validation messages are Serbian 400s ("Termin N: ...").
+- **`NajavaService`** (student; `READ_COMMITTED`): `naredni` = next 4 termini per applicable line (today's until it starts, Clock bean),
+  `najavi` / `povuci` with lock order **line row (`findByIdForUpdate`) -> named MySQL lock of the teacher mail**: 404 `Taj čas nije u tvom
+  rasporedu.` (not applicable, missing line, date not a termin), 409 `Čas je već počeo.`, 409 `Ovaj čas je otkazan.`, 400 for a reason over 200.
+  Repeated `najavi` only changes the reason; `povuci` without an announcement is not an error. The student comes only from `gfs_student`, never
+  from the body; the answer (`StudentskiTermin`) never carries counts or other names.
+- **Threshold notification:** when a *new* announcement makes the count **greater than** the period's `prag_najava`,
+  `ObavestenjeServis.mnogoNajava` (`propagation = MANDATORY`, inside the line lock) creates one `MNOGO_NAJAVA` notification with
+  `kljuc = MNOGO_NAJAVA:<stavkaId>:<datum>` (exists -> nothing, never a second one; the unique index is the backstop) and mails the teacher through
+  the generalized `mejlNastavniku` (limits per kind+key 1/h and 20/h total). Mail text: subject, group, date, time, count, threshold and the
+  relative link `raspored/termini?od=<datum>`; **never a reason or a student name**. Cancelling the termin resolves it (`resiZaTermin`).
+- **`TerminService`** (teacher): `termini(od?, dana?)` (default today and 28 days, 1-120 else 400 `Neispravan parametar: dana.`) with names and
+  reasons, `predavanjeId` (lecture of the same predmet, grupa and date) and `poceo`; `otkazi` / `vrati` lock the line row, 404 `Termin ne
+  postoji.`, 409 `Termin je već počeo.`. A new cancellation mails every applicable student with an email through `ObavestavanjeStudenata`
+  (`MejlObavestavanjeStudenata`: one `MejlPoruka` per recipient, published as an event, sent after commit by `MejlPosleCommita`; subject
+  `Nema časa: <predmet>, sreda 4. 11.`, the teacher's note in the body); a repeated cancel only updates the note (no mails); `vrati` of a cancelled
+  termin mails `Čas se ipak održava: ...`, of a non-cancelled one does nothing. With SMTP not configured it sends nothing (`obavesteno = 0`).
+  The mail queue holds 200 messages (`mejlIzvrsilac`); a larger cancellation logs dropped mails.
+- **Dashboard:** `KontrolnaTablaInfo.raspored` (last field) = `{pokrivaDanas, naredni}` (termini today .. today + 6 with counts, cancellation and
+  lecture id); `SledecePredavanjeInfo` ends with `termin` and `izvor` (`POSLEDNJE` | `RASPORED_DANAS` | `RASPORED_SLEDECI`): when a period covers
+  today, the first of today's termini that is not cancelled, has no lecture and has not ended, else the first non-cancelled termin within 60 days,
+  else the old heuristic; `rb` from the timetable is the global max + 1 (as `POST /predavanja/start`).
+- **REST:** `RasporedRest` `/rasporedi` (ADMIN): `GET`, `POST` (201), `GET|PUT|DELETE {id}`, `GET termini?od=&dana=`, `POST termini/otkazi`,
+  `POST termini/vrati` (`{stavkaId, datum, napomena?}` -> `{termin, obavesteno}`). `CasoviPublicRest` `/public/nalog/casovi` (STUDENT): `GET`,
+  `POST najavi`, `POST povuci` (`{stavkaId, datum, razlog?}`). Announcements do not touch attendance or grading.
+- **Tests:** `TerminiTest`, `RasporedServiceDbTest`, `NajavaServiceDbTest` (older generation by activity/check-in, threshold, one notification for
+  8 parallel announcements, no reason in the teacher mail), `TerminServiceDbTest` (mails via `LazniMejlServis`, dashboard suggestion),
+  `CasoviPublicRestIT` (whole chain, no counts or names in student JSON), `V18MigracijaDbTest`. Time: `service/raspored/RasporedSatConfig`
+  (`@Primary` movable clock, dates in 2030 so they never meet other test data); fixture `RasporedPodaci` on top of `service/cas/CasPodaci`.
+
 ## Build & Run
 
 ```bash
@@ -921,7 +967,12 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   unchanged). `V17` = check-in (`V17__cekiranje.sql`, branch `feature/studentski-portal`; provisional, re-check against `origin/staging`
   before the merge): tables `cekiranja` (`UNIQUE(predavanje_id, student_id)`, index `(student_id, vreme)`, FKs `ON DELETE CASCADE`) and
   `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
-  maps none of it, rollback needs no DB work). **Next free version: `V18`.**
+  maps none of it, rollback needs no DB work). `V18` = timetable and absence announcements (`V18__raspored_najave.sql`, branch
+  `feature/najava-odsustva`; re-check against `origin/staging` before the merge; portal phase 2, which had reserved "V18 (privremeno)", takes
+  V20, because V19 is claimed by the presentation-order branch): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
+  `obavestenja.kljuc` with unique index `uk_obavestenja_kljuc`; idempotent and additive. An older image does not map the new tables, but it
+  cannot read an `obavestenja` row of kind `MNOGO_NAJAVA` (unknown enum constant): before a rollback across V18 run
+  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. **Next free version: `V19`** (claimed by the presentation-order branch; re-check `origin/staging`).
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

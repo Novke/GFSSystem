@@ -1,0 +1,216 @@
+package tri.novica.gfssystem.service.raspored;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import tri.novica.gfssystem.dto.pregled.KontrolnaTablaInfo;
+import tri.novica.gfssystem.dto.pregled.SledecePredavanjeInfo;
+import tri.novica.gfssystem.dto.raspored.*;
+import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.service.PregledService;
+import tri.novica.gfssystem.service.mejl.LazniMejlServis;
+import tri.novica.gfssystem.service.mejl.MejlPoruka;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Termini za nastavnika i početna nad pravom MySQL bazom (spec najave odsustva, odeljci 3.2, 6 i 8): pregled sa
+ * najavama i predavanjem, otkazivanje i vraćanje sa mejlovima studentima (svoja grupa i starija generacija, samo sa
+ * adresom), ponovljeno otkazivanje bez mejlova, provere, i predlog sledećeg predavanja iz rasporeda.
+ */
+@SpringBootTest
+@Import({RasporedSatConfig.class, LazniMejlServis.class})
+class TerminServiceDbTest {
+
+    /** Sreda 6. 11. 2030, 8:00; čas sredom 10-13. */
+    static final LocalDateTime SADA = LocalDateTime.of(2030, 11, 6, 8, 0);
+    static final LocalDate DANAS = SADA.toLocalDate();
+    static final LocalDate OD = LocalDate.of(2030, 10, 1);
+    static final LocalDate DO = LocalDate.of(2031, 1, 31);
+
+    @Autowired RasporedService rasporedi;
+    @Autowired NajavaService najave;
+    @Autowired TerminService termini;
+    @Autowired PregledService pregled;
+    @Autowired RasporedSatConfig.Sat sat;
+    @Autowired LazniMejlServis mejl;
+    @Autowired JdbcTemplate jdbc;
+
+    RasporedPodaci d;
+    Long grupa;
+    Long starija;
+    Long stavka;
+    Long ana;
+    Long bora;
+    Long ceda;
+
+    @BeforeEach
+    void setUp() {
+        sat.postavi(SADA);
+        mejl.ocisti();
+        d = new RasporedPodaci(jdbc, rasporedi);
+        grupa = d.cas.grupa(2030);
+        starija = d.cas.grupa(2029);
+        stavka = d.period(OD, DO, 5, d.stavka(grupa, 3, "10:00", "13:00")).stavke().get(0).id();
+        ana = d.cas.student(grupa, "Ana");
+        bora = d.cas.student(grupa, "Bora");
+        ceda = d.cas.student(starija, "Ceda");
+        d.mejl(ana, "ana@example.test");
+        d.mejl(ceda, "ceda@example.test");
+        d.cas.aktivnost(d.cas.predavanje(grupa, LocalDate.of(2030, 10, 30)), ceda, "PRISUSTVO");
+    }
+
+    @AfterEach
+    void tearDown() {
+        mejl.ocisti();
+        d.obrisi();
+    }
+
+    static void ocekuj(int kod, String poruka, Supplier<?> s) {
+        SystemException ex = assertThrows(SystemException.class, s::get);
+        assertEquals(kod, ex.getCode());
+        assertEquals(poruka, ex.getMessage());
+    }
+
+    List<TerminInfo> moji(LocalDate od, Integer dana) {
+        return termini.termini(od, dana).stream().filter(t -> t.stavkaId().equals(stavka)).toList();
+    }
+
+    @Test
+    void terminiSaNajavamaIPredavanjem() {
+        najave.najavi(ana, new NajavaCmd(stavka, DANAS, "lekar"));
+        najave.najavi(ceda, new NajavaCmd(stavka, DANAS, null));
+        Long pred = d.cas.predavanje(grupa, DANAS);
+        List<TerminInfo> t = moji(null, 28);
+        assertEquals(List.of(DANAS, DANAS.plusDays(7), DANAS.plusDays(14), DANAS.plusDays(21)),
+                t.stream().map(TerminInfo::datum).toList());
+        TerminInfo danas = t.get(0);
+        assertEquals(2, danas.brojNajava());
+        assertEquals(5, danas.prag());
+        assertEquals(pred, danas.predavanjeId());
+        assertFalse(danas.poceo());
+        assertEquals(Set.of("Ana", "Ceda"), danas.najave().stream().map(NajavaInfo::ime).collect(Collectors.toSet()));
+        assertEquals("lekar", danas.najave().stream().filter(n -> n.ime().equals("Ana")).findFirst().orElseThrow().razlog());
+        assertNull(t.get(1).predavanjeId());
+        assertEquals(0, t.get(1).brojNajava());
+
+        assertEquals(1, moji(DANAS, 1).size());
+        assertEquals(List.of(DANAS.plusDays(7)), moji(DANAS.plusDays(1), 7).stream().map(TerminInfo::datum).toList());
+        ocekuj(400, "Neispravan parametar: dana.", () -> termini.termini(null, 0));
+        ocekuj(400, "Neispravan parametar: dana.", () -> termini.termini(null, 121));
+        sat.postavi(SADA.withHour(10));
+        assertTrue(moji(null, 1).get(0).poceo());
+    }
+
+    @Test
+    void otkazivanjeIVracanjeSaMejlovima() {
+        PromenaTerminaOdgovor o = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), "  sednica veća  "));
+        assertEquals(2, o.obavesteno(), "Ana i Ceda (starija generacija) imaju adresu, Bora nema");
+        assertTrue(o.termin().otkazan());
+        assertEquals("sednica veća", o.termin().napomena());
+        List<MejlPoruka> m = mejl.cekaj(2).stream().sorted(Comparator.comparing(MejlPoruka::za)).toList();
+        assertEquals(List.of("ana@example.test", "ceda@example.test"), m.stream().map(MejlPoruka::za).toList());
+        assertEquals("Nema časa: Čas " + d.cas.oznaka + ", sreda 13. 11.", m.get(0).naslov());
+        assertTrue(m.get(0).telo().contains("Napomena nastavnika: sednica veća"), m.get(0).telo());
+        assertTrue(m.get(0).telo().contains("Zdravo, Ana!"), m.get(0).telo());
+
+        // ponovljeno: samo napomena, bez mejlova
+        mejl.ocisti();
+        PromenaTerminaOdgovor p = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        assertEquals(0, p.obavesteno());
+        assertNull(p.termin().napomena());
+        assertEquals(1, (int) jdbc.queryForObject("select count(*) from otkazani_termini where stavka_id = ?", Integer.class,
+                stavka));
+
+        PromenaTerminaOdgovor v = termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        assertFalse(v.termin().otkazan());
+        assertEquals(2, v.obavesteno());
+        List<MejlPoruka> m2 = mejl.cekaj(2);
+        assertTrue(m2.stream().allMatch(x -> x.naslov().startsWith("Čas se ipak održava: ")), m2.toString());
+        assertTrue(m2.stream().noneMatch(x -> x.telo().contains("Napomena")));
+        mejl.ocisti();
+        assertEquals(0, termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null)).obavesteno(), "neotkazan: ništa");
+        assertTrue(mejl.poslate().isEmpty());
+    }
+
+    @Test
+    void otkazivanjeNeSaljeKadMejlNijePodesen() {
+        mejl.dostupan(false);
+        assertEquals(0, termini.otkazi(new TerminCmd(stavka, DANAS, null)).obavesteno());
+        assertTrue(termini.termini(DANAS, 1).stream().filter(t -> t.stavkaId().equals(stavka)).findFirst().orElseThrow()
+                .otkazan());
+    }
+
+    @Test
+    void provereOtkazivanja() {
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(1), null)));
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.otkazi(new TerminCmd(-1L, DANAS, null)));
+        ocekuj(404, TerminService.NE_POSTOJI, () -> termini.vrati(new TerminCmd(stavka, null, null)));
+        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(new TerminCmd(stavka, DANAS.minusDays(7), null)));
+        ocekuj(400, "Napomena može imati najviše 200 znakova.",
+                () -> termini.otkazi(new TerminCmd(stavka, DANAS, "x".repeat(201))));
+        sat.postavi(SADA.withHour(10));
+        ocekuj(409, TerminService.POCEO, () -> termini.otkazi(new TerminCmd(stavka, DANAS, null)));
+        ocekuj(409, TerminService.POCEO, () -> termini.vrati(new TerminCmd(stavka, DANAS, null)));
+    }
+
+    // ---------------------------------------------------------------- početna
+
+    @Test
+    void pocetnaPredlazeDanasnjiTermin() {
+        najave.najavi(ana, new NajavaCmd(stavka, DANAS, null));
+        KontrolnaTablaInfo k = pregled.kontrolnaTabla();
+        assertTrue(k.raspored().pokrivaDanas());
+        assertTrue(k.raspored().naredni().stream().anyMatch(t -> t.stavkaId().equals(stavka) && t.datum().equals(DANAS)
+                && t.brojNajava() == 1));
+        SledecePredavanjeInfo s = k.sledece();
+        assertEquals(SledecePredavanjeInfo.Izvor.RASPORED_DANAS, s.izvor());
+        assertEquals(stavka, s.termin().stavkaId());
+        assertEquals(grupa, s.grupa().getId());
+        assertEquals(d.cas.predmetId, s.predmet().getId());
+        assertEquals(2L, s.brojStudenata());
+        assertEquals(LocalTime.of(10, 0), s.termin().pocetak());
+        assertEquals(1, s.termin().brojNajava());
+    }
+
+    @Test
+    void pocetnaPosleDanasnjegPredavanjaNudiSledeci() {
+        d.cas.predavanje(grupa, DANAS);
+        SledecePredavanjeInfo s = pregled.kontrolnaTabla().sledece();
+        assertEquals(SledecePredavanjeInfo.Izvor.RASPORED_SLEDECI, s.izvor());
+        assertEquals(DANAS.plusDays(7), s.termin().datum());
+
+        // otkazan sledeći termin se preskače
+        termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        assertEquals(DANAS.plusDays(14), pregled.kontrolnaTabla().sledece().termin().datum());
+
+        // završen današnji bez predavanja se ne nudi (posle 13 h)
+        sat.postavi(LocalDateTime.of(2030, 11, 20, 13, 0));
+        assertEquals(LocalDate.of(2030, 11, 27), pregled.kontrolnaTabla().sledece().termin().datum());
+    }
+
+    @Test
+    void pocetnaBezPeriodaZaDanas() {
+        sat.postavi(LocalDateTime.of(2031, 3, 5, 8, 0));
+        KontrolnaTablaInfo k = pregled.kontrolnaTabla();
+        assertFalse(k.raspored().pokrivaDanas());
+        assertTrue(k.raspored().naredni().stream().noneMatch(t -> t.stavkaId().equals(stavka)));
+        if (k.sledece() != null) {
+            assertEquals(SledecePredavanjeInfo.Izvor.POSLEDNJE, k.sledece().izvor());
+            assertNull(k.sledece().termin());
+        }
+    }
+}

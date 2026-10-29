@@ -87,6 +87,10 @@ public final class PristupMatrica {
             // čekiranje iz ključa posle prijave i stanje časa (telefon prati čas)
             new Pravilo(POST, "/public/nalog/cas/potvrdi"),
             new Pravilo(GET, "/public/nalog/cas"),
+            // naredni časovi i najava odsustva (student samo iz sesije)
+            new Pravilo(GET, "/public/nalog/casovi"),
+            new Pravilo(POST, "/public/nalog/casovi/najavi"),
+            new Pravilo(POST, "/public/nalog/casovi/povuci"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 
