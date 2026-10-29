@@ -969,10 +969,10 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
   maps none of it, rollback needs no DB work). `V18` = timetable and absence announcements (`V18__raspored_najave.sql`, branch
   `feature/najava-odsustva`; re-check against `origin/staging` before the merge; portal phase 2, which had reserved "V18 (privremeno)", takes
-  the next free number): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
+  V20, because V19 is claimed by the presentation-order branch): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
   `obavestenja.kljuc` with unique index `uk_obavestenja_kljuc`; idempotent and additive. An older image does not map the new tables, but it
   cannot read an `obavestenja` row of kind `MNOGO_NAJAVA` (unknown enum constant): before a rollback across V18 run
-  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. **Next free version: `V19`.**
+  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. **Next free version: `V19`** (claimed by the presentation-order branch; re-check `origin/staging`).
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose
