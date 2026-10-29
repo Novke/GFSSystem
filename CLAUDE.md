@@ -831,6 +831,48 @@ Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy rep
   (lock wait), `CekiranjeUzivoDbTest` (expelled, scored run, `brojOcekivanih`), `CasPublicRestIT` (whole chain, cookie, no secret in JSON); shared
   JDBC fixtures `service/cas/CasPodaci` (times always from Java, never MySQL `now()`).
 
+## Student account, phases 2 and 3 (subjects, history, practice, presentation review, grades)
+
+Branch `feature/studentski-portal-2` (as of 2026-10-29 not on staging). Spec: deploy repo
+`docs/superpowers/specs/2026-10-28-studentski-portal-design.md`, sections 5, 6, 7 and **12** (revision 2026-10-29, wins where it differs).
+Package `portal` in `entity`, `repository`, `service`, `rest`, `dto`.
+- **Who is the student:** only `StudentAutentikacija` (session). His groups only from `service/portal/GrupeStudenta.za` (own group plus groups
+  of lectures where he has an activity or a check-in: a repeater sees the younger generation); predmeti = subjects with a lecture of one of
+  those groups (`KontekstStudenta`). Never read `student.grupa` in a student query. Anything foreign or missing is the same **404
+  `Nije pronađeno.`** (`KontekstStudenta.nema()`), never 403.
+- **Opened for practice (`otvorene_teme`, V19):** `TemeZaVezbanje.krajIzvodjenja` is called by `IzvodjenjeService.zavrsi` (ZAVRSI and the 12 h
+  auto end) in the same transaction, **before** the "Ne čuvaj" deletion: the leaves of the variants actually drawn in the run's ZADATAK rounds
+  (`ZadatakSnimak.varijante[].grupaId`) open for the run's group (`CAS`, insert "if missing" via `INSERT ... SELECT ... ON DUPLICATE KEY`, so a
+  deleted leaf never fails the end). Never at round opening (a student would spin "next task" until his class variant). Manual
+  (`RUCNO`): `PUT|DELETE /banka/grupe/{id}/otvoreno/{grupaStudenataId}`, `GET /banka/grupe/{id}/otvoreno` (panel per student group: OTVORENO,
+  PREKO_TEME, DELIMICNO, ZATVORENO); closing deletes the records of the node **and its whole subtree**; an open ancestor keeps it open. Open
+  leaves = for each record of the student's groups, `StabloPredavanja.opis(node).listovi()` (same exclusion rule as the class draw; the node
+  itself is never skipped). Only leaves are practised.
+- **Shown slides (`prikazani_slajdovi`, V19):** `IzvodjenjeService.idiNa` calls `TemeZaVezbanje.prikazan` for runs with a group (insert "if
+  missing", first run kept). A slide is visible to the group only when that run is `ZAVRSENO` (or deleted: `izvodjenje_id` SET NULL).
+- **Practice (`VezbanjeStudenta`, table `vezbanja`):** `POST /public/nalog/vezbanje {tipId, nivo?}` draws from `KandidatiZadatka.kandidati`
+  (AKTIVNA with SVG, `Random` bean), avoiding the student's last 5 variants of that leaf when there is a choice (and the last one when possible);
+  returns SVG + schema **without** answers (`ZadatakVezbanja`). `provera` grades with `OcenaZadatka.oceni` over the **current** variant and
+  schema (same 400 messages as in class) and returns only true/false per field; `resenje` returns `resenjeSvgId` and `tacneVrednosti`. Both go
+  through `pokusajId` + the session student (`findForUpdate`), and re-check that the variant is still AKTIVNA and its leaf still open (else 404).
+  409 `Za ovaj nivo nema zadataka.` / `Ovaj tip trenutno nema zadataka.`. No points, no activities.
+- **History (`IstorijaStudenta`):** my tasks from class = `zadatak_dodele` of participants with `student_id` = me in `ZAVRSENO` runs, everything from
+  the round snapshot (solution shown even if not released in class); review = current slide version, only visible slides, DTO `SlajdPregleda`
+  without `beleske`/`serija`/`izvor` (PITANJE carries the correct answer: run ended, decision 12.9/8; PLATNO without strokes); "Tvoj odgovor" from
+  the student's own last answer.
+- **Grades (`ObjavaOcenaServis`, tables `objave_ocena` + `objavljene_ocene`):** nothing about grades reaches a student until the teacher
+  publishes for subject + group (`PUT /ocenjivanje/predmet/{p}/objava/{g}`; `GET ...?grupa=` state; `DELETE` withdraws). Publish = snapshot per
+  student from `OcenjivanjeService.getRezultati` (`SnimakOcene` JSON: proposal, total, pre-exam, activity, homework, points per test type);
+  re-publish replaces the group's snapshot. A student sees only his own row of his **own** group's publication.
+- **Statistics:** `GET /predmeti/{id}/vezbanje/statistika?grupa=&od=&do=` (`StatistikaVezbanja`), aggregate per leaf only.
+- **Student paths** (all STUDENT in `PristupMatrica`, OSIV off under `/public/nalog/**`, DTOs built in the service transaction): `GET
+  /public/nalog/predmeti`, `GET /public/nalog/predmeti/{id}/{prisustvo,vezbanje,moji-zadaci,prezentacije,ocena}`, `GET
+  /public/nalog/prezentacije/{id}`, `POST /public/nalog/vezbanje`, `POST /public/nalog/vezbanje/{pokusajId}/{provera,resenje}`; `GET
+  /public/nalog/ja` now also has `grupa` and `generacija`.
+- **Tests:** `PortalDbTest` (three students: two groups and a repeater; nothing open while the run lasts, only drawn leaves, Ne čuvaj, manual
+  open/close, practice + IDOR, grades, the V19 first fill run twice, forbidden fields in every student JSON), `NalogPortalRestIT` (whole chain:
+  401, 404 text, origin check, teacher paths refuse a student session).
+
 ## Build & Run
 
 ```bash
@@ -891,7 +933,11 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   unchanged). `V17` = check-in (`V17__cekiranje.sql`, branch `feature/studentski-portal`; provisional, re-check against `origin/staging`
   before the merge): tables `cekiranja` (`UNIQUE(predavanje_id, student_id)`, index `(student_id, vreme)`, FKs `ON DELETE CASCADE`) and
   `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
-  maps none of it, rollback needs no DB work). **Next free version: `V18`.**
+  maps none of it, rollback needs no DB work). `V18` is reserved for the absence notice / timetable work (`feature/najava-odsustva`).
+  `V19` = student account phases 2 and 3 (`V19__studentski_portal.sql`, branch `feature/studentski-portal-2`; provisional, re-check against
+  `origin/staging`): new tables `otvorene_teme`, `vezbanja`, `prikazani_slajdovi`, `objave_ocena`, `objavljene_ocene` only, plus a one-time first
+  fill in SQL (drawn leaves of finished runs; slides up to where a finished run stopped plus slides with a round); additive. **Next free
+  version: `V20`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose
