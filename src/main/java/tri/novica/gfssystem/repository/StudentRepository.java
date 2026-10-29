@@ -34,6 +34,9 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
 
     List<Student> findByGrupa(Grupa grupa);
 
+    /** Studenti grupe (rang tačnosti grupe). */
+    List<Student> findAllByGrupaId(Long grupaId);
+
     /** Svi studenti sa godinom upisa {@code godina} (jedna generacija: desetine redova). */
     List<Student> findAllByGodina(int godina);
 

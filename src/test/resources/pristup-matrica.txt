@@ -67,11 +67,13 @@ GET /grupe/{id}/kontakti.vcf ADMIN
 GET /grupe/{id}/pregled ADMIN
 GET /grupe/{id}/prisustvo ADMIN
 GET /grupe/{id}/studenti ADMIN
+GET /grupe/{id}/uzivo ADMIN
 PATCH /grupe/{id}/wa-link ADMIN
 DELETE /iskljucene-teme/{id} ADMIN
 GET /izvodjenja ADMIN
 DELETE /izvodjenja/{id} ADMIN
 POST /izvodjenja/{id}/komande ADMIN
+GET /izvodjenja/{id}/rang ADMIN
 GET /izvodjenja/{id}/rezultati ADMIN
 PUT /izvodjenja/{id}/runde/{rundaId}/sakrij ADMIN
 GET /izvodjenja/{id}/stanje ADMIN
@@ -116,6 +118,7 @@ PUT /predavanja/{id} ADMIN
 GET /predavanja/{id}/cekiranje ADMIN
 PUT /predavanja/{id}/posecenost ADMIN
 PATCH /predavanja/{id}/prisustvo ADMIN
+GET /predavanja/{id}/rang ADMIN
 PATCH /predavanja/{id}/zadatak ADMIN
 PATCH /predavanja/{id}/zvezdica ADMIN
 DELETE /predavanja/{pId}/prisustvo/{sId} ADMIN
@@ -192,6 +195,7 @@ DELETE /studenti/{id}/nalog/moodle ADMIN
 POST /studenti/{id}/nalog/opozovi-uredjaje ADMIN
 POST /studenti/{id}/nalog/posalji-kod ADMIN
 GET /studenti/{id}/predmeti ADMIN
+GET /studenti/{id}/uzivo ADMIN
 GET /studenti/{studentId}/beleske ADMIN
 POST /studenti/{studentId}/beleske ADMIN
 GET /studenti/{studentId}/predmet/{predmetId} ADMIN

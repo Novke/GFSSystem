@@ -65,4 +65,15 @@ public interface PitanjeRundaRepository extends JpaRepository<PitanjeRunda, Long
     @Modifying(flushAutomatically = true)
     @Query("delete from PitanjeRunda r where r.izvodjenje.id = :id")
     void deleteAllByIzvodjenjeId(@Param("id") Long id);
+
+    /** Runde više izvođenja (rang tačnosti), po izvođenju pa redu otvaranja. */
+    @Query("select r from PitanjeRunda r where r.izvodjenje.id in :ids order by r.izvodjenje.id, r.otvoreno, r.id")
+    List<PitanjeRunda> findZaRang(@Param("ids") Collection<Long> ids);
+
+    /** Da li predavanje ima još neko izvođenje (osim datog) sa bar jednom rundom (tab i projektor "Predavanje"). */
+    @Query("""
+            select count(r) > 0 from PitanjeRunda r
+            where r.izvodjenje.predavanje.id = :predavanjeId and r.izvodjenje.id <> :izvodjenjeId""")
+    boolean postojiDrugoIzvodjenjeSaRundama(@Param("predavanjeId") Long predavanjeId,
+                                            @Param("izvodjenjeId") Long izvodjenjeId);
 }

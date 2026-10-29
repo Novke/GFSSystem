@@ -286,6 +286,36 @@ group's schema, the console and projector show results per variant and, on `Shif
   grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
 
+### Rang tačnosti (leaderboard)
+
+Spec `docs/superpowers/specs/2026-10-28-rang-tacnosti-design.md` (deploy repo). No migration, no new table: everything is computed from rounds,
+answers, participants and `zadatak_dodele`. Code: pure `service/uzivo/RangTacnosti` (rules and ordering), `RangTacnostiService` (queries and
+aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the projector), `KratakOdgovor` (answer preview), DTOs in `dto/uzivo`
+(`RangTacnostiStavka`, `RangPrikaz`, `RangPredavanja`, `UzivoStudenta`, `UzivoStudentaRed`, `UzivoGrupe`).
+- **Measure:** the last round of every slide counts (same rule as `StanjeService.bodovniOdgovori`); a PITANJE with a correct answer, or a ZADATAK
+  for a participant whose assigned variant has fields (paper work never counts). A participant **owes** a round they answered, or one closed after
+  they joined (an open round is owed only once answered). **An unanswered owed round is wrong.** ★: a correct PITANJE 1, a correct ZADATAK the
+  level of the assigned variant (snapshot without `nivo` = 2). Order: accuracy (exact fraction) desc, average answer time (`vremeMs` of answered
+  rounds) asc with no answer last, ★ desc, name; the same place for equal accuracy, average rounded to 100 ms and ★. Rows that owe nothing are left out.
+- **Identity across runs:** `s:<studentId>` for logged-in students, `g:<normalized name>` for guests (lower case, no diacritics, `đ`->`d`, one
+  space) and only inside one lecture; never across lectures. `IzvodjenjeService`/`StanjeService` keep the old per-run `rangLista` (points,
+  takmičenje) unchanged.
+- **Endpoints (all ADMIN, outside `/public/**`):** `GET /izvodjenja/{id}/rang` (list; `poeni` only in takmičenje), `GET /predavanja/{id}/rang`
+  (`RangPredavanja`: runs with rounds + the lecture aggregate with `izvodjenja` per row), `GET /studenti/{id}/uzivo?predmetId&godina` (one row per
+  class: a lecture with all its runs, or a run without a lecture; place in that class's rank, plus the total with `casova`), `GET
+  /grupe/{id}/uzivo?predmetId&godina` (rank of the group roster over all its classes; students without a single owed question at the bottom with
+  `mesto = null`; guests never). `godina` is the school year (`SkolskaGodina.proveri`, 400 otherwise).
+- **Console and projector:** `UcesnikStanje` now carries `tacno`, `vremeMs`, `odgovor` (short preview by `KratakOdgovor`: option letters by `rb`,
+  numbers with a decimal comma, text cut to 40 chars, Zadatak fields joined with ` · `) and `odgovorSakriven` for the current round (teacher only).
+  `NastavnickoStanje` gained `javniRangTacnosti` (top 10 without ids, `null` while hidden; before `TACAN` the current round is left out, like
+  `javnaRangLista`), `rangPrikaz` (`IZVODJENJE` | `PREDAVANJE` | `null`) and `imaRangPredavanja` (the lecture has another run with rounds).
+  `RANG_LISTA` (L) toggles the run rank in every run (in takmičenje the projector keeps the points list and the podium), `RANG_PREDAVANJA`
+  (Shift+L) the lecture rank (409 `Predavanje nema druga izvođenja.` otherwise); the other key switches, the same key hides; `ZAVRSI` clears it.
+  The projector choice lives only in memory (`RangPrikazRegistar`): after a backend restart a shown rank falls back to the run rank. Phones get
+  nothing new: `javnaRangLista` stays `null` outside takmičenje.
+- Tests: `RangTacnostiTest` (pure rules), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
+  `TACAN`, student card, group, 404/400), plus the command tests in `IzvodjenjeServiceTest`.
+
 ## Banka zadataka (faza 1)
 
 Per-subject bank of tasks for lectures and tests: a tree of groups, variants of a task (LaTeX text and solution rendered to SVG
