@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +31,12 @@ public class Raspored {
     /** Obaveštenje nastavniku kad za jedan termin odsustvo najavi više od ovoliko studenata. */
     @Column(nullable = false)
     private int pragNajava = 5;
+    /**
+     * Vreme podsetnika dan pre časa (lokalno, kao termini); {@code null} = podsetnik za termine ovog perioda isključen. Nov
+     * period dobija 18:00, postojeći su ga dobili migracijom V22.
+     */
+    @Column(name = "podsetnik_vreme")
+    private LocalTime podsetnikVreme = LocalTime.of(18, 0);
     @Column(nullable = false)
     private LocalDateTime kreirano;
     /** Stavke po id-ju; brisanje perioda briše stavke (i u bazi, FK CASCADE). */
