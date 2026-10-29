@@ -84,7 +84,8 @@ public class StudentskaObavestenja {
 
     /**
      * Push iz redova ključa {@code kljuc} datim studentima koji nisu isključili {@code prekidac}; zove se van transakcije
-     * ili posle commit-a ({@link PushPosiljalac#posleCommita}). Vraća broj push poruka stavljenih u red.
+     * ili na niti push izvršioca ({@link PushPosiljalac#uPozadiniPosleCommita}), nikad iz {@code afterCommit} niti
+     * zahteva. Vraća broj push poruka stavljenih u red.
      */
     public int posalji(String kljuc, Collection<Long> studentIds, Prekidac prekidac, Duration ttl, boolean hitno) {
         if (kljuc == null || studentIds.isEmpty()) {

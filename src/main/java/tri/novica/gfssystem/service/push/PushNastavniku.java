@@ -80,17 +80,20 @@ public class PushNastavniku {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void naNovoObavestenje(NovoObavestenje d) {
-        try {
-            if (!ukljucenoNovaTransakcija(d.vrsta())) {
-                return;
+        // nit zahteva još drži svoju vezu: čitanje ide na nit push izvršioca (PushPosiljalac#uPozadiniPosleCommita)
+        posiljalac.uPozadini(() -> {
+            try {
+                if (!ukljucenoNovaTransakcija(d.vrsta())) {
+                    return;
+                }
+                int n = posiljalac.nastavniku(PushTekstovi.nastavniku(d.vrsta(), d.termin(), d.broj(), d.prag()), TTL, true);
+                if (n > 0) {
+                    log.info("Push nastavniku stavljen u red, vrsta={}, poruka={}", d.vrsta(), n);
+                }
+            } catch (RuntimeException e) {
+                log.error("Push nastavniku nije stavljen u red, vrsta={}: {}", d.vrsta(), e.getClass().getSimpleName());
             }
-            int n = posiljalac.nastavniku(PushTekstovi.nastavniku(d.vrsta(), d.termin(), d.broj(), d.prag()), TTL, true);
-            if (n > 0) {
-                log.info("Push nastavniku stavljen u red, vrsta={}, poruka={}", d.vrsta(), n);
-            }
-        } catch (RuntimeException e) {
-            log.error("Push nastavniku nije stavljen u red, vrsta={}: {}", d.vrsta(), e.getClass().getSimpleName());
-        }
+        });
     }
 
     private boolean ukljucenoNovaTransakcija(VrstaObavestenja v) {

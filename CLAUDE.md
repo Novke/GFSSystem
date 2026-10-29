@@ -1014,6 +1014,54 @@ Package `portal` in `entity`, `repository`, `service`, `rest`, `dto`.
   origin check, teacher paths refuse a student session, settings GET/PUT), `TerminServiceDbTest` (a student who switched the mail off gets
   neither the cancel nor the restore mail).
 
+## Aplikacija i obaveštenja (push, student bell, reminder; studentski deo faza 4)
+
+Branch `feature/aplikacija-push` in all three repos. Spec: deploy repo `docs/superpowers/specs/2026-10-29-aplikacija-i-obavestenja-design.md`
+(sections 5 and 6, 6.8 = the student bell), plan next to it. Migration **`V22__aplikacija_push.sql`** (additive: new tables `push_pretplate`,
+`studentska_obavestenja`, `podesavanja_nastavnika_push`, `posle_casa_poslato`, push/bell columns on `podesavanja_studenta` with DDL defaults,
+nullable `rasporedi.podsetnik_vreme` filled with 18:00 for existing periods). Package `push` in `entity`, `repository`, `service`, `rest`, `dto`.
+- **Keys and crypto (JDK only, no library):** the VAPID pair lives in `kljucevi_aplikacije` (`PushKljucevi`, created once under the MySQL lock
+  `gfs-vapid`, checked by a signature on load, never logged, **never rotated**: a new pair voids every subscription). `WebPushSifra` = RFC 8291
+  `aes128gcm` (checked with the RFC vector), `Vapid` = RFC 8292 ES256 JWT (`aud` = endpoint origin, `exp` 12 h, `sub` = `mailto:` from
+  `gfs.nastavnik.mejl` or the first `gfs.front.url`). No new env variable or secret.
+- **Sending (`PushPosiljalac`):** endpoint host allow-list (`PushEndpoint`: `fcm.googleapis.com`, `*.push.apple.com`,
+  `updates.push.services.mozilla.com`, `*.notify.windows.com`; https, default port, checked on subscribe **and** before every send: SSRF),
+  `HttpPushTransport` without redirects, 10 s; own executor `pushIzvrsilac` (2 threads, queue 1000; a full queue drops the message, never
+  blocks), so login codes on `mejlIzvrsilac` never wait. 2xx resets errors, 404/410 delete the subscription, 5 consecutive errors delete it.
+  Logs carry only `PushEndpoint.trag` (host + 8 hex of the hash), never the endpoint, keys or content. **Push work triggered by a commit runs on
+  the push thread** (`uPozadiniPosleCommita`, `uPozadini` from an `AFTER_COMMIT` listener): in `afterCommit` the request thread still holds its
+  connection, and a `REQUIRES_NEW` read there would take a second one (a burst of public requests exhausted the pool of 10 in
+  `ObavestenjeMejlIT`). Tests never reach a real push service: `gfs.push.http=false` in test resources, `LazniPushTransport`.
+- **Subscriptions (`PushPretplate`):** owned by the device from the session (student `studentski_uredjaji` row or teacher `nastavnicke_sesije`
+  row), never by an id from the request; one per device (a new one replaces it), the same endpoint moves to the new owner (shared phone). Limits
+  per device in `pokusaji`: 20 subscribes/h (`PUSH_PRETPLATA`), 5 test pushes/h (`PUSH_PROBA`). Logout, logout everywhere and device revocation
+  delete the device's subscriptions; the sender skips a subscription whose owner is no longer valid.
+- **Student bell = the only source of student pushes (`StudentskaObavestenja`, table `studentska_obavestenja`):** every event writes one row per
+  student in the event's transaction (content frozen, unique `(student_id, kljuc)`, so a repeated event writes and pushes nothing), regardless
+  of switches; bell switches filter what the bell shows, push switches filter what is sent. Kinds: `PODSETNIK` (never shown in the bell),
+  `OTKAZAN_CAS` and `ODRZAVA_SE` (always shown), `OCENE`, `POSLE_CASA` (switchable). `GET /public/nalog/obavestenja` = `{novo, stavke}` (the
+  last 30 visible, newest first, `novo` = newer than `podesavanja_studenta.zvono_otvoreno`); `POST /public/nalog/obavestenja/otvoreno` sets
+  it (per student, across devices). Mail stays only for the cancellation (`MejlIPushObavestavanje` composes mail + push behind
+  `ObavestavanjeStudenata`; `posaljiMejl=false` sends neither; `PromenaTerminaOdgovor.pushPoslato` is the number of queued pushes).
+- **Events:** reminder `PodsetnikPosao` (every 5 min, `gfs.push.podsetnik.cron`, `-` disables; one per student per day at the earliest reminder
+  time of his periods, skips cancelled termini and termini he announced absence for, catches up at most 3 h and never after 22:00; the period's
+  time is `rasporedi.podsetnik_vreme`, 06:00-21:30, `RasporedCmd.podsetnik`/`podsetnikVreme`, null = off); cancelled / restored termin
+  (`TerminService`); grades published or re-published (`ObjavaOcenaServis`, never on withdrawal, text without numbers); "posle časa"
+  (`PosleCasaPosao`, every 5 min, `gfs.push.posle-casa.cron`; scheduled in `posle_casa_poslato` 30 min after the group's last run ends, only
+  when something became visible to the group for the first time, same day, 07:00-22:00). Teacher push (`PushNastavniku`): every new row in
+  `obavestenja` goes to the teacher's subscriptions unless its kind is switched off in `podesavanja_nastavnika_push`. Texts (`PushTekstovi`) are
+  built only from teacher-entered data and counts: **never a grade, another student's name, an absence reason or text typed by a student**
+  (lock screen).
+- **Paths:** STUDENT `GET|PUT|DELETE /public/nalog/push`, `POST /public/nalog/push/proba`, `GET /public/nalog/obavestenja`,
+  `POST /public/nalog/obavestenja/otvoreno`; ADMIN `GET|PUT|DELETE /push`, `POST /push/proba`, `GET|PUT /push/podesavanja`. `GET .../push` =
+  `{javniKljuc, pretplacen}`; `PUT` body `{endpoint, p256dh, auth}` (base64url, 65 and 16 bytes). `PodesavanjaNaloga` gained `pushPodsetnik`,
+  `pushOtkazanCas`, `pushOcene`, `pushPosleCasa`, `zvonoOcene`, `zvonoPosleCasa` (a `PUT` without them keeps the stored values). Nothing new for
+  nginx (`/api/public/nalog/...` is already public).
+- **Cleanup (`CiscenjePrijave`):** subscriptions whose device or session expired or was revoked more than 30 days ago, bell rows older than 90
+  days, `posle_casa_poslato` older than 60 days.
+- **Tests:** `PushTekstoviTest`, `WebPushSifraTest` (RFC vector), `PushDbTest` (subscriptions, ownership, limits, bell), `PushPortalDbTest`
+  (grades, after class), `PushRasporedDbTest` (reminder rules, cancellation, teacher push), `CiscenjePrijaveIT`, `PristupMatricaTest` snapshot.
+
 ## Build & Run
 
 ```bash

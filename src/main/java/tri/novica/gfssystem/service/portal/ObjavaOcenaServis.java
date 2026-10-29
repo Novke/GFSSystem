@@ -62,6 +62,7 @@ public class ObjavaOcenaServis {
     private final GrupaRepository grupaRepository;
     private final KontekstStudenta kontekstStudenta;
     private final StudentskaObavestenja obavestenja;
+    private final PushPosiljalac posiljalac;
     private final NamedParameterJdbcTemplate jdbc;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -124,7 +125,7 @@ public class ObjavaOcenaServis {
         String kljuc = "OCENE:" + predmetId + ":" + grupaId + ":" + sada;
         Set<Long> novi = obavestenja.upisi(primaoci, VrstaStudentskogObavestenja.OCENE, kljuc,
                 PushTekstovi.ocene(predmetId, naziv, ponovo));
-        PushPosiljalac.posleCommita(() -> obavestenja.posalji(kljuc, novi, Prekidac.PUSH_OCENE, OCENE_TTL, false));
+        posiljalac.uPozadiniPosleCommita(() -> obavestenja.posalji(kljuc, novi, Prekidac.PUSH_OCENE, OCENE_TTL, false));
     }
 
     /** Povuci objavu: studenti grupe opet ne vide ništa o oceni. Bez objave ne radi ništa. */

@@ -25,9 +25,9 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * Slanje Web Push poruka (spec aplikacije 5.2 i 5.3). Pozivalac predaje poruke <b>van transakcije ili posle commit-a</b>
- * ({@link #posleCommita}); ovde se u sopstvenoj transakciji pročitaju važeće pretplate primalaca i za svaku se jedan
- * zadatak stavi u red {@code pushIzvrsilac}. Zadatak pre slanja ponovo čita pretplatu (uređaj ili sesija i dalje važi,
+ * Slanje Web Push poruka (spec aplikacije 5.2 i 5.3). Pozivalac predaje poruke <b>van transakcije ili na niti
+ * {@code pushIzvrsilac} posle commit-a</b> ({@link #uPozadiniPosleCommita}); ovde se u sopstvenoj transakciji pročitaju
+ * važeće pretplate primalaca i za svaku se jedan zadatak stavi u red {@code pushIzvrsilac}. Zadatak pre slanja ponovo čita pretplatu (uređaj ili sesija i dalje važi,
  * endpoint je isti, adresa je i dalje dozvoljena), šifruje poruku (RFC 8291), potpisuje VAPID (RFC 8292) i šalje. Ishod:
  * 2xx nuluje greške i upisuje {@code poslednji_uspeh}; 404 i 410 brišu pretplatu; sve drugo (i 429, 5xx, mrežna greška)
  * povećava {@code uzastopne_greske}, a posle {@value #MAX_GRESAKA} uzastopnih pretplata se briše. Ništa se ne ponavlja.
@@ -84,23 +84,37 @@ public class PushPosiljalac {
     }
 
     /**
-     * Izvršava {@code rad} posle commit-a tekuće transakcije, ili odmah kad transakcije nema. Greška u {@code rad} se samo
-     * loguje: push nikad ne sme da obori pozivaoca.
+     * Izvršava {@code rad} na niti {@code pushIzvrsilac} posle commit-a tekuće transakcije, ili odmah kad transakcije nema.
+     * Nit zahteva tada ne radi ništa sa bazom: u {@code afterCommit} još drži svoju vezu, pa bi čitanje u novoj transakciji
+     * uzelo drugu, a navala takvih zahteva iscrpela bi pool veza (svaka nit drži jednu i čeka drugu). Pun red: rad se
+     * propušta; greška u {@code rad} se samo loguje (push nikad ne obara pozivaoca).
      */
-    public static void posleCommita(Runnable rad) {
+    public void uPozadiniPosleCommita(Runnable rad) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    bezbedno(rad);
+                    uPozadini(rad);
                 }
             });
         } else {
-            bezbedno(rad);
+            uPozadini(rad);
         }
     }
 
-    /** Čitanje u sopstvenoj transakciji (iz {@code afterCommit} povratnog poziva se ne sme koristiti tekuća). */
+    /**
+     * Izvršava {@code rad} odmah na niti {@code pushIzvrsilac} (iz slušaoca {@code AFTER_COMMIT}: nova sinhronizacija se
+     * tada više ne bi pozvala). Pun red: rad se propušta; greška u {@code rad} se samo loguje.
+     */
+    public void uPozadini(Runnable rad) {
+        try {
+            izvrsilac.execute(() -> bezbedno(rad));
+        } catch (TaskRejectedException e) {
+            log.warn("Red push poruka je pun: obaveštenje se propušta");
+        }
+    }
+
+    /** Čitanje u sopstvenoj transakciji (van transakcije pozivaoca ili na niti {@code pushIzvrsilac}). */
     public <T> T uNovojTransakciji(java.util.function.Supplier<T> rad) {
         return citanje.execute(s -> rad.get());
     }

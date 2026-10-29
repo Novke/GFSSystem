@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.Period;
 
 /**
  * Čišćenje starih zapisa prijave (spec 9), jednom na sat u 7. minutu. IP adrese i drugi tragovi ne žive duže od roka:
@@ -45,7 +46,7 @@ public class CiscenjePrijave {
     static final Duration RESENA_OBAVESTENJA = Duration.ofDays(180);
     static final Duration NETAKNUTA_VEZBANJA = Duration.ofDays(30);
     static final Duration STUDENTSKA_OBAVESTENJA = Duration.ofDays(90);
-    static final Duration POSLE_CASA = Duration.ofDays(60);
+    static final Period POSLE_CASA = Period.ofDays(60);
     static final int VELICINA_GRUPE = 5000;
 
     /** Koliko je redova obrisano po tabelama. */
