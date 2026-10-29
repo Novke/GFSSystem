@@ -82,6 +82,19 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
 
     long countByPrezentacijaId(Long id);
 
+    /** Početak najnovijeg izvođenja prezentacije (bilo koje grupe), {@code null} ako nije izvođena. */
+    @Query("select max(i.pocetak) from Izvodjenje i where i.prezentacija.id = :id")
+    LocalDateTime poslednjePustanje(@Param("id") Long id);
+
+    /**
+     * Šta je grupa puštala iz predmeta, jedan upit: redovi {@code [prezentacijaId, najnoviji početak]} (izvođenja sa tom
+     * grupom, u toku i završena; grupu dobija izvođenje pokrenuto sa predavanja).
+     */
+    @Query("""
+            select i.prezentacija.id, max(i.pocetak) from Izvodjenje i
+            where i.grupa.id = :grupaId and i.prezentacija.predmet.id = :predmetId group by i.prezentacija.id""")
+    List<Object[]> pustanjaGrupe(@Param("grupaId") Long grupaId, @Param("predmetId") Long predmetId);
+
     Optional<Izvodjenje> findFirstByPrezentacijaIdAndStatusOrderByPocetakDesc(Long id, StatusIzvodjenja s);
 
     /** Izvođenja sa prezentacijom, predmetom, grupom i predavanjem (rang tačnosti), najnovija prva. */

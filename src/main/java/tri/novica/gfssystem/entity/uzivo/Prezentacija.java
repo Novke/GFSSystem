@@ -34,6 +34,9 @@ public class Prezentacija {
     /** Klodova serija upisa (MCP); null za prezentacije napravljene u UI-ju. */
     @Column(length = 60)
     private String serija;
+    /** Redni broj vežbe (0-99, V21): redosled liste, grupisanje i predlog sledeće; {@code null} = bez broja. */
+    @Column
+    private Integer vezba;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     @Column(nullable = false)
