@@ -163,6 +163,8 @@ GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 POST /public/nalog/odjava STUDENT
 POST /public/nalog/odjava-svuda STUDENT
+GET /public/nalog/podesavanja STUDENT
+PUT /public/nalog/podesavanja STUDENT
 POST /public/nalog/pomoc ANONIMNO
 GET /public/nalog/predmeti STUDENT
 GET /public/nalog/predmeti/{id}/moji-zadaci STUDENT

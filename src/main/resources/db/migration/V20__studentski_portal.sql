@@ -6,14 +6,17 @@
 -- otvorene_teme: tip (čvor banke PREDAVANJE) otvoren za vežbanje grupi studenata; izvor CAS (kraj izvođenja, listovi
 --   izvučenih varijanti) ili RUCNO (Novica u banci). Zapis preživi "Ne čuvaj" (runde se brišu).
 -- vezbanja: jedan red po izvučenom zadatku pri vežbanju (bez bodova); provera i rešenje idu preko id-ja reda.
--- prikazani_slajdovi: slajd koji je konzola prikazala izvođenju sa grupom; vidljiv studentu tek kad je to izvođenje
---   završeno (ili obrisano: izvodjenje_id postaje NULL).
+-- prikazani_slajdovi: slajd koji je konzola prikazala izvođenju sa grupom, jedan red po (grupa, slajd, izvođenje);
+--   vidljiv studentu kad je bar jedno od tih izvođenja završeno. Brisanje izvođenja briše njegove redove (CASCADE), pa
+--   obrisana proba više ništa ne otkriva; slajd koji je videlo i drugo izvođenje ostaje vidljiv preko njegovog reda.
 -- objave_ocena + objavljene_ocene: Novica objavi predloge ocena za predmet i grupu; snimak po studentu (JSON) u trenutku
 --   objave, ponovna objava ga zamenjuje, povlačenje briše objavu.
+-- podesavanja_studenta: izbori studenta na tabu "Ja"; bez reda važe podrazumevane vrednosti (mejl o otkazanom času: da).
 --
 -- Prvo punjenje ide samo ovde, jednom (ne kao Java korak pri startu): restart nikad ne otvori ponovo tip koji je Novica
--- ručno zatvorio, niti otkrije slajd. Za prikazane slajdove uže od spec-a 6.1 (revizija 12.6): slajdovi do mesta gde je
--- izvođenje stalo (sve kad je stalo na kraju) plus slajdovi sa rundom u tom izvođenju.
+-- ručno zatvorio, niti otkrije slajd. Prikazani slajdovi se pre V20 nisu beležili, pa je punjenje namerno uže od onoga što
+-- je grupa videla: manje otkriveno je u redu, više nikad (konzola je mogla da skoči unapred, pa "do mesta gde je stalo"
+-- nije dokaz da je slajd prikazan).
 
 CREATE TABLE IF NOT EXISTS `otvorene_teme` (
   `id` bigint NOT NULL AUTO_INCREMENT,
@@ -56,15 +59,16 @@ CREATE TABLE IF NOT EXISTS `prikazani_slajdovi` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `grupa_id` bigint NOT NULL,
   `slajd_id` bigint NOT NULL,
-  `izvodjenje_id` bigint DEFAULT NULL,
+  `izvodjenje_id` bigint NOT NULL,
   `prvi_put` datetime(6) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_prikazani_slajdovi_grupa_slajd` (`grupa_id`, `slajd_id`),
+  UNIQUE KEY `uk_prikazani_slajdovi_grupa_slajd_izvodjenje` (`grupa_id`, `slajd_id`, `izvodjenje_id`),
   KEY `idx_prikazani_slajdovi_slajd` (`slajd_id`),
+  KEY `idx_prikazani_slajdovi_izvodjenje` (`izvodjenje_id`),
   CONSTRAINT `fk_prikazani_slajdovi_grupa` FOREIGN KEY (`grupa_id`) REFERENCES `grupe` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_prikazani_slajdovi_slajd` FOREIGN KEY (`slajd_id`) REFERENCES `slajdovi` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_prikazani_slajdovi_izvodjenje` FOREIGN KEY (`izvodjenje_id`) REFERENCES `izvodjenja` (`id`)
-    ON DELETE SET NULL
+    ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS `objave_ocena` (
@@ -89,6 +93,14 @@ CREATE TABLE IF NOT EXISTS `objavljene_ocene` (
   CONSTRAINT `fk_objavljene_ocene_student` FOREIGN KEY (`student_id`) REFERENCES `studenti` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS `podesavanja_studenta` (
+  `student_id` bigint NOT NULL,
+  `mejl_otkazan_cas` bit(1) NOT NULL DEFAULT b'1',
+  `izmenjeno` datetime(6) NOT NULL,
+  PRIMARY KEY (`student_id`),
+  CONSTRAINT `fk_podesavanja_studenta_student` FOREIGN KEY (`student_id`) REFERENCES `studenti` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 -- Prvo punjenje, otvorene teme: listovi izvučenih varijanti iz ZADATAK rundi završenih izvođenja sa grupom. Neispravan
 -- JSON snimka se preskače (JSON_TABLE dobija '{}'); list koji više ne postoji ne ulazi (JOIN na grupe_zadataka).
 INSERT INTO `otvorene_teme` (`grupa_id`, `grupa_zadataka_id`, `prvi_put`, `izvor`, `izvodjenje_id`)
@@ -107,20 +119,19 @@ FROM (
 ) x
 WHERE NOT EXISTS (SELECT 1 FROM `otvorene_teme` o WHERE o.grupa_id = x.grupa_id AND o.grupa_zadataka_id = x.tema_id);
 
--- Prvo punjenje, prikazani slajdovi: za završeno izvođenje sa grupom, slajdovi njegove prezentacije do slajda na kome je
--- stalo (prikaz KRAJ = svi; PRIJAVA bez slajda = nijedan), plus slajdovi sa rundom u tom izvođenju.
+-- Prvo punjenje, prikazani slajdovi (konzervativno): za završeno izvođenje sa grupom samo slajdovi za koje je sigurno da su
+-- bili na projektoru: slajd sa rundom u tom izvođenju (pitanje ili zadatak se otvara samo na trenutnom slajdu) i slajd na
+-- kome je izvođenje stalo dok je projektor prikazivao slajd (prikaz SLAJD). Slajdovi između se ne pune: konzola je mogla da
+-- ih preskoči. Prikaz KRAJ ili PRIJAVA ne otkriva slajd na kome je stalo.
 INSERT INTO `prikazani_slajdovi` (`grupa_id`, `slajd_id`, `izvodjenje_id`, `prvi_put`)
 SELECT x.grupa_id, x.slajd_id, x.izvodjenje_id, x.prvi_put
 FROM (
-  SELECT i.grupa_id AS grupa_id, s.id AS slajd_id, MIN(i.id) AS izvodjenje_id,
-         MIN(COALESCE(i.kraj, i.pocetak)) AS prvi_put
+  SELECT i.grupa_id AS grupa_id, s.id AS slajd_id, i.id AS izvodjenje_id, COALESCE(i.kraj, i.pocetak) AS prvi_put
   FROM `izvodjenja` i
   JOIN `slajdovi` s ON s.prezentacija_id = i.prezentacija_id
-  LEFT JOIN `slajdovi` stao ON stao.id = i.trenutni_slajd_id AND stao.prezentacija_id = i.prezentacija_id
   WHERE i.status = 'ZAVRSENO' AND i.grupa_id IS NOT NULL
-    AND (i.prikaz = 'KRAJ'
-         OR (stao.id IS NOT NULL AND s.rb <= stao.rb)
+    AND ((i.prikaz = 'SLAJD' AND s.id = i.trenutni_slajd_id)
          OR EXISTS (SELECT 1 FROM `pitanje_runde` r WHERE r.izvodjenje_id = i.id AND r.slajd_id = s.id))
-  GROUP BY i.grupa_id, s.id
 ) x
-WHERE NOT EXISTS (SELECT 1 FROM `prikazani_slajdovi` p WHERE p.grupa_id = x.grupa_id AND p.slajd_id = x.slajd_id);
+WHERE NOT EXISTS (SELECT 1 FROM `prikazani_slajdovi` p
+                  WHERE p.grupa_id = x.grupa_id AND p.slajd_id = x.slajd_id AND p.izvodjenje_id = x.izvodjenje_id);

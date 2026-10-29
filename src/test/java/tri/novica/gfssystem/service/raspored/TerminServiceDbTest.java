@@ -12,7 +12,9 @@ import tri.novica.gfssystem.dto.pregled.SledecePredavanjeInfo;
 import tri.novica.gfssystem.dto.raspored.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.PregledService;
+import tri.novica.gfssystem.dto.portal.PodesavanjaNaloga;
 import tri.novica.gfssystem.service.mejl.LazniMejlServis;
+import tri.novica.gfssystem.service.portal.PodesavanjaStudentaServis;
 import tri.novica.gfssystem.service.mejl.MejlPoruka;
 
 import java.time.LocalDate;
@@ -47,6 +49,7 @@ class TerminServiceDbTest {
     @Autowired PregledService pregled;
     @Autowired RasporedSatConfig.Sat sat;
     @Autowired LazniMejlServis mejl;
+    @Autowired PodesavanjaStudentaServis podesavanja;
     @Autowired JdbcTemplate jdbc;
 
     RasporedPodaci d;
@@ -144,6 +147,17 @@ class TerminServiceDbTest {
         mejl.ocisti();
         assertEquals(0, termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null)).obavesteno(), "neotkazan: ništa");
         assertTrue(mejl.poslate().isEmpty());
+    }
+
+    @Test
+    void studentKojiJeIskljucioMejlNeDobijaNiOtkazNiVracanje() {
+        podesavanja.sacuvaj(ana, new PodesavanjaNaloga(false));
+        PromenaTerminaOdgovor o = termini.otkazi(new TerminCmd(stavka, DANAS.plusDays(7), null));
+        assertEquals(1, o.obavesteno(), "samo Ceda; Ana je na tabu Ja isključila mejl");
+        assertEquals(List.of("ceda@example.test"), mejl.cekaj(1).stream().map(MejlPoruka::za).toList());
+        mejl.ocisti();
+        assertEquals(1, termini.vrati(new TerminCmd(stavka, DANAS.plusDays(7), null)).obavesteno());
+        assertEquals(List.of("ceda@example.test"), mejl.cekaj(1).stream().map(MejlPoruka::za).toList());
     }
 
     @Test

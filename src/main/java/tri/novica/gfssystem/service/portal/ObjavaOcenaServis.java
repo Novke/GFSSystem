@@ -21,6 +21,7 @@ import tri.novica.gfssystem.repository.portal.ObjavaOcenaRepository;
 import tri.novica.gfssystem.repository.portal.ObjavljenaOcenaRepository;
 import tri.novica.gfssystem.service.OcenjivanjeService;
 import tri.novica.gfssystem.service.portal.KontekstStudenta.Kontekst;
+import tri.novica.gfssystem.utility.SkolskaGodina;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -31,7 +32,8 @@ import java.util.List;
  * Objava predloga ocena (spec studentskog dela 12.4). Dok objave nema, student ne dobija ništa o oceni. "Objavi predloge"
  * pravi snimak po studentu grupe iz {@link OcenjivanjeService#getRezultati} (isti brojevi koje Novica vidi na Ocenama);
  * ponovna objava zamenjuje ceo snimak grupe; "Povuci" briše objavu i snimke. Student vidi samo svoj red objave sopstvene
- * grupe.
+ * grupe, i to samo objave iz tekuće školske godine: student koji ponavlja predmet (sopstvena grupa je starija generacija) ne
+ * vidi prošlogodišnji predlog kao važeći.
  */
 @Slf4j
 @Service
@@ -60,14 +62,10 @@ public class ObjavaOcenaServis {
     public ObjavaOcenaInfo objavi(Long predmetId, Long grupaId) {
         proveri(predmetId, grupaId);
         List<RezultatiStudentaInfo> rezultati = ocenjivanjeService.getRezultati(predmetId, new GetOceneCmd(grupaId));
-        ObjavaOcena o = objavaRepository.findForUpdate(predmetId, grupaId)
-                .orElseGet(() -> {
-                    var nova = new ObjavaOcena();
-                    nova.setPredmetId(predmetId);
-                    nova.setGrupaId(grupaId);
-                    return nova;
-                });
-        o.setObjavljeno(sada());
+        LocalDateTime sada = sada();
+        objavaRepository.obezbedi(predmetId, grupaId, sada);   // prvo red, pa brava (vidi obezbedi)
+        ObjavaOcena o = objavaRepository.findForUpdate(predmetId, grupaId).orElseThrow();
+        o.setObjavljeno(sada);
         o = objavaRepository.saveAndFlush(o);
         ocenaRepository.obrisiZaObjavu(o.getId());
         for (RezultatiStudentaInfo r : rezultati) {
@@ -93,12 +91,12 @@ public class ObjavaOcenaServis {
         return new ObjavaOcenaInfo(predmetId, grupaId, null, 0);
     }
 
-    /** Ocena na nalogu: samo snimak objave sopstvene grupe studenta, inače "nije objavljeno". */
+    /** Ocena na nalogu: samo snimak objave sopstvene grupe studenta iz tekuće školske godine, inače "nije objavljeno". */
     @Transactional(readOnly = true)
     public OcenaStudenta zaStudenta(long studentId, Long predmetId) {
         Kontekst k = kontekstStudenta.zaPredmet(studentId, predmetId);
         if (k.svojaGrupa() == null) return OcenaStudenta.NIJE_OBJAVLJENO;
-        return objavaRepository.findByPredmetIdAndGrupaId(predmetId, k.svojaGrupa())
+        return objavaRepository.findByPredmetIdAndGrupaId(predmetId, k.svojaGrupa()).filter(this::oveGodine)
                 .flatMap(o -> ocenaRepository.findByObjavaIdAndStudentId(o.getId(), studentId)
                         .map(red -> new OcenaStudenta(true, o.getObjavljeno(),
                                 jsonMapper.readValue(red.getSnimak(), SnimakOcene.class))))
@@ -109,8 +107,14 @@ public class ObjavaOcenaServis {
     @Transactional(readOnly = true)
     boolean objavljenoZa(Kontekst k, Long predmetId) {
         if (k.svojaGrupa() == null) return false;
-        return objavaRepository.findByPredmetIdAndGrupaId(predmetId, k.svojaGrupa())
+        return objavaRepository.findByPredmetIdAndGrupaId(predmetId, k.svojaGrupa()).filter(this::oveGodine)
                 .flatMap(o -> ocenaRepository.findByObjavaIdAndStudentId(o.getId(), k.studentId())).isPresent();
+    }
+
+    /** Objava iz tekuće školske godine (1. 10. do 30. 9., {@link SkolskaGodina}). */
+    private boolean oveGodine(ObjavaOcena o) {
+        return o.getObjavljeno() != null
+                && SkolskaGodina.za(o.getObjavljeno().toLocalDate()) == SkolskaGodina.tekuca(clock);
     }
 
     private static SnimakOcene snimak(RezultatiStudentaInfo r) {

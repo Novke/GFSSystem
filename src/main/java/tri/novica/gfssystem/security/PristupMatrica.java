@@ -50,6 +50,7 @@ public final class PristupMatrica {
 
     private static final HttpMethod GET = HttpMethod.GET;
     private static final HttpMethod POST = HttpMethod.POST;
+    private static final HttpMethod PUT = HttpMethod.PUT;
 
     private static final List<Pravilo> ANONIMNO = List.of(
             // samostalni upis studenta (QR)
@@ -103,6 +104,9 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/nalog/vezbanje"),
             new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/provera"),
             new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/resenje"),
+            // podešavanja naloga (tab "Ja"): mejl o otkazanom času
+            new Pravilo(GET, "/public/nalog/podesavanja"),
+            new Pravilo(PUT, "/public/nalog/podesavanja"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

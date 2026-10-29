@@ -912,10 +912,11 @@ Spec `docs/superpowers/specs/2026-10-29-najava-odsustva-design.md` (deploy repo;
 Branch `feature/studentski-portal-2` (as of 2026-10-29 not on staging). Spec: deploy repo
 `docs/superpowers/specs/2026-10-28-studentski-portal-design.md`, sections 5, 6, 7 and **12** (revision 2026-10-29, wins where it differs).
 Package `portal` in `entity`, `repository`, `service`, `rest`, `dto`.
-- **Who is the student:** only `StudentAutentikacija` (session). His groups only from `service/portal/GrupeStudenta.za` (own group plus groups
-  of lectures where he has an activity or a check-in: a repeater sees the younger generation); predmeti = subjects with a lecture of one of
-  those groups (`KontekstStudenta`). Never read `student.grupa` in a student query. Anything foreign or missing is the same **404
-  `Nije pronađeno.`** (`KontekstStudenta.nema()`), never 403.
+- **Who is the student:** only `StudentAutentikacija` (session). His groups only from `KontekstStudenta.Kontekst.grupe(predmetId)` (own group
+  plus, **per subject**, the groups of that subject's lectures where he has an activity or a check-in: a repeater sees the younger generation
+  only in the subject he attends with it; `GrupeStudenta.dodatne` is keyed by subject); predmeti = subjects with a lecture of the own group plus
+  subjects with an extra group (`KontekstStudenta.predmeti`). Never read `student.grupa` in a student query and never merge the extra groups
+  across subjects. Anything foreign or missing is the same **404 `Nije pronađeno.`** (`KontekstStudenta.nema()`), never 403.
 - **Opened for practice (`otvorene_teme`, V20):** `TemeZaVezbanje.krajIzvodjenja` is called by `IzvodjenjeService.zavrsi` (ZAVRSI and the 12 h
   auto end) in the same transaction, **before** the "Ne čuvaj" deletion: the leaves of the variants actually drawn in the run's ZADATAK rounds
   (`ZadatakSnimak.varijante[].grupaId`) open for the run's group (`CAS`, insert "if missing" via `INSERT ... SELECT ... ON DUPLICATE KEY`, so a
@@ -924,30 +925,52 @@ Package `portal` in `entity`, `repository`, `service`, `rest`, `dto`.
   PREKO_TEME, DELIMICNO, ZATVORENO); closing deletes the records of the node **and its whole subtree**; an open ancestor keeps it open. Open
   leaves = for each record of the student's groups, `StabloPredavanja.opis(node).listovi()` (same exclusion rule as the class draw; the node
   itself is never skipped). Only leaves are practised.
-- **Shown slides (`prikazani_slajdovi`, V20):** `IzvodjenjeService.idiNa` calls `TemeZaVezbanje.prikazan` for runs with a group (insert "if
-  missing", first run kept). A slide is visible to the group only when that run is `ZAVRSENO` (or deleted: `izvodjenje_id` SET NULL).
-- **Practice (`VezbanjeStudenta`, table `vezbanja`):** `POST /public/nalog/vezbanje {tipId, nivo?}` draws from `KandidatiZadatka.kandidati`
-  (AKTIVNA with SVG, `Random` bean), avoiding the student's last 5 variants of that leaf when there is a choice (and the last one when possible);
-  returns SVG + schema **without** answers (`ZadatakVezbanja`). `provera` grades with `OcenaZadatka.oceni` over the **current** variant and
-  schema (same 400 messages as in class) and returns only true/false per field; `resenje` returns `resenjeSvgId` and `tacneVrednosti`. Both go
-  through `pokusajId` + the session student (`findForUpdate`), and re-check that the variant is still AKTIVNA and its leaf still open (else 404).
-  409 `Za ovaj nivo nema zadataka.` / `Ovaj tip trenutno nema zadataka.`. No points, no activities.
+- **Shown slides (`prikazani_slajdovi`, V20):** `IzvodjenjeService.idiNa` calls `TemeZaVezbanje.prikazan` for runs with a group, one row per
+  (group, slide, run) (insert "if missing"). A slide is visible to the group when at least one of its runs is `ZAVRSENO`; the FK to the run is
+  `ON DELETE CASCADE`, so deleting a run (e.g. a dry run) hides what only that run revealed. The V20 first fill is conservative (only slides with
+  a round in the run and the slide the run stopped on with `prikaz = SLAJD`): under-revealing is fine, over-revealing never.
+- **Practice (`VezbanjeStudenta`, table `vezbanja`):** `POST /public/nalog/vezbanje {tipId, nivo?, novi?}`. Without `novi=true` ("Novi
+  zadatak") it returns the student's newest untouched attempt (no check, no solution) of that leaf (and level) younger than 10 min, so a reload
+  inserts nothing. Otherwise it draws from `KandidatiZadatka.kandidati(stablo, ...)` (the tree built once per request; AKTIVNA with SVG,
+  `Random` bean), avoiding the student's last 5 variants of that leaf when there is a choice (and the last one when possible), at most 60 new
+  draws per student per hour (`pokusaji`, kind `VEZBANJE_IZVLACENJE`, 429 `Previše novih zadataka za sat vremena. ...`); returns SVG + schema
+  **without** answers (`ZadatakVezbanja`). **A variant in a round snapshot of an `AKTIVNO` run (`PitanjeRundaRepository.naCasu`) is never
+  drawn** (409 `Zadaci ovog tipa su upravo na času; pokušaj posle.` when that leaves nothing), and `provera`/`resenje` of an attempt with such a
+  variant answer 409 `Ovaj zadatak je upravo na času; pokušaj posle.`: otherwise a student draws in a second tab until he gets the variant on the
+  board and takes its solution. `provera` grades with `OcenaZadatka.oceni` over the **current** variant and schema (same 400 messages as in
+  class) and returns only true/false per field; after "Prikaži rešenje" a check still answers but counts nothing (`brojProvera`,
+  `prvaProveraTacno`, `tacno` unchanged). `resenje` returns `resenjeSvgId` and `tacneVrednosti`. Both go through `pokusajId` + the session
+  student (`findForUpdate`), and re-check that the variant is still AKTIVNA and its leaf still open (else 404). 409 `Za ovaj nivo nema zadataka.`
+  / `Ovaj tip trenutno nema zadataka.`. No points, no activities. `CiscenjePrijave` deletes untouched attempts older than 30 days.
 - **History (`IstorijaStudenta`):** my tasks from class = `zadatak_dodele` of participants with `student_id` = me in `ZAVRSENO` runs, everything from
   the round snapshot (solution shown even if not released in class); review = current slide version, only visible slides, DTO `SlajdPregleda`
-  without `beleske`/`serija`/`izvor` (PITANJE carries the correct answer: run ended, decision 12.9/8; PLATNO without strokes); "Tvoj odgovor" from
-  the student's own last answer.
+  without `beleske`/`serija`/`izvor` (PLATNO without strokes). **PITANJE comes from the round snapshot** of the newest round of that slide in an
+  ended run with one of the student's groups (text, options, correct answer, `prihvatljiviOdgovori`; `tacanPoznat=true`), never from the
+  current slide: an edit for another group must not leak the new answer to earlier groups. Without such a round: current question without any
+  answer field (`tacanPoznat=false`). "Tvoj odgovor" from the student's own last answer.
 - **Grades (`ObjavaOcenaServis`, tables `objave_ocena` + `objavljene_ocene`):** nothing about grades reaches a student until the teacher
   publishes for subject + group (`PUT /ocenjivanje/predmet/{p}/objava/{g}`; `GET ...?grupa=` state; `DELETE` withdraws). Publish = snapshot per
   student from `OcenjivanjeService.getRezultati` (`SnimakOcene` JSON: proposal, total, pre-exam, activity, homework, points per test type);
-  re-publish replaces the group's snapshot. A student sees only his own row of his **own** group's publication.
+  re-publish replaces the group's snapshot. Publish first inserts the row "if missing" (`ObjavaOcenaRepository.obezbedi`, `INSERT ... ON
+  DUPLICATE KEY`) and only then locks it: `findForUpdate` on a missing row takes only a gap lock, and a double click on the first publish
+  deadlocked. A student sees only his own row of his **own** group's publication, and only a publication from the current school year (a
+  repeater's old group does not show last year's proposal).
 - **Statistics:** `GET /predmeti/{id}/vezbanje/statistika?grupa=&od=&do=` (`StatistikaVezbanja`), aggregate per leaf only.
 - **Student paths** (all STUDENT in `PristupMatrica`, OSIV off under `/public/nalog/**`, DTOs built in the service transaction): `GET
   /public/nalog/predmeti`, `GET /public/nalog/predmeti/{id}/{prisustvo,vezbanje,moji-zadaci,prezentacije,ocena}`, `GET
-  /public/nalog/prezentacije/{id}`, `POST /public/nalog/vezbanje`, `POST /public/nalog/vezbanje/{pokusajId}/{provera,resenje}`; `GET
-  /public/nalog/ja` now also has `grupa` and `generacija`.
+  /public/nalog/prezentacije/{id}`, `POST /public/nalog/vezbanje`, `POST /public/nalog/vezbanje/{pokusajId}/{provera,resenje}`, `GET|PUT
+  /public/nalog/podesavanja` (`{mejlOtkazanCas}`); `GET /public/nalog/ja` now also has `grupa` and `generacija`.
+- **Settings (`podesavanja_studenta`, V20, `PodesavanjaStudentaServis`):** one row per student only after the first change (no row = defaults;
+  upsert `INSERT ... AS novo ON DUPLICATE KEY UPDATE`). `mejlOtkazanCas` ("Javi mi mejlom kad je čas otkazan", default true) is read by
+  `MejlObavestavanjeStudenata`, the only path that mails a student about a schedule change (cancelled and restored): students who switched it
+  off are dropped before the messages are published. A later channel or the najava follow-up (checkbox, own executor, address dedupe) keeps
+  filtering there.
 - **Tests:** `PortalDbTest` (three students: two groups and a repeater; nothing open while the run lasts, only drawn leaves, Ne čuvaj, manual
-  open/close, practice + IDOR, grades, the V20 first fill run twice, forbidden fields in every student JSON), `NalogPortalRestIT` (whole chain:
-  401, 404 text, origin check, teacher paths refuse a student session).
+  open/close, practice + IDOR, variant live in class (409, never drawn), reuse + 60/h + cleanup, check after solution, extra group only for its
+  subject, PITANJE review from the snapshot after an edit, deleted run hides its slides, concurrent first publish, last year's publication,
+  settings, grades, the V20 first fill run twice, forbidden fields in every student JSON), `NalogPortalRestIT` (whole chain: 401, 404 text,
+  origin check, teacher paths refuse a student session, settings GET/PUT), `TerminServiceDbTest` (a student who switched the mail off gets
+  neither the cancel nor the restore mail).
 
 ## Build & Run
 

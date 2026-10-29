@@ -20,12 +20,14 @@ import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.service.banka.LatexRender;
 import tri.novica.gfssystem.service.cas.CasPodaci;
+import tri.novica.gfssystem.service.prijava.CiscenjePrijave;
 import tri.novica.gfssystem.service.uzivo.*;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -62,11 +64,14 @@ class PortalDbTest {
     @Autowired TemeZaVezbanje teme;
     @Autowired ObjavaOcenaServis objava;
     @Autowired StatistikaVezbanja statistika;
+    @Autowired PodesavanjaStudentaServis podesavanja;
+    @Autowired CiscenjePrijave ciscenje;
     @Autowired JsonMapper jsonMapper;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean LatexRender latexRender;
 
     CasPodaci d;
+    CasPodaci d2;
     final List<String> mediji = new ArrayList<>();
     Long g0, g1, g2, g3, s1, s2, s3, s4, l1, l2;
     long r, k, m, p, t, varA, varB;
@@ -126,7 +131,11 @@ class PortalDbTest {
             // već obrisana
         }
         Long id = d.predmetId;
-        for (Long s : List.of(s1, s2, s3, s4)) jdbc.update("delete from vezbanja where student_id = ?", s);
+        for (Long s : List.of(s1, s2, s3, s4)) {
+            jdbc.update("delete from vezbanja where student_id = ?", s);
+            jdbc.update("delete from pokusaji where vrsta = 'VEZBANJE_IZVLACENJE' and kljuc = ?", s.toString());
+        }
+        if (d2 != null) d2.obrisi();
         jdbc.update("delete from objave_ocena where predmet_id = ?", id);
         jdbc.update("delete from koeficijenti_tip_testa where koeficijenti_id in (select id from koeficijenti_ocenjivanja where predmet_id = ?)", id);
         jdbc.update("delete from koeficijenti_ocenjivanja where predmet_id = ?", id);
@@ -254,7 +263,7 @@ class PortalDbTest {
 
     @Test
     void grupeStudentaIPredmeti() {
-        assertEquals(List.of(g0, g1), new ArrayList<>(grupeStudenta.za(s3)), "ponavljač: sopstvena + G1");
+        assertEquals(List.of(g0, g1), new ArrayList<>(grupeStudenta.za(s3, d.predmetId)), "ponavljač: sopstvena + G1");
         List<PredmetStudenta> p1 = predmeti.predmeti(s1);
         assertEquals(1, p1.size());
         assertEquals(1, p1.getFirst().prisutan());
@@ -307,6 +316,19 @@ class PortalDbTest {
         SlajdPregleda pitanje = pr.slajdovi().get(2);
         assertEquals("4", pitanje.mojOdgovor().tekst());
         assertEquals(Boolean.TRUE, pitanje.mojOdgovor().tacno());
+        assertTrue(pitanje.tacanPoznat(), "pitanje iz snimka runde nosi tačan odgovor");
+        assertEquals(List.of("4"), pitanje.pitanje().opcije().stream().filter(OpcijaDetails::tacna).map(OpcijaDetails::tekst).toList());
+
+        // Novica posle časa izmeni pitanje za drugu grupu: G1 i dalje vidi pitanje i odgovor sa svog časa
+        prezentacijaService.izmeniSlajd(slajdPitanje, new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
+                new PitanjeCmd(TipPitanja.JEDAN_TACAN, "Koliko cifara ima 9 binarno?", null, null,
+                        List.of(new OpcijaCmd("4", false), new OpcijaCmd("3", true)),
+                        null, null, null, null, null, null, null, null), null, null, null));
+        SlajdPregleda posleIzmene = istorija.pregled(s1, prezId).slajdovi().get(2);
+        assertEquals("Koliko cifara ima 8 binarno?", posleIzmene.pitanje().tekst());
+        assertEquals(List.of("4"), posleIzmene.pitanje().opcije().stream().filter(OpcijaDetails::tacna)
+                .map(OpcijaDetails::tekst).toList(), "novi odgovor ne curi ranijoj grupi");
+        assertFalse(json(posleIzmene).contains("9 binarno"));
         ZadatakPregleda z = pr.slajdovi().get(1).zadatak();
         assertEquals(1, z.moji().size(), "samo sopstvena dodela, ne gostova");
         assertEquals(List.of(k), z.tipovi().stream().map(TipZaVezbanje::tipId).toList());
@@ -336,11 +358,36 @@ class PortalDbTest {
         Cas c = pokreni(g2, null, false, s2);   // izvođenje sa predavanja uvek čuva
         k(c, TipKomande.IDI_NA, 1);
         k(c, TipKomande.OTVORI_ZATVORI, null);
+        k(c, TipKomande.IDI_NA, 2);   // pitanje prikazano, nije otvarano
         k(c, TipKomande.ZAVRSI, null);
         assertEquals(0, jdbc.queryForObject("select count(*) from pitanje_runde where izvodjenje_id = ?", Integer.class, c.id()),
                 "Ne čuvaj briše runde");
         assertEquals(List.of(k), vezbanje.stablo(s2, d.predmetId).getFirst().tipovi().stream().map(TipVezbanja::tipId).toList());
-        assertEquals(List.of(slajdK), istorija.pregled(s2, prezId).slajdovi().stream().map(SlajdPregleda::id).toList());
+        PregledPrezentacije pr = istorija.pregled(s2, prezId);
+        assertEquals(List.of(slajdK, slajdPitanje), pr.slajdovi().stream().map(SlajdPregleda::id).toList());
+        SlajdPregleda pitanje = pr.slajdovi().get(1);
+        assertFalse(pitanje.tacanPoznat(), "bez runde nema snimka, pa ni tačnog odgovora");
+        assertTrue(pitanje.pitanje().opcije().stream().noneMatch(OpcijaDetails::tacna));
+        assertNull(pitanje.pitanje().brojTacno());
+        assertNull(pitanje.pitanje().prihvatljiviOdgovori());
+    }
+
+    @Test
+    void obrisanoIzvodjenjeViseNistaNeOtkriva() {
+        Cas proba = pokreni(g2, null, true, s2);
+        k(proba, TipKomande.IDI_NA, 0);
+        k(proba, TipKomande.IDI_NA, 3);   // proba preskoči na "Sledeći čas"
+        k(proba, TipKomande.ZAVRSI, null);
+        Cas pravi = pokreni(g2, null, true, s2);
+        k(pravi, TipKomande.IDI_NA, 0);
+        k(pravi, TipKomande.ZAVRSI, null);
+        assertEquals(List.of(slajdUvod, slajdSledeci), istorija.pregled(s2, prezId).slajdovi().stream().map(SlajdPregleda::id).toList());
+
+        izvodjenjeService.obrisi(proba.id());
+        assertEquals(List.of(slajdUvod), istorija.pregled(s2, prezId).slajdovi().stream().map(SlajdPregleda::id).toList(),
+                "Uvod ostaje preko drugog izvođenja, Sledeći čas je otkrila samo obrisana proba");
+        izvodjenjeService.obrisi(pravi.id());
+        assertEquals(404, status(() -> istorija.pregled(s2, prezId)));
     }
 
     @Test
@@ -389,11 +436,13 @@ class PortalDbTest {
         ResenjeVezbanja res = vezbanje.resenje(s1, z.pokusajId());
         assertNotNull(res.resenjeSvgId());
         assertEquals(var == varA ? 45.0 : 13.0, res.tacneVrednosti().get("a").broj());
+        assertFalse(vezbanje.provera(s1, z.pokusajId(), new ProveraCmd(Map.of("a", "99"))).tacno(),
+                "posle rešenja provera i dalje odgovara");
         Map<String, Object> red = jdbc.queryForMap("select broj_provera, prva_provera_tacno, tacno, resenje_prikazano from vezbanja where id = ?",
                 z.pokusajId());
-        assertEquals(2, ((Number) red.get("broj_provera")).intValue());
+        assertEquals(2, ((Number) red.get("broj_provera")).intValue(), "provera posle rešenja se ne broji");
         assertEquals(Boolean.FALSE, red.get("prva_provera_tacno"));
-        assertEquals(Boolean.TRUE, red.get("tacno"));
+        assertEquals(Boolean.TRUE, red.get("tacno"), "provera posle rešenja ne menja tačno");
 
         List<TipVezbanja> tipovi = vezbanje.stablo(s1, d.predmetId).stream().flatMap(x -> x.tipovi().stream()).toList();
         TipVezbanja tk = tipovi.stream().filter(x -> x.tipId().equals(k)).findFirst().orElseThrow();
@@ -413,7 +462,7 @@ class PortalDbTest {
         assertEquals(409, status(() -> vezbanje.novi(s1, new NoviZadatakCmd(k, 3))), "nema nivoa 3");
 
         // varijanta arhivirana posle izvlačenja: pokušaj više ne daje ni proveru ni rešenje
-        ZadatakVezbanja z2 = vezbanje.novi(s1, new NoviZadatakCmd(k, null));
+        ZadatakVezbanja z2 = vezbanje.novi(s1, new NoviZadatakCmd(k, null, true));
         Long v2 = jdbc.queryForObject("select varijanta_id from vezbanja where id = ?", Long.class, z2.pokusajId());
         jdbc.update("update varijante set status = 'ARHIVIRANA' where id = ?", v2);
         assertEquals(404, status(() -> vezbanje.resenje(s1, z2.pokusajId())));
@@ -462,9 +511,10 @@ class PortalDbTest {
             prvoPunjenje().forEach(jdbc::update);
         }
         assertEquals(List.of(k), jdbc.queryForList("select grupa_zadataka_id from otvorene_teme where grupa_id = ?", Long.class, g1));
-        assertEquals(Set.of(slajdUvod, slajdK, slajdPitanje, slajdSledeci),
-                new HashSet<>(jdbc.queryForList("select slajd_id from prikazani_slajdovi where grupa_id = ?", Long.class, g1)),
-                "do mesta gde je stalo plus slajdovi sa rundom (i neispravna runda na poslednjem slajdu)");
+        assertEquals(List.of(slajdK, slajdPitanje, slajdSledeci),
+                jdbc.queryForList("select slajd_id from prikazani_slajdovi where grupa_id = ? order by slajd_id", Long.class, g1),
+                "samo slajd na kome je stalo i slajdovi sa rundom (i neispravna runda na poslednjem slajdu); Uvod pre mesta "
+                        + "gde je stalo se ne puni (konzola je mogla da ga preskoči)");
         assertEquals(0, jdbc.queryForObject("select count(*) from prikazani_slajdovi where grupa_id = ?", Integer.class, g2),
                 "izvođenje koje traje ne puni ništa");
         assertEquals(0, jdbc.queryForObject("select count(*) from otvorene_teme where grupa_id = ?", Integer.class, g2));
@@ -497,5 +547,160 @@ class PortalDbTest {
         objava.povuci(d.predmetId, g1);
         assertFalse(objava.zaStudenta(s1, d.predmetId).objavljeno());
         assertNull(objava.stanje(d.predmetId, g1).objavljeno());
+    }
+
+    // ---------------------------------------------------------------- dodatne grupe samo za svoj predmet
+
+    @Test
+    void dodatnaGrupaVaziSamoZaSvojPredmet() {
+        d2 = new CasPodaci(jdbc);
+        d2.predavanje(g1, LocalDate.now().minusDays(2));   // G1 sluša i drugi predmet
+        assertEquals(List.of(g0), new ArrayList<>(grupeStudenta.za(s3, d2.predmetId)),
+                "aktivnost kod G1 na predmetu P ne dodaje G1 za drugi predmet");
+        assertEquals(List.of(d.predmetId), predmeti.predmeti(s3).stream().map(PredmetStudenta::id).toList(),
+                "ponavljač ne dobija ostale predmete mlađe grupe");
+        assertEquals(404, status(() -> predmeti.prisustvo(s3, d2.predmetId)));
+        assertEquals(2, predmeti.predmeti(s1).size(), "G1 sluša oba predmeta");
+    }
+
+    // ---------------------------------------------------------------- vežbanje i čas
+
+    @Test
+    void zadatakNaCasuSeNeIzvlaciNiNeOtkriva() {
+        teme.otvori(k, g1);
+        ZadatakVezbanja z = vezbanje.novi(s1, new NoviZadatakCmd(k, null, true));
+        String tacno = jdbc.queryForObject("select varijanta_id from vezbanja where id = ?", Long.class, z.pokusajId()) == varA
+                ? "45" : "13";
+
+        Cas c = pokreni(g2, l2, true, s2);   // G2 radi isti tip uživo: izvučene su obe varijante
+        k(c, TipKomande.IDI_NA, 1);
+        k(c, TipKomande.OTVORI_ZATVORI, null);
+        SystemException ex = assertThrows(SystemException.class,
+                () -> vezbanje.provera(s1, z.pokusajId(), new ProveraCmd(Map.of("a", tacno))));
+        assertEquals(409, ex.getCode());
+        assertEquals(VezbanjeStudenta.NA_CASU, ex.getMessage());
+        assertEquals(409, status(() -> vezbanje.resenje(s1, z.pokusajId())));
+        SystemException sve = assertThrows(SystemException.class, () -> vezbanje.novi(s1, new NoviZadatakCmd(k, null, true)));
+        assertEquals(409, sve.getCode());
+        assertEquals(VezbanjeStudenta.SVI_NA_CASU, sve.getMessage());
+        k(c, TipKomande.OTVORI_ZATVORI, null);
+        assertEquals(409, status(() -> vezbanje.resenje(s1, z.pokusajId())), "zatvorena runda, izvođenje traje: i dalje ne");
+        assertEquals(0, ((Number) jdbc.queryForObject("select broj_provera from vezbanja where id = ?", Integer.class,
+                z.pokusajId())).intValue());
+        k(c, TipKomande.ZAVRSI, null);
+        assertTrue(vezbanje.provera(s1, z.pokusajId(), new ProveraCmd(Map.of("a", tacno))).tacno(), "posle časa radi");
+
+        // jedna varijanta na času: izvlačenje je preskače
+        Cas c2 = pokreni(g2, l2, true, s2);
+        k(c2, TipKomande.IDI_NA, 1);
+        k(c2, TipKomande.BROJ_VARIJANTI, 1);
+        k(c2, TipKomande.OTVORI_ZATVORI, null);
+        Long naCasu = dodela(runda(c2), c2.u1());
+        for (int i = 0; i < 6; i++) {
+            ZadatakVezbanja n = vezbanje.novi(s1, new NoviZadatakCmd(k, null, true));
+            assertNotEquals(naCasu, jdbc.queryForObject("select varijanta_id from vezbanja where id = ?", Long.class,
+                    n.pokusajId()), "varijanta sa časa se ne izvlači");
+        }
+        k(c2, TipKomande.ZAVRSI, null);
+    }
+
+    @Test
+    void izvlacenjeVracaNetaknutIOgranicava() {
+        teme.otvori(k, g1);
+        ZadatakVezbanja a = vezbanje.novi(s1, new NoviZadatakCmd(k, null));
+        assertEquals(a.pokusajId(), vezbanje.novi(s1, new NoviZadatakCmd(k, null)).pokusajId(), "osvežavanje: isti pokušaj");
+        assertEquals(a.svgId(), vezbanje.novi(s1, new NoviZadatakCmd(k, null)).svgId());
+        ZadatakVezbanja b = vezbanje.novi(s1, new NoviZadatakCmd(k, null, true));
+        assertNotEquals(a.pokusajId(), b.pokusajId(), "Novi zadatak: nov red");
+        assertEquals(b.pokusajId(), vezbanje.novi(s1, new NoviZadatakCmd(k, 2)).pokusajId(), "isti nivo: najnoviji netaknut");
+        assertEquals(409, status(() -> vezbanje.novi(s1, new NoviZadatakCmd(k, 3))), "drugi nivo bez zadataka");
+
+        vezbanje.provera(s1, b.pokusajId(), new ProveraCmd(Map.of("a", "1")));
+        assertEquals(a.pokusajId(), vezbanje.novi(s1, new NoviZadatakCmd(k, null)).pokusajId(),
+                "provereni se ne vraća, vraća se stariji netaknut");
+        jdbc.update("update vezbanja set izvuceno = ? where student_id = ?", LocalDateTime.now().minusMinutes(11), s1);
+        ZadatakVezbanja c = vezbanje.novi(s1, new NoviZadatakCmd(k, null));
+        assertNotEquals(a.pokusajId(), c.pokusajId(), "stariji od 10 minuta: novo izvlačenje");
+        assertEquals(3, jdbc.queryForObject("select count(*) from vezbanja where student_id = ?", Integer.class, s1));
+        assertEquals(3, jdbc.queryForObject("select count(*) from pokusaji where vrsta = 'VEZBANJE_IZVLACENJE' and kljuc = ?",
+                Integer.class, s1.toString()), "broje se samo nova izvlačenja");
+
+        for (int i = 3; i < 60; i++) {
+            jdbc.update("insert into pokusaji (vrsta, kljuc, vreme) values ('VEZBANJE_IZVLACENJE', ?, ?)", s1.toString(),
+                    LocalDateTime.now());
+        }
+        SystemException ex = assertThrows(SystemException.class, () -> vezbanje.novi(s1, new NoviZadatakCmd(k, null, true)));
+        assertEquals(429, ex.getCode());
+        assertEquals(VezbanjeStudenta.PREVISE, ex.getMessage());
+        assertEquals(c.pokusajId(), vezbanje.novi(s1, new NoviZadatakCmd(k, null)).pokusajId(), "netaknut i dalje može");
+
+        // čišćenje: netaknuti stariji od 30 dana, provereni ostaju
+        jdbc.update("update vezbanja set izvuceno = ? where student_id = ?", LocalDateTime.now().minusDays(31), s1);
+        ciscenje.ocisti();
+        assertEquals(List.of(b.pokusajId()), jdbc.queryForList("select id from vezbanja where student_id = ?", Long.class, s1));
+    }
+
+    @Test
+    void proveraPosleResenjaSeNeBroji() {
+        teme.otvori(k, g1);
+        ZadatakVezbanja z = vezbanje.novi(s1, new NoviZadatakCmd(k, null, true));
+        ResenjeVezbanja res = vezbanje.resenje(s1, z.pokusajId());
+        String tacno = res.tacneVrednosti().get("a").broj() == 45.0 ? "45" : "13";
+        assertTrue(vezbanje.provera(s1, z.pokusajId(), new ProveraCmd(Map.of("a", tacno))).tacno());
+        Map<String, Object> red = jdbc.queryForMap("select broj_provera, prva_provera_tacno, tacno from vezbanja where id = ?",
+                z.pokusajId());
+        assertEquals(0, ((Number) red.get("broj_provera")).intValue());
+        assertNull(red.get("prva_provera_tacno"), "nije tačno iz prve");
+        assertNull(red.get("tacno"));
+        TipVezbanja tk = vezbanje.stablo(s1, d.predmetId).getFirst().tipovi().getFirst();
+        assertEquals(0, tk.provereno());
+        assertEquals(0, tk.tacno());
+        assertEquals(1, statistika.statistika(d.predmetId, null, null, null).getFirst().resenjeBezTacne());
+    }
+
+    // ---------------------------------------------------------------- objava ocena
+
+    @Test
+    void prvaObjavaDvaPutaIstovremeno() throws Exception {
+        // koeficijenti predmeta postoje (Ocene su otvarane): ovde se proverava samo prvi red objave za G1
+        objava.objavi(d.predmetId, g2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<ObjavaOcenaInfo>> f = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                f.add(pool.submit(() -> {
+                    start.await();
+                    return objava.objavi(d.predmetId, g1);
+                }));
+            }
+            start.countDown();
+            for (Future<ObjavaOcenaInfo> x : f) assertNotNull(x.get(30, TimeUnit.SECONDS).objavljeno());
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, jdbc.queryForObject("select count(*) from objave_ocena where predmet_id = ? and grupa_id = ?",
+                Integer.class, d.predmetId, g1));
+        assertEquals(1, jdbc.queryForObject("select count(*) from objavljene_ocene o join objave_ocena x on x.id = o.objava_id "
+                + "where x.predmet_id = ? and x.grupa_id = ?", Integer.class, d.predmetId, g1));
+        assertTrue(objava.zaStudenta(s1, d.predmetId).objavljeno());
+
+        jdbc.update("update objave_ocena set objavljeno = ? where predmet_id = ?", LocalDateTime.now().minusYears(1), d.predmetId);
+        assertFalse(objava.zaStudenta(s1, d.predmetId).objavljeno(), "prošlogodišnja objava se ne prikazuje");
+        assertFalse(predmeti.predmeti(s1).getFirst().ocenaObjavljena());
+    }
+
+    // ---------------------------------------------------------------- podešavanja
+
+    @Test
+    void podesavanjaMejlaOOtkazanomCasu() {
+        assertTrue(podesavanja.za(s1).mejlOtkazanCas(), "bez reda: da");
+        assertFalse(podesavanja.sacuvaj(s1, new PodesavanjaNaloga(false)).mejlOtkazanCas());
+        assertFalse(podesavanja.za(s1).mejlOtkazanCas());
+        assertEquals(Set.of(s1), podesavanja.bezMejlaOtkazanogCasa(List.of(s1, s2)));
+        podesavanja.sacuvaj(s1, new PodesavanjaNaloga(true));
+        assertTrue(podesavanja.za(s1).mejlOtkazanCas());
+        assertEquals(Set.of(), podesavanja.bezMejlaOtkazanogCasa(List.of(s1, s2)));
+        assertEquals(404, status(() -> podesavanja.sacuvaj(-1L, new PodesavanjaNaloga(false))));
     }
 }

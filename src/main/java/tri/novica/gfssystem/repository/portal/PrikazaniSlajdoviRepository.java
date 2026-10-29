@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
 public interface PrikazaniSlajdoviRepository extends JpaRepository<PrikazanSlajd, Long> {
 
     /**
-     * Upis prikazanog slajda "ako ne postoji" (UNIQUE (grupa, slajd); prvi zapis ostaje sa svojim izvođenjem). Bez izuzetka
-     * za duplikat, pa komanda konzole nikad ne pada zbog ovoga.
+     * Upis prikazanog slajda "ako ne postoji" (UNIQUE (grupa, slajd, izvođenje): ponovni prikaz u istom izvođenju ne menja
+     * prvi zapis). Bez izuzetka za duplikat, pa komanda konzole nikad ne pada zbog ovoga.
      */
     @Modifying(flushAutomatically = true)
     @Query(value = """

@@ -272,8 +272,15 @@ public class KandidatiZadatka {
         if (predmetId.isEmpty()) {
             return BEZ_GRUPE;
         }
-        StabloPredavanja stablo = stablo(predmetId.get());
-        Opis opis = stablo.opis(grupaId);
+        return kandidati(stablo(predmetId.get()), grupaId, nivo);
+    }
+
+    /**
+     * Isto, nad stablom koje je pozivalac već izgradio za predmet čvora (vežbanje na nalogu: jedno stablo po zahtevu, ne
+     * dva). Čvor van tog stabla: {@code opis == null} i prazna lista.
+     */
+    public Kandidati kandidati(StabloPredavanja stablo, Long grupaId, Integer nivo) {
+        Opis opis = grupaId == null ? null : stablo.opis(grupaId);
         return opis == null ? BEZ_GRUPE : new Kandidati(opis, poListovima(stablo, opis, nivo));
     }
 

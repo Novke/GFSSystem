@@ -9,6 +9,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.security.StudentAutentikacija;
 import tri.novica.gfssystem.service.portal.IstorijaStudenta;
 import tri.novica.gfssystem.service.portal.ObjavaOcenaServis;
+import tri.novica.gfssystem.service.portal.PodesavanjaStudentaServis;
 import tri.novica.gfssystem.service.portal.PredmetiNaNalogu;
 import tri.novica.gfssystem.service.portal.VezbanjeStudenta;
 
@@ -29,6 +30,7 @@ public class NalogPortalRest {
     private final VezbanjeStudenta vezbanje;
     private final IstorijaStudenta istorija;
     private final ObjavaOcenaServis ocene;
+    private final PodesavanjaStudentaServis podesavanja;
 
     @GetMapping("predmeti")
     @ResponseStatus(HttpStatus.OK)
@@ -88,6 +90,18 @@ public class NalogPortalRest {
     @ResponseStatus(HttpStatus.OK)
     public ResenjeVezbanja resenje(@PathVariable Long pokusajId) {
         return vezbanje.resenje(student(), pokusajId);
+    }
+
+    @GetMapping("podesavanja")
+    @ResponseStatus(HttpStatus.OK)
+    public PodesavanjaNaloga podesavanja() {
+        return podesavanja.za(student());
+    }
+
+    @PutMapping("podesavanja")
+    @ResponseStatus(HttpStatus.OK)
+    public PodesavanjaNaloga sacuvajPodesavanja(@Valid @RequestBody PodesavanjaNaloga cmd) {
+        return podesavanja.sacuvaj(student(), cmd);
     }
 
     /** STUDENT putanje: lanac je već tražio studentsku sesiju, pa je ovo uvek prisutno. */

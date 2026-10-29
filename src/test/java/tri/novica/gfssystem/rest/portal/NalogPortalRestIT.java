@@ -116,6 +116,28 @@ class NalogPortalRestIT {
     }
 
     @Test
+    void podesavanjaNaloga() throws Exception {
+        Cookie a = studentskiKolacic(ana);
+        mvc.perform(get("/public/nalog/podesavanja")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/public/nalog/podesavanja").cookie(a))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mejlOtkazanCas").value(true));
+        mvc.perform(put("/public/nalog/podesavanja").cookie(a).header("Sec-Fetch-Site", "same-origin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"mejlOtkazanCas\":false}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mejlOtkazanCas").value(false));
+        mvc.perform(get("/public/nalog/podesavanja").cookie(a))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mejlOtkazanCas").value(false));
+        mvc.perform(put("/public/nalog/podesavanja").cookie(a).header("Sec-Fetch-Site", "same-origin")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(put("/public/nalog/podesavanja").cookie(a).header("Sec-Fetch-Site", "cross-site")
+                        .header("Origin", "https://zlo.example").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mejlOtkazanCas\":true}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/public/nalog/podesavanja").cookie(studentskiKolacic(bora)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mejlOtkazanCas").value(true));
+    }
+
+    @Test
     void jaNosiGrupuIGeneraciju() throws Exception {
         mvc.perform(get("/public/nalog/ja").cookie(studentskiKolacic(ana)))
                 .andExpect(status().isOk())

@@ -9,11 +9,15 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 import tri.novica.gfssystem.dto.banka.OdgovorPolja;
+import tri.novica.gfssystem.dto.uzivo.MedijInfo;
+import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
+import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
 import tri.novica.gfssystem.dto.banka.Polje;
 import tri.novica.gfssystem.dto.portal.*;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
+import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
 import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka;
@@ -32,8 +36,13 @@ import java.util.*;
  * Istorija studenta sa časa (spec studentskog dela 5.5, 6.1, 12.2): sopstveni zadaci sa časa i pregled prezentacija.
  * <p>
  * Sve samo iz <b>završenih</b> izvođenja ("ni ranije"): zadatak sa časa se vidi tek kad je izvođenje gotovo, slajd tek kad
- * je izvođenje u kome ga je grupa videla završeno (ili obrisano). Zadaci se uvek vezuju za učesnika prijavljenog kao taj
- * student ({@code ucesnici.student_id}), slajdovi za grupe studenta ({@link GrupeStudenta}). Tuđe i nepostojeće je 404.
+ * je završeno neko izvođenje u kome ga je grupa videla (obrisano izvođenje više ništa ne otkriva). Zadaci se uvek vezuju za
+ * učesnika prijavljenog kao taj student ({@code ucesnici.student_id}), slajdovi za grupe studenta za predmet prezentacije
+ * ({@link KontekstStudenta.Kontekst#grupe(Long)}). Tuđe i nepostojeće je 404.
+ * <p>
+ * PITANJE slajd u pregledu nosi pitanje i tačan odgovor iz <b>snimka runde</b> završenog izvođenja sa grupom studenta (najnovije
+ * takve runde), nikad iz trenutne verzije slajda: izmena slajda za drugu grupu ne otkriva novi odgovor ranijim grupama. Bez
+ * takve runde (pitanje nije otvarano, ili "Ne čuvaj") ide trenutna verzija bez polja tačnog odgovora.
  */
 @Slf4j
 @Service
@@ -48,6 +57,7 @@ public class IstorijaStudenta {
     private final KandidatiZadatka kandidati;
     private final PrezentacijaRepository prezentacijaRepository;
     private final SlajdRepository slajdRepository;
+    private final MedijRepository medijRepository;
     private final PlatnoJson platnoJson;
     private final NamedParameterJdbcTemplate jdbc;
     private final JsonMapper jsonMapper;
@@ -78,7 +88,7 @@ public class IstorijaStudenta {
                 ORDER BY r.otvoreno DESC, d.id DESC""", p);
         if (redovi.isEmpty()) return List.of();
         StabloPredavanja stablo = kandidati.stablo(predmetId);
-        Set<Long> otvoreni = vezbanje.otvoreniListovi(k, stablo);
+        Set<Long> otvoreni = vezbanje.otvoreniListovi(k, predmetId, stablo);
         List<MojZadatak> rez = new ArrayList<>();
         for (Map<String, Object> r : redovi) {
             MojZadatak z = mojZadatak(r, stablo, otvoreni);
@@ -124,48 +134,52 @@ public class IstorijaStudenta {
     /** Prezentacije predmeta sa bar jednim slajdom vidljivim studentu, od najnovije održane. */
     public List<PrezentacijaStudenta> prezentacije(long studentId, Long predmetId) {
         Kontekst k = kontekstStudenta.zaPredmet(studentId, predmetId);
-        if (k.grupe().isEmpty()) return List.of();
-        MapSqlParameterSource p = new MapSqlParameterSource("g", k.grupe()).addValue("p", predmetId);
+        Set<Long> grupe = k.grupe(predmetId);
+        if (grupe.isEmpty()) return List.of();
+        MapSqlParameterSource p = new MapSqlParameterSource("g", grupe).addValue("p", predmetId);
         return jdbc.query("""
                 SELECT pz.id, pz.naziv, COUNT(DISTINCT ps.slajd_id) AS slajdova,
                        (SELECT MIN(i2.pocetak) FROM izvodjenja i2
                         WHERE i2.prezentacija_id = pz.id AND i2.grupa_id IN (:g) AND i2.status = 'ZAVRSENO') AS odrzana
                 FROM prikazani_slajdovi ps
+                JOIN izvodjenja i ON i.id = ps.izvodjenje_id
                 JOIN slajdovi s ON s.id = ps.slajd_id
                 JOIN prezentacije pz ON pz.id = s.prezentacija_id
-                LEFT JOIN izvodjenja i ON i.id = ps.izvodjenje_id
-                WHERE ps.grupa_id IN (:g) AND pz.predmet_id = :p AND (ps.izvodjenje_id IS NULL OR i.status = 'ZAVRSENO')
+                WHERE ps.grupa_id IN (:g) AND pz.predmet_id = :p AND i.status = 'ZAVRSENO'
                 GROUP BY pz.id, pz.naziv
                 ORDER BY odrzana DESC, pz.id DESC""", p, (rs, i) -> new PrezentacijaStudenta(rs.getLong("id"),
                 rs.getString("naziv"), vreme(rs.getTimestamp("odrzana")), rs.getInt("slajdova")));
     }
 
     /**
-     * Pregled prezentacije: samo slajdovi koje je neka grupa studenta videla u završenom izvođenju, trenutna verzija, bez
-     * beleški. 404 kad takvih slajdova nema (tuđa, neodržana ili prezentacija čije izvođenje još traje).
+     * Pregled prezentacije: samo slajdovi koje je neka grupa studenta (za predmet prezentacije) videla u završenom izvođenju,
+     * trenutna verzija, bez beleški; PITANJE iz snimka runde (vidi opis klase). 404 kad takvih slajdova nema (tuđa,
+     * neodržana ili prezentacija čije izvođenje još traje).
      */
     public PregledPrezentacije pregled(long studentId, Long prezentacijaId) {
+        if (prezentacijaId == null) throw KontekstStudenta.nema();
         Kontekst k = kontekstStudenta.kontekst(studentId);
-        if (k.grupe().isEmpty() || prezentacijaId == null) throw KontekstStudenta.nema();
-        Set<Long> vidljivi = new HashSet<>(jdbc.queryForList("""
-                SELECT ps.slajd_id FROM prikazani_slajdovi ps
-                JOIN slajdovi s ON s.id = ps.slajd_id
-                LEFT JOIN izvodjenja i ON i.id = ps.izvodjenje_id
-                WHERE ps.grupa_id IN (:g) AND s.prezentacija_id = :prez
-                  AND (ps.izvodjenje_id IS NULL OR i.status = 'ZAVRSENO')""",
-                new MapSqlParameterSource("g", k.grupe()).addValue("prez", prezentacijaId), Long.class));
-        if (vidljivi.isEmpty()) throw KontekstStudenta.nema();
         var prez = prezentacijaRepository.findById(prezentacijaId).orElseThrow(KontekstStudenta::nema);
         Long predmetId = prez.getPredmet().getId();
+        Set<Long> grupe = k.grupe(predmetId);
+        if (grupe.isEmpty()) throw KontekstStudenta.nema();
+        Set<Long> vidljivi = new HashSet<>(jdbc.queryForList("""
+                SELECT DISTINCT ps.slajd_id FROM prikazani_slajdovi ps
+                JOIN izvodjenja i ON i.id = ps.izvodjenje_id
+                JOIN slajdovi s ON s.id = ps.slajd_id
+                WHERE ps.grupa_id IN (:g) AND s.prezentacija_id = :prez AND i.status = 'ZAVRSENO'""",
+                new MapSqlParameterSource("g", grupe).addValue("prez", prezentacijaId), Long.class));
+        if (vidljivi.isEmpty()) throw KontekstStudenta.nema();
         if (kontekstStudenta.predmeti(k).stream().noneMatch(pr -> pr.id().equals(predmetId))) throw KontekstStudenta.nema();
 
         List<Slajd> slajdovi = slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(prezentacijaId).stream()
                 .filter(s -> vidljivi.contains(s.getId())).toList();
-        Map<Long, OdgovorPregleda> odgovori = mojiOdgovori(k.studentId(), prezentacijaId,
-                slajdovi.stream().filter(s -> s.getTip() == TipSlajda.PITANJE).map(Slajd::getId).toList());
+        List<Long> pitanja = slajdovi.stream().filter(s -> s.getTip() == TipSlajda.PITANJE).map(Slajd::getId).toList();
+        Map<Long, OdgovorPregleda> odgovori = mojiOdgovori(k.studentId(), prezentacijaId, pitanja);
+        Map<Long, PitanjeSnimak> snimciPitanja = snimciPitanja(grupe, prezentacijaId, pitanja);
         boolean imaZadatak = slajdovi.stream().anyMatch(s -> s.getTip() == TipSlajda.ZADATAK);
         StabloPredavanja stablo = imaZadatak ? kandidati.stablo(predmetId) : null;
-        Set<Long> otvoreni = imaZadatak ? vezbanje.otvoreniListovi(k, stablo) : Set.of();
+        Set<Long> otvoreni = imaZadatak ? vezbanje.otvoreniListovi(k, predmetId, stablo) : Set.of();
         List<MojZadatak> moji = imaZadatak ? mojiZadaci(k, predmetId, prezentacijaId, null) : List.of();
 
         List<SlajdPregleda> rez = new ArrayList<>();
@@ -182,11 +196,65 @@ public class IstorijaStudenta {
                 zadatak = new ZadatakPregleda(opis == null ? null : opis.naziv(),
                         moji.stream().filter(m -> s.getId().equals(m.slajdId())).toList(), tipovi);
             }
-            rez.add(new SlajdPregleda(d.id(), d.rb(), d.tip(), d.naslov(), d.sadrzaj(), d.slika(),
-                    s.getTip() == TipSlajda.PITANJE ? d.pitanje() : null, s.getTip() == TipSlajda.PLATNO ? platno : null,
-                    zadatak, odgovori.get(s.getId())));
+            PitanjeDetails pitanje = null;
+            boolean tacanPoznat = false;
+            if (s.getTip() == TipSlajda.PITANJE) {
+                PitanjeSnimak ps = snimciPitanja.get(s.getId());
+                tacanPoznat = ps != null;
+                pitanje = ps != null ? izSnimka(ps, d.pitanje()) : bezTacnog(d.pitanje());
+            }
+            rez.add(new SlajdPregleda(d.id(), d.rb(), d.tip(), d.naslov(), d.sadrzaj(), d.slika(), pitanje,
+                    s.getTip() == TipSlajda.PLATNO ? platno : null, zadatak, odgovori.get(s.getId()), tacanPoznat));
         }
         return new PregledPrezentacije(prez.getId(), prez.getNaziv(), prez.getTema(), predmetId, List.copyOf(rez));
+    }
+
+    /**
+     * Snimak pitanja po PITANJE slajdu: najnovija runda tog slajda u završenom izvođenju prezentacije sa nekom od grupa
+     * studenta; nečitljiv snimak se preskače (uzima se sledeća runda).
+     */
+    private Map<Long, PitanjeSnimak> snimciPitanja(Set<Long> grupe, Long prezentacijaId, List<Long> slajdIds) {
+        if (slajdIds.isEmpty() || grupe.isEmpty()) return Map.of();
+        List<Map<String, Object>> redovi = jdbc.queryForList("""
+                SELECT r.id AS runda_id, r.slajd_id, r.snimak
+                FROM pitanje_runde r
+                JOIN izvodjenja i ON i.id = r.izvodjenje_id
+                WHERE i.status = 'ZAVRSENO' AND i.grupa_id IN (:g) AND i.prezentacija_id = :prez AND r.slajd_id IN (:ids)
+                ORDER BY r.otvoreno DESC, r.id DESC""",
+                new MapSqlParameterSource("g", grupe).addValue("prez", prezentacijaId).addValue("ids", slajdIds));
+        Map<Long, PitanjeSnimak> rez = new HashMap<>();
+        for (Map<String, Object> r : redovi) {
+            Long slajdId = broj(r.get("slajd_id"));
+            if (rez.containsKey(slajdId)) continue;
+            if (snimak((String) r.get("snimak"), broj(r.get("runda_id"))) instanceof PitanjeSnimak ps) rez.put(slajdId, ps);
+        }
+        return rez;
+    }
+
+    /** Pitanje iz snimka runde (tekst, opcije, tačan odgovor); slika iz snimka (trenutni opis kad je ista). */
+    private PitanjeDetails izSnimka(PitanjeSnimak ps, PitanjeDetails trenutno) {
+        MedijInfo slika = null;
+        if (ps.slikaId() != null) {
+            slika = trenutno != null && trenutno.slika() != null && ps.slikaId().equals(trenutno.slika().id())
+                    ? trenutno.slika()
+                    : medijRepository.findById(ps.slikaId())
+                            .map(m -> new MedijInfo(m.getId(), m.getNaziv(), m.getMime(), m.getVelicina())).orElse(null);
+        }
+        List<OpcijaDetails> opcije = ps.opcije() == null ? List.of() : ps.opcije().stream()
+                .map(o -> new OpcijaDetails(o.id(), o.rb(), o.tekst(), o.tacna())).toList();
+        return new PitanjeDetails(ps.pitanjeId(), ps.tip(), ps.tekst(), slika, ps.vremeSekunde(), opcije, ps.brojTacno(),
+                ps.brojOdstupanje(), ps.odstupanjeTip(), ps.jedinica(), ps.tekstPrikaz(),
+                ps.prihvatljiviOdgovori() == null ? null : List.copyOf(ps.prihvatljiviOdgovori()),
+                ps.skalaMinOznaka(), ps.skalaMaxOznaka());
+    }
+
+    /** Trenutna verzija pitanja bez ičega što otkriva tačan odgovor (nijedna opcija tačna, bez broja i prihvatljivih). */
+    static PitanjeDetails bezTacnog(PitanjeDetails p) {
+        if (p == null) return null;
+        List<OpcijaDetails> opcije = p.opcije() == null ? List.of() : p.opcije().stream()
+                .map(o -> new OpcijaDetails(o.id(), o.rb(), o.tekst(), false)).toList();
+        return new PitanjeDetails(p.id(), p.tip(), p.tekst(), p.slika(), p.vremeSekunde(), opcije, null, null, null,
+                p.jedinica(), p.tekstPrikaz(), null, p.skalaMinOznaka(), p.skalaMaxOznaka());
     }
 
     /** Poslednji sopstveni odgovor po PITANJE slajdu, iz završenih izvođenja prezentacije. */
