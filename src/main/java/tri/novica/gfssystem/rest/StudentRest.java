@@ -11,11 +11,13 @@ import tri.novica.gfssystem.dto.student.CreateStudentCmd;
 import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentInfo;
 import tri.novica.gfssystem.dto.student.StudentListItem;
+import tri.novica.gfssystem.dto.uzivo.UzivoStudenta;
 import tri.novica.gfssystem.dto.student.UpdateStudentCmd;
 import tri.novica.gfssystem.dto.student.pregled.StudentNaPredmetuDetails;
 import tri.novica.gfssystem.dto.student.pregled.StudentPregledDetails;
 import tri.novica.gfssystem.service.OcenjivanjeService;
 import tri.novica.gfssystem.service.StudentService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 import tri.novica.gfssystem.utility.PageableUtil;
 
 import java.util.List;
@@ -27,6 +29,7 @@ public class StudentRest {
 
     private final StudentService studentService;
     private final OcenjivanjeService ocenjivanjeService;
+    private final RangTacnostiService rangTacnostiService;
 
     @GetMapping
     @ResponseBody
@@ -68,6 +71,14 @@ public class StudentRest {
     @ResponseStatus(HttpStatus.OK)
     public StudentInfo updateStudent(@PathVariable Long id, @Valid @RequestBody UpdateStudentCmd studentCmd){
         return studentService.update(id, studentCmd);
+    }
+
+    /** Uživo rezultati studenta po časovima i zbir; filteri opcioni (predmet, školska godina). */
+    @GetMapping("{id}/uzivo")
+    @ResponseStatus(HttpStatus.OK)
+    public UzivoStudenta uzivo(@PathVariable Long id, @RequestParam(required = false) Long predmetId,
+                               @RequestParam(required = false) Integer godina) {
+        return rangTacnostiService.zaStudenta(id, predmetId, godina);
     }
 
     /** S2: kartice po predmetu (prisutnost, domaći, poeni po tipu testa, ukupno i predlog ocene iz ocenjivanja). */

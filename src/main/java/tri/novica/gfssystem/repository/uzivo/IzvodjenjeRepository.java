@@ -10,6 +10,7 @@ import tri.novica.gfssystem.entity.uzivo.Izvodjenje;
 import tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -82,4 +83,32 @@ public interface IzvodjenjeRepository extends JpaRepository<Izvodjenje, Long> {
     long countByPrezentacijaId(Long id);
 
     Optional<Izvodjenje> findFirstByPrezentacijaIdAndStatusOrderByPocetakDesc(Long id, StatusIzvodjenja s);
+
+    /** Izvođenja sa prezentacijom, predmetom, grupom i predavanjem (rang tačnosti), najnovija prva. */
+    @Query("""
+            select i from Izvodjenje i join fetch i.prezentacija p join fetch p.predmet
+            left join fetch i.grupa left join fetch i.predavanje
+            where i.id in :ids order by i.pocetak desc, i.id desc""")
+    List<Izvodjenje> findZaRang(@Param("ids") Collection<Long> ids);
+
+    /** Izvođenja predavanja (svih statusa), najnovija prva, sa vezama. */
+    @Query("""
+            select i from Izvodjenje i join fetch i.prezentacija p join fetch p.predmet
+            left join fetch i.grupa left join fetch i.predavanje pr
+            where pr.id in :predavanjaIds order by i.pocetak desc, i.id desc""")
+    List<Izvodjenje> findZaRangPredavanja(@Param("predavanjaIds") Collection<Long> predavanjaIds);
+
+    /**
+     * Izvođenja grupe za rang tačnosti: vezana za predavanje te grupe ili pokrenuta za grupu; početak u
+     * {@code [od, do)} (oba opciona) i predmet prezentacije (opciono).
+     */
+    @Query("""
+            select i from Izvodjenje i join fetch i.prezentacija p join fetch p.predmet
+            left join fetch i.grupa g left join fetch i.predavanje pr
+            where (g.id = :grupaId or pr.grupa.id = :grupaId)
+              and (:predmetId is null or p.predmet.id = :predmetId)
+              and (:od is null or i.pocetak >= :od) and (:doVremena is null or i.pocetak < :doVremena)
+            order by i.pocetak desc, i.id desc""")
+    List<Izvodjenje> findZaRangGrupe(@Param("grupaId") Long grupaId, @Param("predmetId") Long predmetId,
+                                     @Param("od") LocalDateTime od, @Param("doVremena") LocalDateTime doVremena);
 }
