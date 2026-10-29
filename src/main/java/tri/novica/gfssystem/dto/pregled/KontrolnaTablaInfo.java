@@ -14,14 +14,16 @@ import java.util.List;
  * @param sledece predlog sledećeg predavanja (predmet i grupa poslednjeg, {@code rb + 1})
  * @param uToku   nezavršena predavanja sa današnjim datumom
  * @param ceka    "čeka na tebe"
- * @param nedelja predavanja, domaći i testovi tekuće nedelje (ponedeljak-nedelja), po datumu
+ * @param nedelja  predavanja, domaći i testovi tekuće nedelje (ponedeljak-nedelja), po datumu
+ * @param raspored termini rasporeda narednih 7 dana i da li neki period pokriva danas (nikad null)
  */
 public record KontrolnaTablaInfo(
         SledecePredavanjeInfo sledece,
         // eksplicitno: iz getter-a "getUToku" Jackson bi izveo "utoku"
         @JsonProperty("uToku") List<PredavanjeListItem> uToku,
         Ceka ceka,
-        List<AgendaStavkaInfo> nedelja) {
+        List<AgendaStavkaInfo> nedelja,
+        RasporedTablaInfo raspored) {
 
     /**
      * Stavke koje čekaju nastavnika, najviše 10 po listi, najnovije prve (prijave: prvo sesije kojima rok ističe najranije).
