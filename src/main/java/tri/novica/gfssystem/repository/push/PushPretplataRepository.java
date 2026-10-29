@@ -26,16 +26,16 @@ public interface PushPretplataRepository extends JpaRepository<PushPretplata, Lo
 
     boolean existsByNastavnickaSesijaId(Long sesijaId);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("delete from PushPretplata p where p.studentskiUredjajId = :id")
     int obrisiZaUredjaj(@Param("id") Long uredjajId);
 
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query("delete from PushPretplata p where p.nastavnickaSesijaId = :id")
     int obrisiZaSesiju(@Param("id") Long sesijaId);
 
     /** Briše pretplate opozvanih uređaja studenta (posle "odjavi se svuda", opoziva sa kartice, raskida Moodle veze). */
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Modifying(flushAutomatically = true)
     @Query(value = """
             DELETE p FROM push_pretplate p JOIN studentski_uredjaji u ON u.id = p.studentski_uredjaj_id
             WHERE u.student_id = :studentId AND u.opozvan IS NOT NULL""", nativeQuery = true)

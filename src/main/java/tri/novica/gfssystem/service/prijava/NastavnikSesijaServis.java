@@ -11,6 +11,7 @@ import tri.novica.gfssystem.entity.prijava.NastavnickaSesija;
 import tri.novica.gfssystem.entity.prijava.VrstaPokusaja;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.prijava.NastavnickaSesijaRepository;
+import tri.novica.gfssystem.repository.push.PushPretplataRepository;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.TokenGenerator;
 
@@ -43,6 +44,7 @@ public class NastavnikSesijaServis {
 
     private final NastavnikSvojstva svojstva;
     private final NastavnickaSesijaRepository repository;
+    private final PushPretplataRepository pretplate;
     private final PokusajiServis pokusaji;
     private final TokenGenerator tokenGenerator;
     private final Clock clock;
@@ -144,6 +146,7 @@ public class NastavnikSesijaServis {
         if (s.getOpozvana() == null) {
             s.setOpozvana(LocalDateTime.now(clock));
             repository.save(s);
+            pretplate.obrisiZaSesiju(s.getId());
             log.info("Nastavnička sesija opozvana, sesija={}", s.getId());
         }
     }

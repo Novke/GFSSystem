@@ -60,7 +60,7 @@ public class RasporedService {
         Map<Long, Long> broj = Brojaci.mapa(rasporedi.brojStavki());
         return rasporedi.findAllByOrderByVaziOdDescIdDesc().stream()
                 .map(r -> new RasporedInfo(r.getId(), r.getNaziv(), r.getVaziOd(), r.getVaziDo(), r.getPragNajava(),
-                        broj.getOrDefault(r.getId(), 0L)))
+                        broj.getOrDefault(r.getId(), 0L), r.getPodsetnikVreme()))
                 .toList();
     }
 
@@ -75,6 +75,7 @@ public class RasporedService {
         Raspored r = new Raspored();
         r.setKreirano(LocalDateTime.now(clock));
         primeni(r, c);
+        r.setPodsetnikVreme(podsetnik(null, cmd, true));
         for (Nova n : c.stavke()) {
             r.getStavke().add(nova(r, n));
         }
@@ -118,6 +119,7 @@ public class RasporedService {
         }
         proveriPreklapanje(id, c);
         primeni(r, c);
+        r.setPodsetnikVreme(podsetnik(r.getPodsetnikVreme(), cmd, false));
         // stavka odlazi ili termin više nije termin: otkazivanje se briše (i učitano, da flush ne vidi vezu na obrisanu stavku)
         List<OtkazanTermin> izgubljena = buduca.stream()
                 .filter(o -> !zadrzane.contains(o.getStavka().getId()) || !Termini.jeTermin(o.getStavka(), o.getDatum()))
@@ -170,6 +172,12 @@ public class RasporedService {
         int prag = cmd.pragNajava() == null ? PODRAZUMEVANI_PRAG : cmd.pragNajava();
         if (prag < 1 || prag > MAX_PRAG) {
             throw greska("Prag najava mora biti od 1 do " + MAX_PRAG + ".");
+        }
+        if (cmd.podsetnikVreme() != null && !Boolean.FALSE.equals(cmd.podsetnik())) {
+            LocalTime t = cmd.podsetnikVreme();
+            if (t.isBefore(PODSETNIK_NAJRANIJE) || t.isAfter(PODSETNIK_NAJKASNIJE)) {
+                throw greska(PODSETNIK_VAN_OPSEGA);
+            }
         }
         List<StavkaCmd> ulaz = cmd.stavke() == null ? List.of() : cmd.stavke();
         if (ulaz.size() > MAX_STAVKI) {
@@ -253,6 +261,27 @@ public class RasporedService {
     }
 
     private static final DateTimeFormatter DATUM = DateTimeFormatter.ofPattern("d. M. yyyy.");
+    static final LocalTime PODSETNIK_PODRAZUMEVANO = LocalTime.of(18, 0);
+    /** Opseg vremena podsetnika: posle 21:30 posao od 5 min ne bi stigao pre granice od 22:00 (spec 6.1). */
+    static final LocalTime PODSETNIK_NAJRANIJE = LocalTime.of(6, 0);
+    static final LocalTime PODSETNIK_NAJKASNIJE = LocalTime.of(21, 30);
+    static final String PODSETNIK_VAN_OPSEGA = "Vreme podsetnika mora biti od 06:00 do 21:30.";
+
+    /**
+     * Vreme podsetnika posle upisa ili izmene (spec aplikacije 6.1): {@code podsetnik == false} isključuje ({@code null});
+     * {@code true} uključuje sa zadatim, dosadašnjim ili podrazumevanim (18:00) vremenom; bez izbora: pri upisu uključen
+     * (zadato ili 18:00), pri izmeni se samo menja vreme uključenog podsetnika. Vreme se čuva na minut.
+     */
+    static LocalTime podsetnik(LocalTime trenutno, RasporedCmd cmd, boolean nov) {
+        LocalTime zadato = cmd.podsetnikVreme() == null ? null : cmd.podsetnikVreme().truncatedTo(ChronoUnit.MINUTES);
+        if (Boolean.FALSE.equals(cmd.podsetnik())) {
+            return null;
+        }
+        if (nov || Boolean.TRUE.equals(cmd.podsetnik())) {
+            return zadato != null ? zadato : trenutno != null ? trenutno : PODSETNIK_PODRAZUMEVANO;
+        }
+        return trenutno == null ? null : zadato != null ? zadato : trenutno;
+    }
 
     private static void primeni(Raspored r, Ocisceno c) {
         r.setNaziv(c.naziv());
@@ -290,7 +319,7 @@ public class RasporedService {
                         s.getPocetak(), s.getKraj(), otk.getOrDefault(s.getId(), List.of())))
                 .toList();
         return new RasporedDetails(r.getId(), r.getNaziv(), r.getVaziOd(), r.getVaziDo(), r.getPragNajava(), stavke,
-                izgubljena);
+                izgubljena, r.getPodsetnikVreme());
     }
 
     static PredmetInfo predmet(Predmet p) {

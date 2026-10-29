@@ -163,6 +163,8 @@ POST /public/nalog/casovi/najavi STUDENT
 POST /public/nalog/casovi/povuci STUDENT
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
+GET /public/nalog/obavestenja STUDENT
+POST /public/nalog/obavestenja/otvoreno STUDENT
 POST /public/nalog/odjava STUDENT
 POST /public/nalog/odjava-svuda STUDENT
 GET /public/nalog/podesavanja STUDENT
@@ -176,6 +178,10 @@ GET /public/nalog/predmeti/{id}/prisustvo STUDENT
 GET /public/nalog/predmeti/{id}/vezbanje STUDENT
 GET /public/nalog/prezentacije/{id} STUDENT
 POST /public/nalog/prijava ANONIMNO
+DELETE /public/nalog/push STUDENT
+GET /public/nalog/push STUDENT
+PUT /public/nalog/push STUDENT
+POST /public/nalog/push/proba STUDENT
 GET /public/nalog/stanje ANONIMNO
 POST /public/nalog/vezbanje STUDENT
 POST /public/nalog/vezbanje/{pokusajId}/provera STUDENT
@@ -186,6 +192,12 @@ GET /public/uzivo/{kod} ANONIMNO
 GET /public/uzivo/{kod}/ja ANONIMNO
 POST /public/uzivo/{kod}/prijava ANONIMNO
 GET /public/ws ANONIMNO
+DELETE /push ADMIN
+GET /push ADMIN
+PUT /push ADMIN
+GET /push/podesavanja ADMIN
+PUT /push/podesavanja ADMIN
+POST /push/proba ADMIN
 GET /rasporedi ADMIN
 POST /rasporedi ADMIN
 GET /rasporedi/termini ADMIN

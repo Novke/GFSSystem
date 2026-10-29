@@ -100,6 +100,11 @@ public class PushPosiljalac {
         }
     }
 
+    /** Čitanje u sopstvenoj transakciji (iz {@code afterCommit} povratnog poziva se ne sme koristiti tekuća). */
+    public <T> T uNovojTransakciji(java.util.function.Supplier<T> rad) {
+        return citanje.execute(s -> rad.get());
+    }
+
     private static void bezbedno(Runnable rad) {
         try {
             rad.run();

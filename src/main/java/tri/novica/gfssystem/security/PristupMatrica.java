@@ -51,6 +51,7 @@ public final class PristupMatrica {
     private static final HttpMethod GET = HttpMethod.GET;
     private static final HttpMethod POST = HttpMethod.POST;
     private static final HttpMethod PUT = HttpMethod.PUT;
+    private static final HttpMethod DELETE = HttpMethod.DELETE;
 
     private static final List<Pravilo> ANONIMNO = List.of(
             // samostalni upis studenta (QR)
@@ -107,6 +108,13 @@ public final class PristupMatrica {
             // podešavanja naloga (tab "Ja"): mejl o otkazanom času
             new Pravilo(GET, "/public/nalog/podesavanja"),
             new Pravilo(PUT, "/public/nalog/podesavanja"),
+            // push na ovom uređaju i zvono naloga (spec aplikacije 5.4 i 6.8): uređaj i student samo iz sesije
+            new Pravilo(GET, "/public/nalog/push"),
+            new Pravilo(PUT, "/public/nalog/push"),
+            new Pravilo(DELETE, "/public/nalog/push"),
+            new Pravilo(POST, "/public/nalog/push/proba"),
+            new Pravilo(GET, "/public/nalog/obavestenja"),
+            new Pravilo(POST, "/public/nalog/obavestenja/otvoreno"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 
