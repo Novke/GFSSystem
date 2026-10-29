@@ -40,7 +40,11 @@ class PrezentacijaRestTest {
 
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final PrezentacijaDetails DETAILS = new PrezentacijaDetails(1L, "Uvod", null, new PredmetKratko(7L, "Statika"),
-            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of());
+            0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of(), 2, VrstaPrezentacije.GRADIVO, 0,
+            IZMENJENO, null);
+    static final PrezentacijaInfo INFO = new PrezentacijaInfo(1L, "Vežbe 2 – zadaci", null, new PredmetKratko(7L, "Statika"),
+            3, 3, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 1, null, Tema.NACRT, 2, VrstaPrezentacije.ZADACI, 3,
+            IZMENJENO, IZMENJENO);
     static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null, null, null);
 
     @Autowired MockMvc mvc;
@@ -97,6 +101,80 @@ class PrezentacijaRestTest {
            .andExpect(status().isBadRequest())
            .andExpect(jsonPath("$.reason").value("Neispravan parametar: posle."));
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void kreirajSaBrojemVezbe() throws Exception {
+        when(service.kreiraj(any())).thenReturn(DETAILS);
+        mvc.perform(post("/prezentacije").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"predmetId\":7,\"naziv\":\"Vežbe 2\",\"vezba\":2}"))
+           .andExpect(status().isCreated())
+           .andExpect(jsonPath("$.vezba").value(2))
+           .andExpect(jsonPath("$.vrsta").value("GRADIVO"))
+           .andExpect(jsonPath("$.brojZadataka").value(0))
+           .andExpect(jsonPath("$.kreirano").value("2026-10-07T12:00:00"));
+        verify(service).kreiraj(new CreatePrezentacijaCmd(7L, "Vežbe 2", null, null, 2));
+    }
+
+    @Test
+    void kreirajSaDecimalnimBrojemVezbeJe400() throws Exception {
+        for (String vezba : List.of("2.5", "2.0", "\"2\"")) {
+            mvc.perform(post("/prezentacije").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"predmetId\":7,\"naziv\":\"V\",\"vezba\":" + vezba + "}"))
+               .andExpect(status().isBadRequest())
+               .andExpect(jsonPath("$.reason").value("Neispravan format podataka."));
+        }
+        verify(service, never()).kreiraj(any());
+    }
+
+    @Test
+    void patchVezbePostavljaIBrise() throws Exception {
+        when(service.postaviVezbu(eq(1L), any())).thenReturn(INFO);
+        mvc.perform(patch("/prezentacije/1/vezba").contentType(MediaType.APPLICATION_JSON).content("{\"vezba\":2}"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.vezba").value(2))
+           .andExpect(jsonPath("$.vrsta").value("ZADACI"))
+           .andExpect(jsonPath("$.poslednjePustanje").value("2026-10-07T12:00:00"));
+        mvc.perform(patch("/prezentacije/1/vezba").contentType(MediaType.APPLICATION_JSON).content("{\"vezba\":null}"))
+           .andExpect(status().isOk());
+        verify(service).postaviVezbu(1L, 2);
+        verify(service).postaviVezbu(1L, null);
+    }
+
+    @Test
+    void patchVezbeStrogoTelo() throws Exception {
+        for (String telo : List.of("{}", "{\"vezb\":2}", "{\"vezba\":2,\"x\":1}", "{\"vezba\":2.5}",
+                "{\"vezba\":2.0}", "{\"vezba\":\"2\"}")) {
+            mvc.perform(patch("/prezentacije/1/vezba").contentType(MediaType.APPLICATION_JSON).content(telo))
+               .andExpect(status().isBadRequest())
+               .andExpect(jsonPath("$.reason").value("Neispravan format podataka."));
+        }
+        verify(service, never()).postaviVezbu(any(), any());
+    }
+
+    @Test
+    void patchVezbeVanOpsegaJe400IzServisa() throws Exception {
+        when(service.postaviVezbu(1L, 100)).thenThrow(new SystemException("Broj vežbe mora biti od 0 do 99.",
+                HttpStatus.BAD_REQUEST));
+        mvc.perform(patch("/prezentacije/1/vezba").contentType(MediaType.APPLICATION_JSON).content("{\"vezba\":100}"))
+           .andExpect(status().isBadRequest())
+           .andExpect(jsonPath("$.reason").value("Broj vežbe mora biti od 0 do 99."));
+    }
+
+    @Test
+    void izborProsledjujeParametreIVracaStavkeIPredlog() throws Exception {
+        when(service.izbor(7L, 3L, null)).thenReturn(new IzborPrezentacija(
+                List.of(new StavkaIzbora(INFO, IZMENJENO)), List.of(1L)));
+        mvc.perform(get("/prezentacije/izbor").param("predmetId", "7").param("grupaId", "3"))
+           .andExpect(status().isOk())
+           .andExpect(jsonPath("$.stavke[0].prezentacija.id").value(1))
+           .andExpect(jsonPath("$.stavke[0].pustenoGrupi").value("2026-10-07T12:00:00"))
+           .andExpect(jsonPath("$.predlog[0]").value(1));
+        when(service.izbor(7L, null, 5L)).thenReturn(new IzborPrezentacija(List.of(), List.of()));
+        mvc.perform(get("/prezentacije/izbor").param("predmetId", "7").param("posle", "5"))
+           .andExpect(status().isOk());
+        verify(service).izbor(7L, null, 5L);
+        mvc.perform(get("/prezentacije/izbor").param("predmetId", "x")).andExpect(status().isBadRequest());
     }
 
     @Test

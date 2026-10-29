@@ -96,7 +96,8 @@ public class PrezentacijaAlati {
 
     @McpTool(name = "napravi_prezentaciju", description = "Nova prazna prezentacija predmeta sa tvojom serijom i "
             + "podrazumevanim podešavanjima (bez takmičenja, telefon prikazuje dugmad); slajdove dodaješ sa `dodaj_slajd`. "
-            + "Vraća `{prezentacija, link}`. " + McpAlati.NE_PONAVLJAJ,
+            + "`vezba` je redni broj vežbe (0-99; za \"Vežbe 3 i 4 – zadaci\" prvi, 3); bez njega broj se uzima iz naziva "
+            + "koji počinje sa \"Vežbe N\", inače ostaje bez broja. Vraća `{prezentacija, link}`. " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false,
                     openWorldHint = false))
     public CallToolResult napraviPrezentaciju(
@@ -106,11 +107,13 @@ public class PrezentacijaAlati {
             @McpToolParam(description = "Naziv prezentacije, najviše 200 znakova.") String naziv,
             @McpToolParam(description = "Opis, najviše 1 000 znakova.", required = false) String opis,
             @McpToolParam(description = "Tema izgleda: `NACRT` (podrazumevano), `BELA`, `PAPIR`, `TAMNA` ili `PONOC`.",
-                    required = false) Tema tema) {
+                    required = false) Tema tema,
+            @McpToolParam(description = "Redni broj vežbe 0-99 (redosled i predlog sledeće prezentacije).",
+                    required = false) Integer vezba) {
         return McpGreske.izvrsi("napravi_prezentaciju", serija, poziv -> {
             poziv.id("predmet", predmetId);
-            PrezentacijaInfo p = prezentacije.napraviPrezentaciju(new CreatePrezentacijaCmd(predmetId, naziv, opis, tema),
-                    serija);
+            PrezentacijaInfo p = prezentacije.napraviPrezentaciju(
+                    new CreatePrezentacijaCmd(predmetId, naziv, opis, tema, vezba), serija);
             poziv.id("prezentacija", p.id());
             return odgovor.json(new PrezentacijaSaLinkom(p, linkovi.prezentacija(p.id())));
         });

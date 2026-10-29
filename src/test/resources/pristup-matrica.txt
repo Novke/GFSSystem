@@ -137,6 +137,7 @@ GET /pregled/kontrolna-tabla ADMIN
 GET /pretraga ADMIN
 GET /prezentacije ADMIN
 POST /prezentacije ADMIN
+GET /prezentacije/izbor ADMIN
 DELETE /prezentacije/{id} ADMIN
 GET /prezentacije/{id} ADMIN
 PUT /prezentacije/{id} ADMIN
@@ -146,6 +147,7 @@ GET /prezentacije/{id}/predavanja ADMIN
 PUT /prezentacije/{id}/redosled ADMIN
 POST /prezentacije/{id}/slajdovi ADMIN
 POST /prezentacije/{id}/slajdovi/uvoz ADMIN
+PATCH /prezentacije/{id}/vezba ADMIN
 GET /public/lti/jwks ANONIMNO
 POST /public/lti/povezi STUDENT
 GET /public/lti/povezivanje ANONIMNO

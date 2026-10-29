@@ -139,6 +139,19 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   slide or a presentation copies it, import keeps it. A `PUT` without `prelaz` clears it (full replacement, like
   `platno`), so the old frontend, which does not send it, removes a transition on save (it also never shows one). The
   server only stores it; the frontend plays it (audience window only, one slide forward).
+- **Order of presentations (vežba number, V21; spec `docs/superpowers/specs/2026-10-29-redosled-prezentacija-design.md` in the wrapper repo):**
+  `Prezentacija.vezba` (Integer 0-99, `null` = no number; `utility/Vezba`: bounds, 400 `Broj vežbe mora biti od 0 do 99.`, `izNaziva` = first number
+  after a leading `Vežbe`/`Vezbe`, the same rule as the V21 fill). Set on `POST /prezentacije` (`CreatePrezentacijaCmd.vezba`, strict integer) and
+  changed only by `PATCH /prezentacije/{id}/vezba` (`VezbaCmd`, strict like `PragProlazaCmd`; locks only the presentation row, does not touch
+  `izmenjeno`); `PUT` of a presentation ignores it, duplicating copies it, MCP `napravi_prezentaciju` takes an optional `vezba` and otherwise derives it
+  from the name. The kind `VrstaPrezentacije` (`GRADIVO` = no question, `PITANJA` = questions but no ZADATAK slide, `ZADACI` = at least one ZADATAK
+  slide) is **never stored**: `PrezentacijaInfo`/`Details` compute it with `brojZadataka`, plus `kreirano` and `poslednjePustanje` (latest run start).
+  `GET /prezentacije/izbor?predmetId&grupaId&posle` (ADMIN, readOnly; `predmetId` required) returns `IzborPrezentacija {stavke, predlog}`: every
+  presentation of the subject in the order of `RedosledPrezentacija.REDOSLED` (vežba ascending, no number last; within a vežba gradivo, pitanja, zadaci;
+  then name and id; the front's `porediPoVezbi` mirrors it), each with `pustenoGrupi` (latest run of that group, any status); `predlog` (at most 3 ids) is
+  `RedosledPrezentacija.zaGrupu` with a group (owed ZADACI of vežbe below the furthest vežba the group has run, then every unplayed numbered presentation
+  from that vežba on; older unplayed gradivo is not suggested; presentations without a number and ones in progress never) and `posle(posleId)` without one
+  (the next ones in order). A run counts as played for the group whatever its length or status.
 - **Formulas are not interpreted on the server:** the round snapshot (`PitanjeSnimak.od`) copies question and option
   texts with `$...$` (and `\$`) verbatim, also through the JSON round trip (`PitanjeSnimakTest.snimakCuvaFormuleDoslovno`);
   there is no LaTeX check on the server, the front renders them.
@@ -1062,14 +1075,16 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
   maps none of it, rollback needs no DB work). `V18` = timetable and absence announcements (`V18__raspored_najave.sql`, branch
   `feature/najava-odsustva`; re-check against `origin/staging` before the merge; portal phase 2, which had reserved "V18 (privremeno)", takes
-  V20, because V19 is claimed by the presentation-order branch): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
+  V20; V19 had been claimed by the presentation-order branch, which then took V21): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
   `obavestenja.kljuc` with unique index `uk_obavestenja_kljuc`; idempotent and additive. An older image does not map the new tables, but it
   cannot read an `obavestenja` row of kind `MNOGO_NAJAVA` (unknown enum constant): before a rollback across V18 run
-  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. `V19` is claimed by the presentation order work (`V19__vezba_prezentacije.sql`, `feature/redosled-prezentacija`).
-  `V20` = student account phases 2 and 3 (`V20__studentski_portal.sql`, branch `feature/studentski-portal-2`; provisional, re-check against
-  `origin/staging`): new tables `otvorene_teme`, `vezbanja`, `prikazani_slajdovi`, `objave_ocena`, `objavljene_ocene`, `podesavanja_studenta` only,
-  plus a conservative one-time first fill in SQL (drawn leaves of finished runs; shown slides only where provable); additive. **Next free
-  version: `V21`.**
+  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. `V19` = **permanently unused** (it was claimed by the presentation-order branch,
+  but the portal merged first; never reuse the number).
+  `V20` = student account phases 2 and 3 (`V20__studentski_portal.sql`, branch `feature/studentski-portal-2`): new tables `otvorene_teme`,
+  `vezbanja`, `prikazani_slajdovi`, `objave_ocena`, `objavljene_ocene`, `podesavanja_studenta` only,
+  plus a conservative one-time first fill in SQL (drawn leaves of finished runs; shown slides only where provable); additive.
+  `V21` = vežba number of a presentation (`V21__vezba_prezentacije.sql`, branch `feature/redosled-prezentacija`): nullable `prezentacije.vezba`
+  int, filled from names that start with `Vežbe N` / `Vezbe N`; idempotent and additive (an older image does not map it). **Next free version: `V22`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

@@ -27,6 +27,7 @@ import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
 import tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj;
 import tri.novica.gfssystem.dto.uzivo.platno.Platno;
 import tri.novica.gfssystem.utility.Serija;
+import tri.novica.gfssystem.utility.Vezba;
 import tri.novica.gfssystem.validation.PlatnoPP;
 import tri.novica.gfssystem.validation.SlajdPP;
 
@@ -107,6 +108,48 @@ public class PrezentacijaService {
         return lista.stream().map(this::info).toList();
     }
 
+    /**
+     * Izbor prezentacija predmeta za pokretanje (dijalog na predavanju, kraj izvođenja u konzoli): sve po redosledu vežbi
+     * ({@link RedosledPrezentacija#REDOSLED}), uz to kad ih je grupa puštala i predlog sledećih. Sa {@code grupaId} predlog
+     * prati šta je ta grupa puštala ({@link RedosledPrezentacija#zaGrupu}); bez grupe nudi sledeće po redu posle
+     * {@code posle} ({@link RedosledPrezentacija#posle}).
+     */
+    @Transactional(readOnly = true)
+    public IzborPrezentacija izbor(Long predmetId, Long grupaId, Long posle) {
+        if (predmetId == null) {
+            throw new SystemException("Predmet je obavezan.", HttpStatus.BAD_REQUEST);
+        }
+        Map<Long, LocalDateTime> pusteno = new HashMap<>();
+        if (grupaId != null) {
+            for (Object[] red : izvodjenjeRepository.pustanjaGrupe(grupaId, predmetId)) {
+                pusteno.put((Long) red[0], (LocalDateTime) red[1]);
+            }
+        }
+        List<StavkaIzbora> stavke = prezentacijaRepository.findAllByPredmetIdOrderByIzmenjenoDesc(predmetId).stream()
+                .map(this::info)
+                .sorted(RedosledPrezentacija.REDOSLED)
+                .map(p -> new StavkaIzbora(p, pusteno.get(p.id())))
+                .toList();
+        List<Long> predlog = grupaId != null
+                ? RedosledPrezentacija.zaGrupu(stavke)
+                : RedosledPrezentacija.posle(stavke, posle);
+        return new IzborPrezentacija(stavke, predlog);
+    }
+
+    /**
+     * Broj vežbe ({@code null} uklanja, van 0-99 400). Zaključava samo red prezentacije (slajdovi i izvođenja se ne
+     * diraju, pa ni izvođenje u toku ne smeta) i ne menja {@code izmenjeno}: numerisanje cele liste ne sme da pomeri
+     * datume izmena.
+     */
+    public PrezentacijaInfo postaviVezbu(Long id, Integer vezba) {
+        Vezba.proveri(vezba);
+        Prezentacija p = prezentacijaRepository.findByIdForUpdate(id).orElseThrow(PrezentacijaService::nijePronadjena);
+        p.setVezba(vezba);
+        prezentacijaRepository.flush();
+        log.info("Broj vežbe prezentacije: id={}, vezba={}", id, vezba);
+        return info(p);
+    }
+
     public PrezentacijaDetails kreiraj(CreatePrezentacijaCmd cmd) {
         return kreiraj(cmd, null);
     }
@@ -124,6 +167,7 @@ public class PrezentacijaService {
         }
         String naziv = naziv(cmd.naziv());
         String opis = opis(cmd.opis());
+        Integer vezba = Vezba.proveri(cmd.vezba());
         Predmet predmet = predmetRepository.findById(cmd.predmetId())
                 .orElseThrow(() -> new SystemException("Predmet nije pronađen.", HttpStatus.NOT_FOUND));
 
@@ -137,6 +181,7 @@ public class PrezentacijaService {
         p.setDetaljiDozvoljeni(true);
         p.setTema(Objects.requireNonNullElse(cmd.tema(), Tema.NACRT));
         p.setSerija(serija);
+        p.setVezba(vezba);
         p.setKreirano(sada);
         p.setIzmenjeno(sada);
         p = prezentacijaRepository.save(p);
@@ -201,6 +246,7 @@ public class PrezentacijaService {
         kopija.setTelefonPrikaz(izvor.getTelefonPrikaz());
         kopija.setDetaljiDozvoljeni(izvor.isDetaljiDozvoljeni());
         kopija.setTema(izvor.getTema());
+        kopija.setVezba(izvor.getVezba());
         kopija.setKreirano(sada);
         kopija.setIzmenjeno(sada);
         kopija = prezentacijaRepository.save(kopija);
@@ -759,20 +805,26 @@ public class PrezentacijaService {
 
     private PrezentacijaInfo info(Prezentacija p) {
         Long id = p.getId();
+        long brojPitanja = slajdRepository.countByPrezentacijaIdAndTipIn(id, SA_RUNDAMA);
+        long brojZadataka = slajdRepository.countByPrezentacijaIdAndTip(id, TipSlajda.ZADATAK);
         return new PrezentacijaInfo(id, p.getNaziv(), p.getOpis(), predmet(p),
-                slajdRepository.countByPrezentacijaId(id),
-                slajdRepository.countByPrezentacijaIdAndTipIn(id, SA_RUNDAMA),
+                slajdRepository.countByPrezentacijaId(id), brojPitanja,
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
-                izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id), p.getTema());
+                izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id), p.getTema(), p.getVezba(),
+                VrstaPrezentacije.od(brojPitanja, brojZadataka), brojZadataka, p.getKreirano(),
+                izvodjenjeRepository.poslednjePustanje(id));
     }
 
     private PrezentacijaDetails details(Prezentacija p, List<Slajd> slajdovi) {
         long brojPitanja = slajdovi.stream().filter(s -> SA_RUNDAMA.contains(s.getTip())).count();
+        long brojZadataka = slajdovi.stream().filter(s -> s.getTip() == TipSlajda.ZADATAK).count();
         Map<Long, ZadatakSlajdaInfo> zadaciSlajdova = zadaci.za(p.getPredmet().getId(), slajdovi);
         return new PrezentacijaDetails(p.getId(), p.getNaziv(), p.getOpis(), predmet(p), slajdovi.size(), brojPitanja,
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
                 izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()), p.getTema(),
-                slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson, zadaciSlajdova.get(s.getId()))).toList());
+                slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson, zadaciSlajdova.get(s.getId()))).toList(),
+                p.getVezba(), VrstaPrezentacije.od(brojPitanja, brojZadataka), brojZadataka, p.getKreirano(),
+                izvodjenjeRepository.poslednjePustanje(p.getId()));
     }
 
     private Long aktivnoIzvodjenjeId(Long prezentacijaId) {
