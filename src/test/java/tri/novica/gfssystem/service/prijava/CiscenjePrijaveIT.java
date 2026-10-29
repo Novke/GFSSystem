@@ -355,6 +355,53 @@ class CiscenjePrijaveIT {
         assertTrue(studentRepository.findById(s.getId()).isPresent());
     }
 
+    long pushPretplata(Long uredjaj, Long sesija) {
+        String endpoint = "https://push.example.test/" + slucajan();
+        return ubaci("insert into push_pretplate (endpoint, endpoint_hes, p256dh, auth, studentski_uredjaj_id, nastavnicka_sesija_id, kreirano) "
+                        + "values (?, ?, 'p', 'a', ?, ?, ?)",
+                endpoint, TokenHash.od(endpoint), uredjaj, sesija, ts(sada.minusDays(400)));
+    }
+
+    long zvono(Student s, Duration staro) {
+        return ubaci("insert into studentska_obavestenja (student_id, vrsta, kljuc, naslov, tekst, putanja, oznaka, kreirano) "
+                        + "values (?, 'OCENE', ?, 'N', 'T', 'nalog', 'o', ?)",
+                s.getId(), "T9:" + slucajan(), ts(sada.minus(staro)));
+    }
+
+    @Test
+    void pushPretplateZvonoIPosleCasaPoSvomRoku() {
+        Student s = studenti.napravi("ana@example.test");
+        long naVazecem = pushPretplata(uredjaj(s, Duration.ofDays(-300), null), null);
+        long naOpozvanom31 = pushPretplata(uredjaj(s, Duration.ofDays(-300), Duration.ofDays(31)), null);
+        long naSesiji29 = pushPretplata(null, sesija(Duration.ofDays(29), null));
+        long naSesiji40 = pushPretplata(null, sesija(Duration.ofDays(40), null));
+        long zvono89 = zvono(s, Duration.ofDays(89));
+        long zvono91 = zvono(s, Duration.ofDays(91));
+        String naziv = "T9-" + slucajan().substring(0, 10);
+        jdbc.update("insert into grupe (naziv, godina_upisa) values (?, 2026)", naziv);
+        Long grupa = jdbc.queryForObject("select id from grupe where naziv = ?", Long.class, naziv);
+        try {
+            jdbc.update("insert into posle_casa_poslato (grupa_id, datum, dospeva, poslato) values (?, ?, ?, ?)",
+                    grupa, sada.toLocalDate().minusDays(59), ts(sada.minusDays(59)), ts(sada.minusDays(59)));
+            jdbc.update("insert into posle_casa_poslato (grupa_id, datum, dospeva, poslato) values (?, ?, ?, ?)",
+                    grupa, sada.toLocalDate().minusDays(61), ts(sada.minusDays(61)), ts(sada.minusDays(61)));
+
+            CiscenjePrijave.Obrisano o = ciscenje.ocisti();
+
+            assertTrue(postoji("push_pretplate", naVazecem));
+            assertFalse(postoji("push_pretplate", naOpozvanom31));
+            assertTrue(postoji("push_pretplate", naSesiji29));
+            assertFalse(postoji("push_pretplate", naSesiji40));
+            assertTrue(postoji("studentska_obavestenja", zvono89));
+            assertFalse(postoji("studentska_obavestenja", zvono91));
+            assertEquals(List.of(sada.toLocalDate().minusDays(59)), jdbc.queryForList(
+                    "select datum from posle_casa_poslato where grupa_id = ?", java.time.LocalDate.class, grupa));
+            assertTrue(o.pushPretplate() >= 2 && o.studentskaObavestenja() >= 1 && o.posleCasa() >= 1, o.toString());
+        } finally {
+            jdbc.update("delete from grupe where id = ?", grupa);
+        }
+    }
+
     @Test
     void ocistiVracaBrojObrisanihPoTabelama() {
         Student s = studenti.napravi("ana@example.test");

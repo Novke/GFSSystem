@@ -3,6 +3,7 @@ package tri.novica.gfssystem.service.prijava;
 import org.junit.jupiter.api.Test;
 import tri.novica.gfssystem.config.NastavnikSvojstva;
 import tri.novica.gfssystem.repository.prijava.NastavnickaSesijaRepository;
+import tri.novica.gfssystem.repository.push.PushPretplataRepository;
 import tri.novica.gfssystem.utility.TokenGenerator;
 
 import java.time.Clock;
@@ -18,7 +19,8 @@ class NastavnikSesijaServisNepodesenoTest {
     void potvrdiBezPodesavanjaNeGledaBazu() {
         NastavnickaSesijaRepository repo = mock(NastavnickaSesijaRepository.class);
         NastavnikSesijaServis servis = new NastavnikSesijaServis(new NastavnikSvojstva("", "", ""), repo,
-                mock(PokusajiServis.class), mock(TokenGenerator.class), Clock.systemDefaultZone());
+                mock(PushPretplataRepository.class), mock(PokusajiServis.class), mock(TokenGenerator.class),
+                Clock.systemDefaultZone());
         assertEquals(Optional.empty(), servis.potvrdi("A".repeat(32)));
         verifyNoInteractions(repo);
     }

@@ -15,6 +15,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.prijava.SpoljniIdentitetRepository;
 import tri.novica.gfssystem.repository.prijava.StudentskiUredjajRepository;
+import tri.novica.gfssystem.repository.push.PushPretplataRepository;
 import tri.novica.gfssystem.utility.IndeksUtil;
 
 import java.time.Clock;
@@ -37,6 +38,7 @@ public class StudentNalogServis {
     private final StudentRepository studenti;
     private final StudentskaPrijava prijava;
     private final StudentskiUredjajRepository uredjaji;
+    private final PushPretplataRepository pretplate;
     private final SpoljniIdentitetRepository identiteti;
     private final KodServis kodovi;
     private final ObavestenjeServis obavestenja;
@@ -124,6 +126,7 @@ public class StudentNalogServis {
         nadji(studentId);
         int veza = identiteti.obrisiZaStudenta(studentId);
         int uredjajaLti = uredjaji.opozoviPoNacinu(studentId, NacinPrijave.LTI, LocalDateTime.now(clock));
+        pretplate.obrisiZaOpozvaneUredjaje(studentId);
         log.info("Moodle veza studenta raskinuta sa kartice, student={}, veza={}, opozvanihUredjaja={}", studentId, veza, uredjajaLti);
     }
 

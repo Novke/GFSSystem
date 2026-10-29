@@ -16,6 +16,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.prijava.SpoljniIdentitetRepository;
 import tri.novica.gfssystem.repository.prijava.StudentskiUredjajRepository;
+import tri.novica.gfssystem.repository.push.PushPretplataRepository;
 import tri.novica.gfssystem.security.Kolacici;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -46,6 +47,7 @@ public class StudentskaPrijava {
     static final Duration PRODUZENJE_NAJCESCE = Duration.ofMinutes(10);
 
     private final StudentskiUredjajRepository uredjaji;
+    private final PushPretplataRepository pretplate;
     private final StudentRepository studenti;
     private final SpoljniIdentitetRepository identiteti;
     private final TokenGenerator tokenGenerator;
@@ -57,13 +59,15 @@ public class StudentskaPrijava {
      * {@code gfs.nalog.lti-trajanje} (ISO-8601, podrazumevano {@code PT12H}): uređaj iz Moodle-a često stoji na zajedničkom
      * računaru u učionici, pa se posle celog dana rada (klizno od poslednjeg korišćenja) ili jedne noći sam odjavljuje.
      */
-    public StudentskaPrijava(StudentskiUredjajRepository uredjaji, StudentRepository studenti,
-                             SpoljniIdentitetRepository identiteti, TokenGenerator tokenGenerator, MaskaMejla maska,
-                             Clock clock, @Value("${gfs.nalog.lti-trajanje:PT12H}") Duration ltiTrajanje) {
+    public StudentskaPrijava(StudentskiUredjajRepository uredjaji, PushPretplataRepository pretplate,
+                             StudentRepository studenti, SpoljniIdentitetRepository identiteti,
+                             TokenGenerator tokenGenerator, MaskaMejla maska, Clock clock,
+                             @Value("${gfs.nalog.lti-trajanje:PT12H}") Duration ltiTrajanje) {
         if (ltiTrajanje.isZero() || ltiTrajanje.isNegative() || ltiTrajanje.compareTo(TRAJANJE) > 0) {
             throw new IllegalStateException("gfs.nalog.lti-trajanje mora biti između 0 i 365 dana");
         }
         this.uredjaji = uredjaji;
+        this.pretplate = pretplate;
         this.studenti = studenti;
         this.identiteti = identiteti;
         this.tokenGenerator = tokenGenerator;
@@ -144,6 +148,7 @@ public class StudentskaPrijava {
         LocalDateTime sada = LocalDateTime.now(clock);
         int vazecih = uredjaji.findAllByStudentIdAndOpozvanIsNullAndIsticeAfter(studentId, sada).size();
         uredjaji.opozoviSve(studentId, sada);
+        pretplate.obrisiZaOpozvaneUredjaje(studentId);
         log.info("Odjava svih uređaja studenta, student={}, odjavljeno={}", studentId, vazecih);
         return vazecih;
     }
@@ -174,6 +179,7 @@ public class StudentskaPrijava {
         if (u.getOpozvan() == null) {
             u.setOpozvan(LocalDateTime.now(clock));
             uredjaji.save(u);
+            pretplate.obrisiZaUredjaj(u.getId());
             log.info("Uređaj studenta opozvan, uredjaj={}", u.getId());
         }
     }

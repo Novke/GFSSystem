@@ -261,7 +261,9 @@ public class ObavestenjeServis {
         o.setStudent(student);
         o.setPodaci(JSON.writeValueAsString(podaci));
         o.setKreirano(LocalDateTime.now(clock));
-        return obavestenja.save(o);
+        o = obavestenja.save(o);
+        dogadjaji.publishEvent(new NovoObavestenje(vrsta, null, 0, 0));
+        return o;
     }
 
     // ------------------------------------------------------------------ mejl nastavniku
@@ -335,6 +337,7 @@ public class ObavestenjeServis {
         o.setPodaci(JSON.writeValueAsString(podaci));
         o.setKreirano(LocalDateTime.now(clock));
         o = obavestenja.save(o);
+        dogadjaji.publishEvent(new NovoObavestenje(VrstaObavestenja.MNOGO_NAJAVA, t, broj, prag));
         log.info("Obaveštenje 'mnogo najava' napravljeno, obavestenje={}, stavka={}, datum={}, broj={}", o.getId(),
                 t.stavkaId(), t.datum(), broj);
         mejlNastavniku(VrstaObavestenja.MNOGO_NAJAVA, t.stavkaId() + ":" + t.datum(), "stavka " + t.stavkaId(),
