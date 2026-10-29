@@ -808,7 +808,7 @@ class ZadatakRundaDbTest {
         k(TipKomande.BROJ_VARIJANTI, 0);
         NastavnickoStanje svi = k(TipKomande.NIVO, 0);
         assertNull(svi.zadatak().nivoZaOtvaranje());
-        assertEquals(10, svi.zadatak().brojZaOtvaranje());
+        assertEquals(4, svi.zadatak().brojZaOtvaranje(), "bez nivoa: najviše kandidata jednog nivoa (izvlači se jedan)");
         k(TipKomande.NIVO, null);
         k(TipKomande.OTVORI_ZATVORI);
         ZadatakSnimak kaoSlajd = zadatakSnimak(trenutnaRunda());
@@ -816,16 +816,25 @@ class ZadatakRundaDbTest {
         sviNivoa(1, kaoSlajd);
     }
 
+    /** Bez nivoa na slajdu i u konzoli svi u rundi i dalje dobijaju isti nivo: izvlači se jedan od prisutnih nivoa. */
     @Test
-    void bezNivoaIzvlaciIzSvihNivoaKaoRanije() {
-        postaviNivoe();
+    void bezNivoaRundaDobijaJedanNasumicanNivo() {
+        postaviNivoe();   // pod sK: nivo 1 (A1, A2, B3, B4), 2 (A3-A6), 3 (B1, B2)
+        Map<Integer, Integer> kandidataPoNivou = Map.of(1, 4, 2, 4, 3, 2);
         k(TipKomande.IDI_NA, 0);
         k(TipKomande.BROJ_VARIJANTI, 0);
+        Set<Integer> izvuceniNivoi = new HashSet<>();
         k(TipKomande.OTVORI_ZATVORI);
-        ZadatakSnimak s = zadatakSnimak(trenutnaRunda());
-        assertNull(s.nivo());
-        assertEquals(10, s.varijante().size());
-        assertEquals(Set.of(1, 2, 3), new HashSet<>(s.varijante().stream().map(VarijantaSnimak::nivo).toList()));
+        for (int i = 0; i < 12; i++) {
+            ZadatakSnimak s = zadatakSnimak(trenutnaRunda());
+            assertNotNull(s.nivo(), "snimak nosi izvučeni nivo runde");
+            sviNivoa(s.nivo(), s);
+            assertEquals(kandidataPoNivou.get(s.nivo()), s.varijante().size(), "sve varijante izvučenog nivoa");
+            izvuceniNivoi.add(s.nivo());
+            k(TipKomande.OTVORI_ZATVORI);
+            k(TipKomande.PONOVI);
+        }
+        assertTrue(izvuceniNivoi.size() > 1, "nivo se izvlači pri svakom otvaranju: " + izvuceniNivoi);
     }
 
     /** Nalaz završne recenzije: varijanta prebačena u drugi nivo dok se runda otvara ne ulazi u rundu tog nivoa. */

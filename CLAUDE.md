@@ -295,8 +295,9 @@ aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the p
 - **Measure:** the last round of every slide counts (same rule as `StanjeService.bodovniOdgovori`); a PITANJE with a correct answer, or a ZADATAK
   for a participant whose assigned variant has fields (paper work never counts). A participant **owes** a round they answered, or one closed after
   they joined (an open round is owed only once answered). **An unanswered owed round is wrong.** ★: a correct PITANJE 1, a correct ZADATAK the
-  level of the assigned variant (snapshot without `nivo` = 2). Order: accuracy (exact fraction) desc, average answer time (`vremeMs` of answered
-  rounds) asc with no answer last, ★ desc, name; the same place for equal accuracy, average rounded to 100 ms and ★. Rows that owe nothing are left out.
+  level of the assigned variant (snapshot without `nivo` = 2). **Order (revision 2026-10-29, Novica): ★ desc, then average answer time (`vremeMs`
+  of answered rounds) asc with no answer last, then name; accuracy is shown, never ranked.** The same place for equal ★ and average rounded to
+  100 ms. Rows that owe nothing are left out. Every row carries `indeks` (student, canonical `GD5`; `null` for a guest and on the projector).
 - **Identity across runs:** `s:<studentId>` for logged-in students, `g:<normalized name>` for guests (lower case, no diacritics, `đ`->`d`, one
   space) and only inside one lecture; never across lectures. `IzvodjenjeService`/`StanjeService` keep the old per-run `rangLista` (points,
   takmičenje) unchanged.
@@ -307,13 +308,20 @@ aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the p
   `mesto = null`; guests never). `godina` is the school year (`SkolskaGodina.proveri`, 400 otherwise).
 - **Console and projector:** `UcesnikStanje` now carries `tacno`, `vremeMs`, `odgovor` (short preview by `KratakOdgovor`: option letters by `rb`,
   numbers with a decimal comma, text cut to 40 chars, Zadatak fields joined with ` · `) and `odgovorSakriven` for the current round (teacher only).
-  `NastavnickoStanje` gained `javniRangTacnosti` (top 10 without ids, `null` while hidden; before `TACAN` the current round is left out, like
-  `javnaRangLista`), `rangPrikaz` (`IZVODJENJE` | `PREDAVANJE` | `null`) and `imaRangPredavanja` (the lecture has another run with rounds).
+  `NastavnickoStanje` gained `javniRangTacnosti` (the first `rangBroj` rows, all up to `RangTacnostiService.RANG_PROJEKTOR_MAX` = 30 when
+  `null`; without ids and indeks, names short "Ime P." (`kratkoIme`; the full name where two short ones collide); `null` while hidden; before
+  `TACAN` the current round is left out, like `javnaRangLista`), `rangPrikaz` (`IZVODJENJE` | `PREDAVANJE` | `null`), `imaRangPredavanja` (the
+  lecture has another run with rounds) and `rangBroj` (last field). `RANG_BROJ` (`vrednost` 0 or `null` = all, 1-30, else 400) sets how many rows
+  the projector shows; the console sends the teacher's browser preference on load and on change (no DB, `RangPrikazRegistar`, cleared by `ZAVRSI`).
   `RANG_LISTA` (L) toggles the run rank in every run (in takmičenje the projector keeps the points list and the podium), `RANG_PREDAVANJA`
   (Shift+L) the lecture rank (409 `Predavanje nema druga izvođenja.` otherwise); the other key switches, the same key hides; `ZAVRSI` clears it.
   The projector choice lives only in memory (`RangPrikazRegistar`): after a backend restart a shown rank falls back to the run rank. Phones get
   nothing new: `javnaRangLista` stays `null` outside takmičenje.
-- Tests: `RangTacnostiTest` (pure rules), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
+- **Same level in a Zadatak round:** `ZadatakDodelaService.snimak` never mixes levels: without a level on the slide or in the console and with
+  candidates of several levels it draws one present level (the `Random` bean, each present level equally) and only its variants, and the snapshot
+  carries that `nivo`. `ZadaciSlajdova` warns (`NIVO_NIJE_IZABRAN`) on such a slide in the editor, console and MCP; the console's
+  `brojZaOtvaranje` is then the largest per-level count (upper bound).
+- Tests: `RangTacnostiTest` (pure rules, short names), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
   `TACAN`, student card, group, 404/400), plus the command tests in `IzvodjenjeServiceTest`.
 
 ## Banka zadataka (faza 1)

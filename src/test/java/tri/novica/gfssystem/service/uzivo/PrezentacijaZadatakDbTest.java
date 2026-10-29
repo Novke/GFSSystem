@@ -237,6 +237,20 @@ class PrezentacijaZadatakDbTest {
         assertEquals(4, z.brojVarijanti());
     }
 
+    /** Grupa sa varijantama više nivoa, a slajd bez nivoa: upozorenje da se nivo izvlači; sa nivoom ga nema. */
+    @Test
+    void mesovitiNivoiBezNivoaNaSlajduDajuUpozorenje() {
+        jdbc.update("update varijante set nivo = 1 where id = (select id from (select min(id) id from varijante "
+                + "where grupa_id = ? and status = 'AKTIVNA') x)", l);
+
+        SlajdDetails bez = service.dodajSlajd(nova("Zadaci"), zadatak(l, null, null), null);
+        assertEquals(List.of(ZadaciSlajdova.NIVO_NIJE_IZABRAN.formatted("★, ★★")), bez.zadatak().upozorenja());
+
+        SlajdDetails sa = service.dodajSlajd(nova("Zadaci 2"), new SlajdCmd(TipSlajda.ZADATAK, null, null, null, null, false,
+                null, null, null, new ZadatakSlajda(l, null, null, 2)), null);
+        assertEquals(List.of(), sa.zadatak().upozorenja());
+    }
+
     @Test
     void upozorenjaIduRedomIzDogovora() {
         // P je list bez aktivnih; isključimo ga: "Tema je isključena." pre "Grupa nema aktivnih varijanti"

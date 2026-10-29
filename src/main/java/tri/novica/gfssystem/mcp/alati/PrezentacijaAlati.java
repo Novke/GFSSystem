@@ -121,7 +121,7 @@ public class PrezentacijaAlati {
             + "vodiču `pitanja`; drugi tip je greška `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`, a "
             + "prezentacija koja se upravo izvodi se ne menja. ZADATAK: `{tip: \"ZADATAK\", zadatak: {grupaId, vremeSekunde?, "
             + "brojVarijanti?, nivo?}}`; grupa iz banke istog predmeta, namena PREDAVANJE; prazno `brojVarijanti` = sve aktivne, "
-            + "`nivo` 1-3 = svi studenti dobijaju varijante tog nivoa, prazno = svi nivoi (Novica oba menja i u konzoli). Pročitaj `slajd.zadatak.upozorenja` i javi ih Novici. Vraća `{slajd, link}` "
+            + "`nivo` 1-3 = svi studenti dobijaju varijante tog nivoa, prazno = bez izbora: pri svakom otvaranju server izvlači jedan nivo, isti za sve (Novica oba menja i u konzoli); uvek zadaj nivo kad grupa ima varijante više nivoa. Pročitaj `slajd.zadatak.upozorenja` i javi ih Novici. Vraća `{slajd, link}` "
             + "(sažetak slajda kao u `prezentacija`). " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false,
                     openWorldHint = false))

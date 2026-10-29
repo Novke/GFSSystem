@@ -17,6 +17,7 @@ import tri.novica.gfssystem.service.cas.CekiranjeService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
@@ -127,7 +128,8 @@ public class StanjeService {
         RangPrikaz rangPrikaz = iz.isRangListaPrikazana() ? rangPrikazi.prikaz(iz.getId()) : null;
         List<RangTacnostiStavka> javniRangTacnosti = rangPrikaz == null
                 || (rangPrikaz == RangPrikaz.IZVODJENJE && iz.isTakmicenje()) ? null
-                : rangTacnosti.zaProjektor(iz, rangPrikaz, tacanVidljiv(iz) ? null : iz.getTrenutnaRundaId());
+                : rangTacnosti.zaProjektor(iz, rangPrikaz, tacanVidljiv(iz) ? null : iz.getTrenutnaRundaId(),
+                rangPrikazi.broj(iz.getId()));
 
         return new NastavnickoStanje(info(p), iz.getVerzija(), clock.millis(), iz.getPrikaz(), iz.getKorak(),
                 TokIzvodjenja.brojKoraka(trenutni), indeks, sl.size(),
@@ -144,7 +146,7 @@ public class StanjeService {
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
                 iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr),
                 brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size(), javniRangTacnosti, rangPrikaz,
-                rangTacnosti.imaRangPredavanja(iz));
+                rangTacnosti.imaRangPredavanja(iz), rangPrikazi.broj(iz.getId()));
     }
 
     /** Kratak prikaz odgovora u trenutnoj rundi ({@link KratakOdgovor}); {@code null} bez odgovora. */
@@ -211,10 +213,13 @@ public class StanjeService {
 
     /**
      * Koliko će se varijanti izvući: {@code min(N, M)}, N iz konzole ili sa slajda ({@code null} = sve), M = kandidati
-     * važećeg nivoa (iz konzole ili sa slajda, {@link TokIzvodjenja#nivo}).
+     * važećeg nivoa (iz konzole ili sa slajda, {@link TokIzvodjenja#nivo}). Bez nivoa runda izvlači jedan nasumičan nivo
+     * ({@link ZadatakDodelaService#snimak}), pa je M najveći broj kandidata jednog nivoa (gornja granica).
      */
     private static int brojZaOtvaranje(Izvodjenje iz, Slajd s, ZadatakSlajdaInfo info) {
-        int m = info == null ? 0 : info.brojAktivnih(TokIzvodjenja.nivo(iz, s));
+        Integer nivo = TokIzvodjenja.nivo(iz, s);
+        int m = info == null ? 0 : nivo != null ? info.brojAktivnih(nivo)
+                : IntStream.rangeClosed(1, 3).map(info::brojAktivnih).max().orElse(0);
         Integer n = TokIzvodjenja.brojVarijanti(iz, s);
         return n == null ? m : Math.min(n, m);
     }

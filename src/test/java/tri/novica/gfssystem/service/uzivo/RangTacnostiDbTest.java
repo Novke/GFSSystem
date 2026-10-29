@@ -159,7 +159,7 @@ class RangTacnostiDbTest {
         NastavnickoStanje st = stanjeService.nastavnicko(i1.id());
         assertEquals(RangPrikaz.IZVODJENJE, st.rangPrikaz());
         assertNull(st.javnaRangLista());
-        assertEquals("Ana Anić", st.javniRangTacnosti().getFirst().ime());
+        assertEquals("Ana A.", st.javniRangTacnosti().getFirst().ime(), "projektor: kratko ime");
         assertNull(st.javniRangTacnosti().getFirst().studentId());
         assertNull(stanjeService.javno(i1.id()).rangLista());
         assertFalse(st.imaRangPredavanja()); // još nema drugog izvođenja
@@ -185,20 +185,31 @@ class RangTacnostiDbTest {
         st = stanjeService.nastavnicko(i2.id());
         assertEquals(RangPrikaz.PREDAVANJE, st.rangPrikaz());
         Map<String, RangTacnostiStavka> projektor = poImenu(st.javniRangTacnosti());
-        assertEquals(2, projektor.get("Ana Anić").dugovanih());
-        assertNull(projektor.get("Ceca Cecić")); // jedino pitanje joj je trenutno
+        assertEquals(2, projektor.get("Ana A.").dugovanih());
+        assertNull(projektor.get("Ceca C.")); // jedino pitanje joj je trenutno
         k(i2.id(), TipKomande.TACAN);
         projektor = poImenu(stanjeService.nastavnicko(i2.id()).javniRangTacnosti());
-        assertEquals(3, projektor.get("Ana Anić").dugovanih());
-        assertEquals(1, projektor.get("Ceca Cecić").tacnih());
+        assertEquals(3, projektor.get("Ana A.").dugovanih());
+        assertEquals(1, projektor.get("Ceca C.").tacnih());
+        izvodjenjeService.komanda(i2.id(), new KomandaCmd(TipKomande.RANG_BROJ, 1));
+        st = stanjeService.nastavnicko(i2.id());
+        assertEquals(1, st.rangBroj());
+        assertEquals(1, st.javniRangTacnosti().size(), "na tabli samo prvih N");
+        assertNull(st.javniRangTacnosti().getFirst().indeks());
         k(i2.id(), TipKomande.ZAVRSI);
 
-        // rang predavanja: zbir oba izvođenja, gost spojen po imenu (Ceca 1/1, Ana 2/3, Bojan 1/2, gost 1/3)
+        // vremena odgovora (prosek posle ★ odlučuje): Ceca 2 s, Bojan 5 s, gost 8 s
+        jdbc.update("update odgovori set vreme_ms = 2000 where ucesnik_id = ?", u2Ceca);
+        jdbc.update("update odgovori set vreme_ms = 5000 where ucesnik_id = ?", u1Bojan);
+        jdbc.update("update odgovori set vreme_ms = 8000 where ucesnik_id in (?, ?)", u1Mile, u2Mile);
+        jdbc.update("update odgovori set vreme_ms = 9000 where ucesnik_id in (?, ?)", u1Ana, u2Ana);
+
+        // rang predavanja: zbir oba izvođenja, gost spojen po imenu (Ana ★2, pa ★1 po proseku: Ceca, Bojan, gost)
         RangPredavanja pred = rangService.zaPredavanje(predavanjeId);
         assertEquals(2, pred.izvodjenja().size());
         Map<String, RangTacnostiStavka> zbir = poImenu(pred.rang());
         assertEquals(List.of(1, 2, 3, 4), pred.rang().stream().map(RangTacnostiStavka::mesto).toList());
-        assertEquals(List.of(ceca, ana, bojan), pred.rang().subList(0, 3).stream().map(RangTacnostiStavka::studentId).toList());
+        assertEquals(List.of(ana, ceca, bojan), pred.rang().subList(0, 3).stream().map(RangTacnostiStavka::studentId).toList());
         assertEquals(2, zbir.get("Ana Anić").tacnih());
         assertEquals(3, zbir.get("Ana Anić").dugovanih());
         assertEquals(2, zbir.get("Ana Anić").izvodjenja());
@@ -208,13 +219,13 @@ class RangTacnostiDbTest {
         assertEquals(3, gost.dugovanih());
         assertEquals(1, gost.tacnih());
 
-        // kartica studenta: jedan čas, mesto 2 od 4
+        // kartica studenta: jedan čas, mesto 1 od 4 (najviše ★)
         UzivoStudenta s = rangService.zaStudenta(ana, null, null);
         assertEquals(1, s.casovi().size());
         UzivoStudentaRed red = s.casovi().getFirst();
         assertEquals(predavanjeId, red.predavanjeId());
         assertEquals("4. Sile", red.naslov());
-        assertEquals(2, red.stavka().mesto());
+        assertEquals(1, red.stavka().mesto());
         assertEquals(4, red.ukupnoURangu());
         assertEquals(2, s.ukupno().tacnih());
         assertEquals(1, s.ukupno().casova());
@@ -224,7 +235,7 @@ class RangTacnostiDbTest {
         // grupa: samo studenti grupe, bez gostiju; svi su učestvovali
         UzivoGrupe g = rangService.zaGrupu(grupaId, predmet.getId(), SkolskaGodina.za(LocalDate.now()));
         assertEquals(1, g.brojCasova());
-        assertEquals(List.of("Ceca Cecić", "Ana Anić", "Bojan Bojić"),
+        assertEquals(List.of("Ana Anić", "Ceca Cecić", "Bojan Bojić"),
                 g.rang().stream().map(RangTacnostiStavka::ime).toList());
         assertEquals(1, g.rang().getFirst().casova());
     }

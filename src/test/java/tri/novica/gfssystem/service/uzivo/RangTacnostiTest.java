@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.service.uzivo;
 
 import org.junit.jupiter.api.Test;
+import tri.novica.gfssystem.entity.Student;
 import tri.novica.gfssystem.dto.uzivo.RangTacnostiStavka;
 import tri.novica.gfssystem.service.uzivo.RangTacnosti.*;
 
@@ -98,20 +99,34 @@ class RangTacnostiTest {
     }
 
     @Test
-    void redosledTacnostPaVremePaZvezdiceIDeljenoMesto() {
+    void redosledZvezdicePaVremeIDeljenoMesto() {
         List<Kandidat<String>> k = List.of(
-                new Kandidat<>("a", "Ana", zbir(2, 3, 3, 9000, 2)),     // 67 %, 3 s
-                new Kandidat<>("b", "Bojan", zbir(3, 3, 3, 30000, 3)),  // 100 %, 10 s
-                new Kandidat<>("c", "Cvele", zbir(2, 3, 3, 6000, 2)),   // 67 %, 2 s
-                new Kandidat<>("d", "Dara", zbir(2, 3, 2, 4000, 2)),    // 67 %, 2 s (isto mesto kao Cvele)
-                new Kandidat<>("e", "Ema", zbir(2, 3, 0, 0, 2)),        // 67 %, bez vremena (teorijski), iza
+                new Kandidat<>("a", "Ana", zbir(2, 3, 3, 9000, 4)),     // ★4, 3 s: ispred bržih sa manje ★
+                new Kandidat<>("b", "Bojan", zbir(3, 3, 3, 30000, 5)),  // ★5, 10 s
+                new Kandidat<>("c", "Cvele", zbir(3, 3, 3, 6000, 3)),   // ★3, 2 s (tačnost 100 % ne pomaže)
+                new Kandidat<>("d", "Dara", zbir(2, 3, 2, 4000, 3)),    // ★3, 2 s (isto mesto kao Cvele)
+                new Kandidat<>("e", "Ema", zbir(2, 3, 0, 0, 3)),        // ★3, bez vremena (teorijski), iza
                 new Kandidat<>("f", "Fića", zbir(0, 0, 0, 0, 0)));      // ništa nije dugovao: izostaje
         List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(k, (x, mesto) -> new RangTacnostiStavka(mesto, null, null,
                 x.ime(), false, x.zbir().tacnih(), x.zbir().dugovanih(), x.zbir().odgovorenih(), x.zbir().procenat(),
-                x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null));
-        assertEquals(List.of("Bojan", "Cvele", "Dara", "Ana", "Ema"), rang.stream().map(RangTacnostiStavka::ime).toList());
-        assertEquals(List.of(1, 2, 2, 4, 5), rang.stream().map(RangTacnostiStavka::mesto).toList());
+                x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null, null));
+        assertEquals(List.of("Bojan", "Ana", "Cvele", "Dara", "Ema"), rang.stream().map(RangTacnostiStavka::ime).toList());
+        assertEquals(List.of(1, 2, 3, 3, 5), rang.stream().map(RangTacnostiStavka::mesto).toList());
         assertEquals(67, rang.get(1).procenat());
+    }
+
+    @Test
+    void kratkaImenaZaProjektor() {
+        Student s = new Student();
+        s.setIme(" Novica ");
+        s.setPrezime("trifković");
+        assertEquals("Novica T.", RangTacnostiService.kratkoIme(s));
+        s.setPrezime(null);
+        assertEquals("Novica", RangTacnostiService.kratkoIme(s));
+        assertEquals("Ana Š.", RangTacnostiService.kratkoIme("Ana Marija  šarić"));
+        assertEquals("Ana", RangTacnostiService.kratkoIme(" Ana "));
+        assertEquals(List.of("Ana Kovač", "Ana Kostić", "Bojan P."), RangTacnostiService.kratkaImena(
+                List.of("Ana K.", "Ana K.", "Bojan P."), List.of("Ana Kovač", "Ana Kostić", "Bojan Petrov")));
     }
 
     @Test

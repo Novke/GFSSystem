@@ -22,10 +22,11 @@ import java.util.List;
  * {@code brojOcekivanih}: imenilac "predalo x od y" (spec studentskog dela 4.7): neizbačeni učesnici, plus, za izvođenje
  * sa predavanja, studenti čekirani na tom predavanju (na času) koji još nisu učesnici niti su izbačeni iz ovog izvođenja.
  * {@code brojCekiranih}: broj studenata na času predavanja izvođenja, {@code null} kad izvođenje nema predavanje.
- * {@code javniRangTacnosti}: rang tačnosti za projektor (top 10, bez id-jeva, trenutna runda tek posle TACAN), samo dok je
+ * {@code javniRangTacnosti}: rang tačnosti za projektor (prvih {@code rangBroj} ili najviše 30, bez id-jeva, imena kao "Ana K.", trenutna runda tek posle TACAN), samo dok je
  * rang prikazan i nije rang takmičenja (u takmičenju {@code L} ostaje {@code javnaRangLista}); {@code rangPrikaz}: koji
  * rang je prikazan ({@code null} kad nijedan); {@code imaRangPredavanja}: izvođenje je sa predavanja koje ima još
- * izvođenja sa rundama (tab "Predavanje" u konzoli, {@code Shift+L}).
+ * izvođenja sa rundama (tab "Predavanje" u konzoli, {@code Shift+L}); {@code rangBroj}: koliko prvih redova ranga tačnosti
+ * ide na projektor ({@code RANG_BROJ}), {@code null} = svi.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
@@ -36,7 +37,7 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema, long pocetakMs,
                                 NastavnickiZadatak zadatak, int brojOcekivanih, Integer brojCekiranih,
                                 List<RangTacnostiStavka> javniRangTacnosti, RangPrikaz rangPrikaz,
-                                boolean imaRangPredavanja) {
+                                boolean imaRangPredavanja, Integer rangBroj) {
 
     /** Oblik pre ranga tačnosti: bez ranga na projektoru, bez ranga predavanja. */
     public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
@@ -50,7 +51,7 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
         this(izvodjenje, verzija, serverVremeMs, prikaz, korak, brojStavki, indeks, brojSlajdova, trenutniSlajd, sledeciSlajd,
                 faza, runda, rezultatiPrikazani, tacanPrikazan, rangListaPrikazana, ekran, qrPrikazan, telefonPrikaz,
                 detaljiDozvoljeni, takmicenje, rezultat, brojOdgovora, brojPovezanih, ucesnici, rangLista, javniRezultat,
-                javnaRangLista, tema, pocetakMs, zadatak, brojOcekivanih, brojCekiranih, null, null, false);
+                javnaRangLista, tema, pocetakMs, zadatak, brojOcekivanih, brojCekiranih, null, null, false, null);
     }
 
     /** Oblik pre čekiranja: {@code brojOcekivanih} = broj učesnika, {@code brojCekiranih} = {@code null}. */

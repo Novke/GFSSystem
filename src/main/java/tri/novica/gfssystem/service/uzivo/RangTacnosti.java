@@ -15,8 +15,8 @@ import java.util.function.BiFunction;
  * <b>Duguje</b> je učesnik koji je odgovorio, ili koji nije a ušao je pre zatvaranja runde; otvorena runda se ne duguje
  * dok se ne zatvori. Propušteno pitanje je netačno. ★: tačno PITANJE 1, tačan ZADATAK nivo varijante (bez nivoa 2).
  *
- * <p><b>Redosled:</b> tačnost (tačno poređenje razlomaka) opadajuće, prosečno vreme rastuće (bez odgovora iza), više ★,
- * pa ime. Isto mesto dele redovi sa istom tačnošću, istim prosekom na 100 ms i istim ★.
+ * <p><b>Redosled:</b> više ★, pa prosečno vreme rastuće (bez odgovora iza), pa ime. Tačnost je samo podatak u redu (ne
+ * rangira). Isto mesto dele redovi sa istim ★ i istim prosekom na 100 ms.
  */
 public final class RangTacnosti {
 
@@ -142,7 +142,7 @@ public final class RangTacnosti {
 
     /**
      * Rangira kandidate sa bar jednim dugovanim pitanjem (ostali se izostavljaju) i pravi stavke; mesto se deli kad su
-     * tačnost, prosek na 100 ms i ★ isti.
+     * ★ i prosek na 100 ms isti.
      */
     public static <K> List<RangTacnostiStavka> rangiraj(List<Kandidat<K>> kandidati,
                                                         BiFunction<Kandidat<K>, Integer, RangTacnostiStavka> stavka) {
@@ -164,20 +164,13 @@ public final class RangTacnosti {
 
     private static <K> Comparator<Kandidat<K>> redosled() {
         return (a, b) -> {
-            int c = uporediTacnost(b.zbir(), a.zbir());
+            int c = Integer.compare(b.zbir().zvezdice, a.zbir().zvezdice);
             if (c != 0) return c;
             c = Comparator.<Long>nullsLast(Comparator.naturalOrder()).compare(prosek100(a.zbir()), prosek100(b.zbir()));
-            if (c != 0) return c;
-            c = Integer.compare(b.zbir().zvezdice, a.zbir().zvezdice);
             if (c != 0) return c;
             c = String.CASE_INSENSITIVE_ORDER.compare(a.ime() == null ? "" : a.ime(), b.ime() == null ? "" : b.ime());
             return c != 0 ? c : String.valueOf(a.kljuc()).compareTo(String.valueOf(b.kljuc()));
         };
-    }
-
-    /** {@code a.tacnih/a.dugovanih} prema {@code b.tacnih/b.dugovanih}, bez zaokruživanja. */
-    private static int uporediTacnost(Zbir a, Zbir b) {
-        return Long.compare((long) a.tacnih * b.dugovanih, (long) b.tacnih * a.dugovanih);
     }
 
     private static Long prosek100(Zbir z) {
@@ -186,7 +179,7 @@ public final class RangTacnosti {
     }
 
     private static boolean isto(Zbir a, Zbir b) {
-        return uporediTacnost(a, b) == 0 && Objects.equals(prosek100(a), prosek100(b)) && a.zvezdice == b.zvezdice;
+        return a.zvezdice == b.zvezdice && Objects.equals(prosek100(a), prosek100(b));
     }
 
     /** Ime gosta za spajanje u okviru predavanja: bez razmaka na krajevima, mala slova, bez dijakritika, jedan razmak. */

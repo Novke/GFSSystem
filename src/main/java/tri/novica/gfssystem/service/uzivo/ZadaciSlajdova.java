@@ -35,6 +35,9 @@ public class ZadaciSlajdova {
     static final String ISKLJUCENA_TEMA = "Tema je isključena.";
     static final String BEZ_AKTIVNIH = "Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa.";
     static final String ISKLJUCENE_PODGRUPE = "Isključene podgrupe se ne izvlače: ";
+    /** {@code %s} = prisutni nivoi kao zvezdice, npr. {@code ★, ★★}. */
+    static final String NIVO_NIJE_IZABRAN = "Nivo nije izabran, a grupa ima varijante nivoa %s: pri svakom otvaranju "
+            + "izvlači se jedan nivo nasumično (svi u rundi dobiju isti), pa je zadatak nekad lakši, nekad teži. Izaberi nivo.";
     /** {@code %s} = nivo kao zvezdice ({@code Nivo.oznaka}). */
     static final String BEZ_AKTIVNIH_NIVOA = "Nema aktivnih varijanti nivoa %s; odobri nacrte ili izaberi drugi nivo.";
     private static final List<Integer> BEZ_KANDIDATA = List.of(0, 0, 0);
@@ -100,6 +103,14 @@ public class ZadaciSlajdova {
             upozorenja.add(BEZ_AKTIVNIH);
         } else if (opis.brojKandidata(nivo) == 0) {
             upozorenja.add(BEZ_AKTIVNIH_NIVOA.formatted(Nivo.oznaka(nivo)));
+        } else if (nivo == null) {
+            List<String> nivoi = new ArrayList<>();
+            for (int i = 0; i < opis.poNivou().size(); i++) {
+                if (opis.poNivou().get(i) > 0) nivoi.add(Nivo.oznaka(i + 1));
+            }
+            if (nivoi.size() > 1) {
+                upozorenja.add(NIVO_NIJE_IZABRAN.formatted(String.join(", ", nivoi)));
+            }
         }
         if (!opis.iskljucenePodgrupe().isEmpty()) {
             upozorenja.add(ISKLJUCENE_PODGRUPE
