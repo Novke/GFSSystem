@@ -1,6 +1,7 @@
 package tri.novica.gfssystem.service.cas;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -121,13 +122,20 @@ public class CekiranjeService {
 
     /**
      * Stanje časa: poslednje čekiranje studenta u poslednjih {@link #NA_CASU} (završeno predavanje ili ne) i, dok
-     * predavanje nije završeno, najnovije aktivno izvođenje tog predavanja iz koga student nije izbačen.
+     * predavanje nije završeno, najnovije aktivno izvođenje tog predavanja iz koga student nije izbačen. Kad student nije
+     * na nezavršenom predavanju, {@code uToku} je najnovije današnje predavanje njegove grupe koje je u toku, a na kome
+     * još nije čekiran ({@link PredavanjeRepository#uTokuZaStudenta}).
      */
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public CasStanje stanje(long studentId) {
-        return cekiranjeRepository.findPoslednjeNaCasu(studentId, sada().minus(NA_CASU))
+        CasStanje s = cekiranjeRepository.findPoslednjeNaCasu(studentId, sada().minus(NA_CASU))
                 .map(c -> stanje(c, studentId))
                 .orElse(CasStanje.NIJE_NA_CASU);
+        if (s.predavanje() != null && !s.predavanje().zavrseno()) return s;
+        return predavanjeRepository.uTokuZaStudenta(studentId, sada().toLocalDate(), PageRequest.of(0, 1)).stream()
+                .findFirst()
+                .map(p -> s.saUToku(new CasUToku(p.getPredmet().getNaziv(), p.getTema())))
+                .orElse(s);
     }
 
     /** Najnovije aktivno izvođenje predavanja iz koga student nije izbačen. */

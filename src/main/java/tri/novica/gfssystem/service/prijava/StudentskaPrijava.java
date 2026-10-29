@@ -166,7 +166,8 @@ public class StudentskaPrijava {
         return new StudentJaInfo(s.getIndeks(), s.getIme(), s.getPrezime(), maska.maska(s.getEmail()),
                 uredjaji(studentId, trenutniUredjajId), !identiteti.findAllByStudentId(studentId).isEmpty(), s.getGodina(),
                 s.getGrupa() == null ? null : s.getGrupa().getNaziv(),
-                s.getGrupa() == null ? null : s.getGrupa().getGodinaUpisa());
+                s.getGrupa() == null ? null : s.getGrupa().getGodinaUpisa(),
+                s.getGrupa() == null ? null : s.getGrupa().getWaLink());
     }
 
     private void opozovi(StudentskiUredjaj u) {

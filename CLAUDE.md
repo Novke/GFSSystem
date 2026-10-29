@@ -325,7 +325,10 @@ aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the p
   `RANG_LISTA` (L) toggles the run rank in every run (in takmičenje the projector keeps the points list and the podium), `RANG_PREDAVANJA`
   (Shift+L) the lecture rank (409 `Predavanje nema druga izvođenja.` otherwise); the other key switches, the same key hides; `ZAVRSI` clears it.
   The projector choice lives only in memory (`RangPrikazRegistar`): after a backend restart a shown rank falls back to the run rank. Phones get
-  nothing new: `javnaRangLista` stays `null` outside takmičenje.
+  nothing new for others: `javnaRangLista` stays `null` outside takmičenje. **Own accuracy on the phone** (branch `feature/portal-pocetna`):
+  `LicnoStanje.tacnih` and `dugovanih` (last two fields) are the participant's own `Zbir` by the same rule (`StanjeService.javnaTacnost`, one
+  extra query for `zadatak_dodele` only when the run has a ZADATAK round), with the current round left out until `TACAN` (like `poeni`), in
+  every run, takmičenje or not; never anyone else's numbers.
 - Tests: `RangTacnostiTest` (pure rules), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
   `TACAN`, student card, group, 404/400), plus the command tests in `IzvodjenjeServiceTest`.
 
@@ -870,6 +873,12 @@ Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy rep
   `GET /predavanja/{id}/cekiranje` ADMIN. Messages: `QR je istekao. Skeniraj ponovo sa table.` (410), `Čekiranje za ovaj čas je završeno.` (410),
   `Nisi u grupi ovog predavanja. Javi se nastavniku.` (403), `Čekiranje je isteklo. Skeniraj QR ponovo.` (410). Cleanup: `CiscenjePrijave` deletes
   keys expired or used more than 1 h ago.
+- **Lecture in progress (Početna/Čas on the phone, branch `feature/portal-pocetna`):** `CasStanje.uToku` (`CasUToku {predmet, tema}`, last field,
+  no id) is filled only when the student is not on an unfinished lecture: the newest lecture of **today**, not finished, with a group that is the
+  student's own or (older generation) one where the student already has an activity or a check-in on a lecture of the same subject and group
+  (the timetable rule), and where the student is **not** checked in (`PredavanjeRepository.uTokuZaStudenta`). A finished check-in plus a new
+  lecture of the group the same day gives both `predavanje` (finished) and `uToku`. The phone shows "Predavanje je u toku, skeniraj QR".
+  `StudentJaInfo.waLink` (last field) carries the group's WhatsApp link (`GET /public/nalog/ja`, canonical only, `null` without one).
 - **Tests:** `V17MigracijaDbTest`, `CekiranjeTokenTest`, `CekiranjeServiceDbTest` (incl. parallel double tap), `PredavanjeAktivnostiDbTest`
   (lock wait), `CekiranjeUzivoDbTest` (expelled, scored run, `brojOcekivanih`), `CasPublicRestIT` (whole chain, cookie, no secret in JSON); shared
   JDBC fixtures `service/cas/CasPodaci` (times always from Java, never MySQL `now()`).
