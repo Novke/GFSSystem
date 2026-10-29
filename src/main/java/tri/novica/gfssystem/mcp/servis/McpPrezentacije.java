@@ -19,6 +19,7 @@ import tri.novica.gfssystem.mcp.McpZahtev;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 import tri.novica.gfssystem.utility.Serija;
+import tri.novica.gfssystem.utility.Vezba;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -88,11 +89,19 @@ public class McpPrezentacije {
 
     // ---------------------------------------------------------------- upis
 
-    /** Klodova nova prezentacija (serija upisa, podrazumevana podešavanja); jedno pravljenje iz budžeta pre upisa. */
+    /**
+     * Klodova nova prezentacija (serija upisa, podrazumevana podešavanja); jedno pravljenje iz budžeta pre upisa. Bez
+     * {@code vezba} broj se uzima iz naziva ({@link Vezba#izNaziva}).
+     */
     public PrezentacijaInfo napraviPrezentaciju(CreatePrezentacijaCmd cmd, String serija) {
         Serija.proveri(serija);
         if (cmd == null) {
             throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        if (cmd.vezba() == null) {
+            // Klod najčešće ne navede broj; naziv "Vežbe N ..." ga daje kao i popuna u V19
+            cmd = new CreatePrezentacijaCmd(cmd.predmetId(), cmd.naziv(), cmd.opis(), cmd.tema(),
+                    Vezba.izNaziva(cmd.naziv()));
         }
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         return info(prezentacijaService.kreiraj(cmd, serija));
@@ -140,7 +149,8 @@ public class McpPrezentacije {
     private static PrezentacijaInfo info(PrezentacijaDetails d) {
         return new PrezentacijaInfo(d.id(), d.naziv(), d.opis(), d.predmet(), d.brojSlajdova(), d.brojPitanja(),
                 d.izmenjeno(), d.takmicenje(), d.telefonPrikaz(), d.detaljiDozvoljeni(), d.brojIzvodjenja(),
-                d.aktivnoIzvodjenjeId(), d.tema());
+                d.aktivnoIzvodjenjeId(), d.tema(), d.vezba(), d.vrsta(), d.brojZadataka(), d.kreirano(),
+                d.poslednjePustanje());
     }
 
     /** Id iz argumenta alata; bez njega 400 {@code Neispravan parametar: <ime>.} (kao REST za pogrešan parametar). */

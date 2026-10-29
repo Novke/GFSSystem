@@ -25,6 +25,18 @@ public class PrezentacijaRest {
         return prezentacijaService.lista(predmetId);
     }
 
+    /**
+     * Izbor za pokretanje: prezentacije predmeta po redosledu vežbi, kad ih je grupa puštala i predlog sledećih (sa
+     * {@code grupaId} po grupi, bez nje sledeće posle {@code posle}).
+     */
+    @GetMapping("/izbor")
+    @ResponseStatus(HttpStatus.OK)
+    public IzborPrezentacija izbor(@RequestParam(required = false) Long predmetId,
+                                   @RequestParam(required = false) Long grupaId,
+                                   @RequestParam(required = false) Long posle) {
+        return prezentacijaService.izbor(predmetId, grupaId, posle);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PrezentacijaDetails kreiraj(@RequestBody CreatePrezentacijaCmd cmd) {
@@ -41,6 +53,13 @@ public class PrezentacijaRest {
     @ResponseStatus(HttpStatus.OK)
     public PrezentacijaDetails izmeni(@PathVariable Long id, @RequestBody UpdatePrezentacijaCmd cmd) {
         return prezentacijaService.izmeni(id, cmd);
+    }
+
+    /** Broj vežbe (0-99) ili {@code null}; ključ {@code vezba} je obavezan, višak polja i decimalni broj su 400. */
+    @PatchMapping("/{id}/vezba")
+    @ResponseStatus(HttpStatus.OK)
+    public PrezentacijaInfo vezba(@PathVariable Long id, @RequestBody VezbaCmd cmd) {
+        return prezentacijaService.postaviVezbu(id, cmd.getVezba());
     }
 
     @DeleteMapping("/{id}")
