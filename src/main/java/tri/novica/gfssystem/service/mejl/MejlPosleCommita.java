@@ -28,6 +28,14 @@ public class MejlPosleCommita {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Async("mejlIzvrsilac")
     public void posalji(MejlPoruka poruka) {
+        posaljiSaPokusajima(poruka);
+    }
+
+    /**
+     * Isto slanje (do 3 pokušaja), sinhrono u niti pozivaoca: za izvršioce koji poruke primaju direktno
+     * ({@code mejlStudentimaIzvrsilac}). Bez {@code @Async}, pa poziv kroz proksi ne menja nit.
+     */
+    public void posaljiSaPokusajima(MejlPoruka poruka) {
         if (!mejl.dostupan()) {
             log.warn("Mejl nije poslat: slanje nije podešeno");
             return;

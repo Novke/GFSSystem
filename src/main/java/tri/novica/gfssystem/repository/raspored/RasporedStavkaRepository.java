@@ -54,4 +54,11 @@ public interface RasporedStavkaRepository extends JpaRepository<RasporedStavka, 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from RasporedStavka s join fetch s.raspored join fetch s.predmet join fetch s.grupa where s.id = :id")
     Optional<RasporedStavka> findByIdForUpdate(@Param("id") Long id);
+
+    /** Stavke drugih perioda ({@code r.id <> :bez}) čiji se period preklapa sa {@code [od, doDatuma]} (provera preklapanja). */
+    @Query("""
+            select s from RasporedStavka s join fetch s.raspored r join fetch s.predmet join fetch s.grupa
+            where r.id <> :bez and r.vaziOd <= :doDatuma and r.vaziDo >= :od""")
+    List<RasporedStavka> uDrugimPeriodima(@Param("bez") Long bez, @Param("od") LocalDate od,
+                                          @Param("doDatuma") LocalDate doDatuma);
 }

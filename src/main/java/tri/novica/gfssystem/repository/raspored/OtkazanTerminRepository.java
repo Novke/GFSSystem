@@ -22,4 +22,8 @@ public interface OtkazanTerminRepository extends JpaRepository<OtkazanTermin, Lo
     @Query("select o from OtkazanTermin o where o.stavka.id in :ids and o.datum between :od and :doDatuma")
     List<OtkazanTermin> uProzoru(@Param("ids") Collection<Long> ids, @Param("od") LocalDate od,
                                  @Param("doDatuma") LocalDate doDatuma);
+
+    /** Otkazivanja perioda od {@code od} (uključeno), sa stavkom, po datumu: upozorenje u formi i brojanje izgubljenih. */
+    @Query("select o from OtkazanTermin o join fetch o.stavka s where s.raspored.id = :rasporedId and o.datum >= :od order by o.datum")
+    List<OtkazanTermin> odDatumaZaRaspored(@Param("rasporedId") Long rasporedId, @Param("od") LocalDate od);
 }

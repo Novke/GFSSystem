@@ -50,6 +50,7 @@ public final class PristupMatrica {
 
     private static final HttpMethod GET = HttpMethod.GET;
     private static final HttpMethod POST = HttpMethod.POST;
+    private static final HttpMethod PUT = HttpMethod.PUT;
 
     private static final List<Pravilo> ANONIMNO = List.of(
             // samostalni upis studenta (QR)
@@ -91,6 +92,21 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/nalog/casovi"),
             new Pravilo(POST, "/public/nalog/casovi/najavi"),
             new Pravilo(POST, "/public/nalog/casovi/povuci"),
+            // nalog studenta, faze 2 i 3 (spec studentskog dela 12.7): predmeti, istorija, vežbanje, pregled, ocena; svaki
+            // servis ograničava po studentu iz sesije i njegovim grupama (tuđe = 404)
+            new Pravilo(GET, "/public/nalog/predmeti"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prisustvo"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/vezbanje"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/moji-zadaci"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prezentacije"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/ocena"),
+            new Pravilo(GET, "/public/nalog/prezentacije/{id}"),
+            new Pravilo(POST, "/public/nalog/vezbanje"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/provera"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/resenje"),
+            // podešavanja naloga (tab "Ja"): mejl o otkazanom času
+            new Pravilo(GET, "/public/nalog/podesavanja"),
+            new Pravilo(PUT, "/public/nalog/podesavanja"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

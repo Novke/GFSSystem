@@ -164,7 +164,9 @@ public class StudentskaPrijava {
     public StudentJaInfo ja(Long studentId, Long trenutniUredjajId) {
         Student s = studenti.findById(studentId).orElseThrow(() -> new SystemException("Potrebna je prijava.", 401));
         return new StudentJaInfo(s.getIndeks(), s.getIme(), s.getPrezime(), maska.maska(s.getEmail()),
-                uredjaji(studentId, trenutniUredjajId), !identiteti.findAllByStudentId(studentId).isEmpty(), s.getGodina());
+                uredjaji(studentId, trenutniUredjajId), !identiteti.findAllByStudentId(studentId).isEmpty(), s.getGodina(),
+                s.getGrupa() == null ? null : s.getGrupa().getNaziv(),
+                s.getGrupa() == null ? null : s.getGrupa().getGodinaUpisa());
     }
 
     private void opozovi(StudentskiUredjaj u) {

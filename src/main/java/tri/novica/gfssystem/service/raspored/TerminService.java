@@ -4,8 +4,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.raspored.NajavaInfo;
 import tri.novica.gfssystem.dto.raspored.PromenaTerminaOdgovor;
 import tri.novica.gfssystem.dto.raspored.TerminCmd;
@@ -30,7 +34,9 @@ import java.util.*;
 /**
  * Termini za nastavnika (spec najave odsustva, odeljci 3.2 i 6): pregled termina u prozoru sa najavama (imena i razlozi,
  * samo ovde), otkazivanje i vraćanje termina. Otkazivanje i vraćanje zaključavaju red stavke (isto kao najava), rešavaju
- * obaveštenje {@code MNOGO_NAJAVA} termina i javljaju studentima kroz {@link ObavestavanjeStudenata} (posle commit-a).
+ * obaveštenje {@code MNOGO_NAJAVA} termina i javljaju studentima kroz {@link ObavestavanjeStudenata}: promena je jedna
+ * transakcija ({@code TransactionTemplate}), a poruke se predaju tek posle njenog commit-a, pa odgovor nosi tačan broj
+ * poruka stavljenih u red ({@code obavesteno}) i onih koje nisu ({@code neposlato}).
  * Ponovljeno otkazivanje menja samo napomenu i ne šalje ništa; vraćanje neotkazanog termina ne radi ništa.
  */
 @Service
@@ -52,6 +58,7 @@ public class TerminService {
     private final StudentRepository studenti;
     private final ObavestenjeServis obavestenja;
     private final ObavestavanjeStudenata obavestavanje;
+    private final PlatformTransactionManager transakcije;
     private final Clock clock;
 
     /** Jedan izračunat termin sa izuzecima, najavama i predavanjem (zajedničko za nastavnički pregled i početnu). */
@@ -110,54 +117,91 @@ public class TerminService {
     }
 
     /**
-     * Otkazuje budući termin (napomena do {@value #MAX_NAPOMENA} znakova, ne mora): rešava {@code MNOGO_NAJAVA} termina i
-     * javlja svakom studentu za koga stavka važi. Ponovljeno: samo nova napomena, bez poruka. 404 {@value #NE_POSTOJI},
-     * 409 {@value #POCEO}.
+     * Otkazuje budući termin (napomena do {@value #MAX_NAPOMENA} znakova, ne mora): rešava {@code MNOGO_NAJAVA} termina i,
+     * posle commit-a, javlja svakom studentu za koga stavka važi (osim kad je {@code posaljiMejl == false}). Ponovljeno:
+     * samo nova napomena, bez poruka. 404 {@value #NE_POSTOJI}, 409 {@value #POCEO}.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public PromenaTerminaOdgovor otkazi(TerminCmd cmd) {
         String napomena;
         try {
-            napomena = Termini.ocisti(cmd.napomena(), MAX_NAPOMENA);
+            napomena = Termini.ocisti(cmd == null ? null : cmd.napomena(), MAX_NAPOMENA);
         } catch (IllegalArgumentException e) {
             throw new SystemException("Napomena može imati najviše " + MAX_NAPOMENA + " znakova.", HttpStatus.BAD_REQUEST);
         }
-        RasporedStavka s = zakljucaj(cmd);
-        LocalDateTime sada = LocalDateTime.now(clock);
-        int obavesteno = 0;
-        Optional<OtkazanTermin> postojece = otkazani.findByStavkaIdAndDatum(s.getId(), cmd.datum());
-        if (postojece.isPresent()) {
-            postojece.get().setNapomena(napomena);
-        } else {
-            OtkazanTermin o = new OtkazanTermin();
-            o.setStavka(s);
-            o.setDatum(cmd.datum());
-            o.setNapomena(napomena);
-            o.setOtkazano(sada);
-            otkazani.save(o);
-            TerminOpis opis = TerminOpis.od(s, cmd.datum());
-            obavestenja.resiZaTermin(opis);
-            obavesteno = obavestavanje.obavesti(primaoci(s, cmd.datum()),
-                    new PromenaTermina(PromenaTermina.Vrsta.OTKAZAN, opis, napomena));
-            log.info("Termin otkazan, stavka={}, datum={}, obavesteno={}", s.getId(), cmd.datum(), obavesteno);
-        }
-        otkazani.flush();
-        return new PromenaTerminaOdgovor(jedan(s, cmd.datum(), sada), obavesteno);
+        Priprema p = uTransakciji(() -> {
+            RasporedStavka s = zakljucaj(cmd);
+            LocalDateTime sada = LocalDateTime.now(clock);
+            PromenaTermina promena = null;
+            List<Student> primaoci = List.of();
+            Optional<OtkazanTermin> postojece = otkazani.findByStavkaIdAndDatum(s.getId(), cmd.datum());
+            if (postojece.isPresent()) {
+                postojece.get().setNapomena(napomena);
+            } else {
+                OtkazanTermin o = new OtkazanTermin();
+                o.setStavka(s);
+                o.setDatum(cmd.datum());
+                o.setNapomena(napomena);
+                o.setOtkazano(sada);
+                otkazani.save(o);
+                TerminOpis opis = TerminOpis.od(s, cmd.datum());
+                obavestenja.resiZaTermin(opis);
+                promena = new PromenaTermina(PromenaTermina.Vrsta.OTKAZAN, opis, napomena);
+                primaoci = saljiMejl(cmd) ? primaoci(s, cmd.datum()) : List.of();
+            }
+            otkazani.flush();
+            return new Priprema(jedan(s, cmd.datum(), sada), promena, primaoci);
+        });
+        return odgovor(p, "otkazan");
     }
 
-    /** Vraća otkazan budući termin i javlja "čas se ipak održava"; neotkazan: ništa. 404 i 409 kao {@link #otkazi}. */
+    /**
+     * Vraća otkazan budući termin i, posle commit-a, javlja "čas se ipak održava" (osim kad je {@code posaljiMejl ==
+     * false}); neotkazan: ništa. 404 i 409 kao {@link #otkazi}.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public PromenaTerminaOdgovor vrati(TerminCmd cmd) {
-        RasporedStavka s = zakljucaj(cmd);
-        LocalDateTime sada = LocalDateTime.now(clock);
-        int obavesteno = 0;
-        Optional<OtkazanTermin> postojece = otkazani.findByStavkaIdAndDatum(s.getId(), cmd.datum());
-        if (postojece.isPresent()) {
-            otkazani.delete(postojece.get());
-            otkazani.flush();
-            obavesteno = obavestavanje.obavesti(primaoci(s, cmd.datum()),
-                    new PromenaTermina(PromenaTermina.Vrsta.VRACEN, TerminOpis.od(s, cmd.datum()), null));
-            log.info("Termin vraćen, stavka={}, datum={}, obavesteno={}", s.getId(), cmd.datum(), obavesteno);
+        Priprema p = uTransakciji(() -> {
+            RasporedStavka s = zakljucaj(cmd);
+            LocalDateTime sada = LocalDateTime.now(clock);
+            PromenaTermina promena = null;
+            List<Student> primaoci = List.of();
+            Optional<OtkazanTermin> postojece = otkazani.findByStavkaIdAndDatum(s.getId(), cmd.datum());
+            if (postojece.isPresent()) {
+                otkazani.delete(postojece.get());
+                otkazani.flush();
+                promena = new PromenaTermina(PromenaTermina.Vrsta.VRACEN, TerminOpis.od(s, cmd.datum()), null);
+                primaoci = saljiMejl(cmd) ? primaoci(s, cmd.datum()) : List.of();
+            }
+            return new Priprema(jedan(s, cmd.datum(), sada), promena, primaoci);
+        });
+        return odgovor(p, "vraćen");
+    }
+
+    /** Rezultat transakcije promene: termin posle promene, promena ({@code null} = bez promene) i primaoci poruke. */
+    private record Priprema(TerminInfo termin, PromenaTermina promena, List<Student> primaoci) {
+    }
+
+    /** Posle commit-a: poruke studentima (tačan broj stavljenih u red) i odgovor. */
+    private PromenaTerminaOdgovor odgovor(Priprema p, String sta) {
+        ObavestavanjeStudenata.Ishod ishod = p.promena() == null || p.primaoci().isEmpty()
+                ? ObavestavanjeStudenata.Ishod.NISTA
+                : obavestavanje.obavesti(p.primaoci(), p.promena());
+        if (p.promena() != null) {
+            log.info("Termin {}, stavka={}, datum={}, obavesteno={}, neposlato={}", sta, p.termin().stavkaId(),
+                    p.termin().datum(), ishod.poslato(), ishod.neposlato());
         }
-        return new PromenaTerminaOdgovor(jedan(s, cmd.datum(), sada), obavesteno);
+        return new PromenaTerminaOdgovor(p.termin(), ishod.poslato(), ishod.neposlato());
+    }
+
+    private <T> T uTransakciji(java.util.function.Supplier<T> rad) {
+        TransactionTemplate t = new TransactionTemplate(transakcije);
+        t.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        return t.execute(st -> rad.get());
+    }
+
+    private static boolean saljiMejl(TerminCmd cmd) {
+        return cmd.posaljiMejl() == null || cmd.posaljiMejl();
     }
 
     private RasporedStavka zakljucaj(TerminCmd cmd) {
