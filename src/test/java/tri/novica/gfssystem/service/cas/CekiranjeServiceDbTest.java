@@ -321,9 +321,12 @@ class CekiranjeServiceDbTest {
         assertEquals("Druga", s.izvodjenje().naziv());
         // skeniranje u toku izvođenja odmah vraća izvođenje
         assertEquals(novo.kod(), cekiranje.skeniraj(token(predavanje), Optional.of(bora), null).stanje().izvodjenje().kod());
-        // student koji nije čekiran nije na času
+        // student koji nije čekiran nije na času, ali vidi da je predavanje njegove grupe u toku
         Long ceca = d.student(grupa, "Ceca");
-        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(ceca));
+        CasStanje c = cekiranje.stanje(ceca);
+        assertNull(c.predavanje());
+        assertNull(c.izvodjenje());
+        assertEquals("Čas " + d.oznaka, c.uToku().predmet());
     }
 
     @Test
@@ -352,8 +355,57 @@ class CekiranjeServiceDbTest {
         cekiranje.skeniraj(token(predavanje), Optional.of(ana), null);
         assertNotNull(cekiranje.stanje(ana).predavanje());
         predavanjeService.skloniPrisutnog(predavanje, ana);
-        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(ana));
+        CasStanje s = cekiranje.stanje(ana);
+        assertNull(s.predavanje());
+        assertNotNull(s.uToku(), "sklonjen sa predavanja koje traje: telefon opet nudi skeniranje");
         assertEquals(0, d.brojCekiranja(predavanje));
+    }
+
+    // ---------------------------------------------------------------- predavanje u toku (Početna i Čas)
+
+    @Test
+    void uTokuDokNijeCekiran() {
+        CasStanje s = cekiranje.stanje(ana);
+        assertNull(s.predavanje());
+        assertNull(s.cekiranU());
+        assertEquals("Čas " + d.oznaka, s.uToku().predmet());
+        cekiranje.skeniraj(token(predavanje), Optional.of(ana), null);
+        s = cekiranje.stanje(ana);
+        assertEquals(predavanje, s.predavanje().id());
+        assertNull(s.uToku(), "čekiran je na času, nema poziva na skeniranje");
+    }
+
+    @Test
+    void uTokuSamoDanasnjeNezavrseno() {
+        d.zavrsi(predavanje);
+        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(ana));
+        // juče započeto i nezavršeno nije "u toku"
+        d.predavanje(grupa, LocalDate.now(clock).minusDays(1));
+        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(ana));
+    }
+
+    @Test
+    void uTokuPosleZavrsenogCasaKadPocneSledeci() {
+        cekiranje.skeniraj(token(predavanje), Optional.of(ana), null);
+        d.zavrsi(predavanje);
+        assertNull(cekiranje.stanje(ana).uToku());
+        d.predavanje(grupa, LocalDate.now(clock));
+        CasStanje s = cekiranje.stanje(ana);
+        assertTrue(s.predavanje().zavrseno());
+        assertNotNull(s.uToku());
+    }
+
+    @Test
+    void uTokuZaStarijuGeneracijuSamoKadSlusaSaGrupom() {
+        Long starija = d.grupa(2025);
+        Long ceca = d.student(starija, "Ceca");
+        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(ceca), "starija generacija bez veze sa predmetom i grupom");
+        Long ranije = d.predavanje(grupa, LocalDate.now(clock).minusDays(7));
+        d.aktivnost(ranije, ceca, "PRISUSTVO");
+        assertEquals("Čas " + d.oznaka, cekiranje.stanje(ceca).uToku().predmet());
+        // mlađa generacija ne vidi predavanje starije grupe
+        Long mladja = d.grupa(2027);
+        assertEquals(CasStanje.NIJE_NA_CASU, cekiranje.stanje(d.student(mladja, "Dule")));
     }
 
     @Test

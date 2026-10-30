@@ -142,6 +142,11 @@ class NalogPortalRestIT {
         mvc.perform(get("/public/nalog/ja").cookie(studentskiKolacic(ana)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.grupa").value("C-" + d.oznaka + "-1"))
-                .andExpect(jsonPath("$.generacija").value(2026));
+                .andExpect(jsonPath("$.generacija").value(2026))
+                .andExpect(jsonPath("$.waLink").value(org.hamcrest.Matchers.nullValue()));
+        jdbc.update("update grupe set wa_link = ? where id = ?", "https://chat.whatsapp.com/AbCdEf1234567890", grupa);
+        mvc.perform(get("/public/nalog/ja").cookie(studentskiKolacic(ana)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waLink").value("https://chat.whatsapp.com/AbCdEf1234567890"));
     }
 }

@@ -11,7 +11,7 @@ import java.time.*;
  * nedelji i od toga da li je čas počeo, pa testovi biraju trenutak (daleko u budućnosti, da se ne sudare sa drugim podacima).
  */
 @TestConfiguration(proxyBeanMethods = false)
-class RasporedSatConfig {
+public class RasporedSatConfig {
 
     @Bean
     @Primary
@@ -20,11 +20,11 @@ class RasporedSatConfig {
     }
 
     /** Sat koji test pomera ručno, u podrazumevanoj zoni JVM-a (kao {@code Clock.systemDefaultZone()}). */
-    static final class Sat extends Clock {
+    public static final class Sat extends Clock {
         private volatile Instant sada = Instant.now();
         private final ZoneId zona = ZoneId.systemDefault();
 
-        void postavi(LocalDateTime lokalno) {
+        public void postavi(LocalDateTime lokalno) {
             sada = lokalno.atZone(zona).toInstant();
         }
 

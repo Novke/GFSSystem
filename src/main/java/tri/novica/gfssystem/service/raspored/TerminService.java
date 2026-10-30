@@ -12,6 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tri.novica.gfssystem.dto.raspored.NajavaInfo;
 import tri.novica.gfssystem.dto.raspored.PromenaTerminaOdgovor;
+import tri.novica.gfssystem.entity.push.VrstaStudentskogObavestenja;
+import tri.novica.gfssystem.service.push.PushTekstovi;
+import tri.novica.gfssystem.service.push.StudentskaObavestenja;
 import tri.novica.gfssystem.dto.raspored.TerminCmd;
 import tri.novica.gfssystem.dto.raspored.TerminInfo;
 import tri.novica.gfssystem.entity.Student;
@@ -58,6 +61,7 @@ public class TerminService {
     private final StudentRepository studenti;
     private final ObavestenjeServis obavestenja;
     private final ObavestavanjeStudenata obavestavanje;
+    private final StudentskaObavestenja zvono;
     private final PlatformTransactionManager transakcije;
     private final Clock clock;
 
@@ -146,8 +150,9 @@ public class TerminService {
                 otkazani.save(o);
                 TerminOpis opis = TerminOpis.od(s, cmd.datum());
                 obavestenja.resiZaTermin(opis);
-                promena = new PromenaTermina(PromenaTermina.Vrsta.OTKAZAN, opis, napomena);
-                primaoci = saljiMejl(cmd) ? primaoci(s, cmd.datum()) : List.of();
+                promena = new PromenaTermina(PromenaTermina.Vrsta.OTKAZAN, opis, napomena,
+                        "OTKAZAN:" + s.getId() + ":" + cmd.datum() + ":" + o.getId());
+                primaoci = primaociSaZvonom(s, cmd, promena, VrstaStudentskogObavestenja.OTKAZAN_CAS);
             }
             otkazani.flush();
             return new Priprema(jedan(s, cmd.datum(), sada), promena, primaoci);
@@ -168,10 +173,12 @@ public class TerminService {
             List<Student> primaoci = List.of();
             Optional<OtkazanTermin> postojece = otkazani.findByStavkaIdAndDatum(s.getId(), cmd.datum());
             if (postojece.isPresent()) {
+                Long otkazanId = postojece.get().getId();
                 otkazani.delete(postojece.get());
                 otkazani.flush();
-                promena = new PromenaTermina(PromenaTermina.Vrsta.VRACEN, TerminOpis.od(s, cmd.datum()), null);
-                primaoci = saljiMejl(cmd) ? primaoci(s, cmd.datum()) : List.of();
+                promena = new PromenaTermina(PromenaTermina.Vrsta.VRACEN, TerminOpis.od(s, cmd.datum()), null,
+                        "ODRZAVA_SE:" + s.getId() + ":" + cmd.datum() + ":" + otkazanId);
+                primaoci = primaociSaZvonom(s, cmd, promena, VrstaStudentskogObavestenja.ODRZAVA_SE);
             }
             return new Priprema(jedan(s, cmd.datum(), sada), promena, primaoci);
         });
@@ -191,7 +198,18 @@ public class TerminService {
             log.info("Termin {}, stavka={}, datum={}, obavesteno={}, neposlato={}", sta, p.termin().stavkaId(),
                     p.termin().datum(), ishod.poslato(), ishod.neposlato());
         }
-        return new PromenaTerminaOdgovor(p.termin(), ishod.poslato(), ishod.neposlato());
+        return new PromenaTerminaOdgovor(p.termin(), ishod.poslato(), ishod.neposlato(), ishod.pushPoslato());
+    }
+
+    /**
+     * Red zvona za svakog studenta za koga stavka važi (uvek, i kad je slanje isključeno: zvono je istina o času), u
+     * transakciji promene; vraća primaoce mejla i push-a (prazno kad je {@code posaljiMejl == false}).
+     */
+    private List<Student> primaociSaZvonom(RasporedStavka s, TerminCmd cmd, PromenaTermina promena,
+                                           VrstaStudentskogObavestenja vrsta) {
+        List<Student> svi = primaoci(s, cmd.datum());
+        zvono.upisi(svi.stream().map(Student::getId).toList(), vrsta, promena.kljuc(), PushTekstovi.promena(promena));
+        return saljiMejl(cmd) ? svi : List.of();
     }
 
     private <T> T uTransakciji(java.util.function.Supplier<T> rad) {

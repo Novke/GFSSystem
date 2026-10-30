@@ -409,7 +409,7 @@ public class KodServis {
     /**
      * Isto za bravu zadatog (logičkog) imena i čekanja (npr. ukupni brojač mejlova nastavniku); {@code oznaka} je samo za log.
      */
-    boolean uzmiBravu(String logickoIme, int cekanjeS, String oznaka) {
+    public boolean uzmiBravu(String logickoIme, int cekanjeS, String oznaka) {
         String brava = imeBrave(logickoIme);
         Integer dobijena = jdbc.queryForObject("SELECT GET_LOCK(?, ?)", Integer.class, brava, cekanjeS);
         if (dobijena == null || dobijena != 1) {

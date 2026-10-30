@@ -472,7 +472,7 @@ public class StanjeService {
     /** Ono što lično stanje traži od celog izvođenja, izračunato jednom (i za {@link #licnaZaSve}). */
     private record LicniPodaci(Map<Long, Integer> poeni, Map<Long, Integer> mesto, Long rundaId,
                                Map<Long, Odgovor> odgovorRunde, boolean tacan, ZadatakRunda zadatak,
-                               Map<Long, Long> dodele) {
+                               Map<Long, Long> dodele, Map<Long, RangTacnosti.Zbir> tacnost) {
     }
 
     private LicniPodaci licniPodaci(Podaci p) {
@@ -491,7 +491,32 @@ public class StanjeService {
             p.odgovoriRunde(saOdgovorima.getId()).forEach(o -> odgovorRunde.putIfAbsent(o.getUcesnik().getId(), o));
         }
         return new LicniPodaci(RangLista.poeniPoUcesniku(bodovni), mesto, r == null ? null : r.getId(), odgovorRunde,
-                tacanVidljiv(iz), zr, zr == null ? Map.of() : p.dodeleRunde());
+                tacanVidljiv(iz), zr, zr == null ? Map.of() : p.dodeleRunde(), javnaTacnost(p));
+    }
+
+    /**
+     * Tačnost svakog učesnika za njegov telefon, po pravilu ranga tačnosti ({@link RangTacnosti#poUcesniku}); trenutna
+     * runda se ne računa dok tačan odgovor nije prikazan (kao {@link #javniBodovniOdgovori}). Dodele svih rundi traži
+     * jedan upit, samo kad izvođenje ima ZADATAK rundu (propušten zadatak se duguje samo uz dodelu).
+     */
+    private Map<Long, RangTacnosti.Zbir> javnaTacnost(Podaci p) {
+        if (p.runde().isEmpty()) return Map.of();
+        List<RangTacnosti.Runda> runde = p.runde().stream().map(r -> RangTacnostiService.runda(r, snimak(r))).toList();
+        Map<Long, Map<Long, Long>> dodele = new HashMap<>();
+        if (runde.stream().anyMatch(rr -> rr.varijante() != null)) {
+            for (Object[] red : dodelaRepository.paroviIzvodjenja(p.iz().getId())) {
+                dodele.computeIfAbsent(((Number) red[0]).longValue(), k -> new HashMap<>())
+                        .put(((Number) red[1]).longValue(), ((Number) red[2]).longValue());
+            }
+        }
+        List<RangTacnosti.Clan> clanovi = p.ucesnici().stream()
+                .map(u -> new RangTacnosti.Clan(u.getId(), u.getKreirano())).toList();
+        List<RangTacnosti.Odg> odgovori = p.odgovori().stream()
+                .map(o -> new RangTacnosti.Odg(o.getRunda().getId(), o.getUcesnik().getId(), o.getTacno(), o.getVremeMs(),
+                        o.getVarijantaId()))
+                .toList();
+        Long izuzeta = tacanVidljiv(p.iz()) ? null : p.iz().getTrenutnaRundaId();
+        return RangTacnosti.poUcesniku(runde, clanovi, odgovori, dodele, izuzeta);
     }
 
     private LicnoStanje licno(Podaci p, Long ucesnikId, LicniPodaci lp) {
@@ -515,9 +540,10 @@ public class StanjeService {
             odgovor = new LicniOdgovor(lp.rundaId(), o != null, prikazi ? o.getTacno() : null,
                     prikazi ? o.getPoeni() : null);
         }
+        RangTacnosti.Zbir tacnost = lp.tacnost().get(u.getId());
         return new LicnoStanje(iz.getVerzija(), u.getId(), u.getIme(), lp.poeni().getOrDefault(u.getId(), 0),
                 iz.isTakmicenje() ? lp.mesto().get(u.getId()) : null, brojUcesnika, false, odgovor,
-                licniZadatak(iz, u, lp));
+                licniZadatak(iz, u, lp), tacnost == null ? 0 : tacnost.tacnih(), tacnost == null ? 0 : tacnost.dugovanih());
     }
 
     // ---------------------------------------------------------------- lista i rezultati

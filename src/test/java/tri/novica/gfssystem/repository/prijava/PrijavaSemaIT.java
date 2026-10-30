@@ -445,7 +445,7 @@ class PrijavaSemaIT {
     void vrstePokusajaSuIzPlana() {
         assertEquals(List.of("NASTAVNIK_GRESKA_IP", "KOD_SLANJE_IP", "KOD_SLANJE_STUDENT", "KOD_GRESKA_IP", "POMOC_IP",
                         "POMOC_INDEKS", "KOD_SA_KARTICE", "KOD_DIKTIRAN", "MEJL_NASTAVNIKU", "MEJL_NASTAVNIKU_UKUPNO",
-                        "VEZBANJE_IZVLACENJE"),
+                        "VEZBANJE_IZVLACENJE", "PUSH_PRETPLATA", "PUSH_PROBA"),
                 java.util.Arrays.stream(VrstaPokusaja.values()).map(Enum::name).toList());
     }
 

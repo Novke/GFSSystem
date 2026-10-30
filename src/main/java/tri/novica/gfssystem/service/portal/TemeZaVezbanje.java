@@ -48,6 +48,8 @@ public class TemeZaVezbanje {
 
     static final String NIJE_ZA_PREDAVANJA = "Tip nije u banci za predavanja.";
     static final String NEMA_GRUPE = "Grupa ne postoji.";
+    /** Koliko posle kraja poslednjeg izvođenja sa grupom ide zbirno obaveštenje "posle časa". */
+    public static final java.time.Duration POSLE_CASA_ZA = java.time.Duration.ofMinutes(30);
 
     private final OtvorenaTemaRepository otvoreneRepository;
     private final PrikazaniSlajdoviRepository prikazaniRepository;
@@ -66,6 +68,7 @@ public class TemeZaVezbanje {
     public int krajIzvodjenja(Izvodjenje iz) {
         if (iz.getGrupa() == null) return 0;
         Long grupaId = iz.getGrupa().getId();
+        zakaziPosleCasa(iz);
         Set<Long> listovi = new LinkedHashSet<>();
         for (PitanjeRunda r : rundaRepository.findAllByIzvodjenjeIdOrderByOtvorenoAscIdAsc(iz.getId())) {
             SnimakRunde sn;
@@ -88,6 +91,21 @@ public class TemeZaVezbanje {
             log.info("Otvoreno za vežbanje posle izvođenja: izvodjenje={}, grupa={}, listova={}", iz.getId(), grupaId, listovi.size());
         }
         return upisano;
+    }
+
+    /**
+     * "Posle časa" (spec aplikacije 6.4): slanje za grupu i dan izvođenja (datum početka) dospeva {@link #POSLE_CASA_ZA}
+     * posle kraja; kraj kasnijeg izvođenja sa istom grupom istog dana ga pomera, a već obrađeno se ne dira. Šalje
+     * {@code service.push.PosleCasaPosao}.
+     */
+    private void zakaziPosleCasa(Izvodjenje iz) {
+        LocalDateTime kraj = iz.getKraj() == null ? sada() : iz.getKraj();
+        LocalDateTime pocetak = iz.getPocetak() == null ? kraj : iz.getPocetak();
+        jdbc.update("""
+                INSERT INTO posle_casa_poslato (grupa_id, datum, dospeva) VALUES (?, ?, ?) AS novo
+                ON DUPLICATE KEY UPDATE dospeva = IF(posle_casa_poslato.poslato IS NULL,
+                    GREATEST(posle_casa_poslato.dospeva, novo.dospeva), posle_casa_poslato.dospeva)""",
+                iz.getGrupa().getId(), pocetak.toLocalDate(), kraj.plus(POSLE_CASA_ZA));
     }
 
     /** Konzola stala na slajd izvođenja: red u {@code prikazani_slajdovi} "ako ne postoji" (samo izvođenje sa grupom). */
