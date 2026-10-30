@@ -39,6 +39,8 @@ public class PushPosiljalac {
 
     public static final int MAX_GRESAKA = 5;
     static final Duration VAPID_TRAJANJE = Duration.ofHours(12);
+    private static final Set<String> REZERVISANI_TLD = Set.of("test", "example", "invalid", "localhost", "local");
+    private static final Set<String> REZERVISANI_DOMENI = Set.of("example.com", "example.net", "example.org");
     private static final Pattern MEJL = Pattern.compile("^[^@\\s,;<>\"]+@[^@\\s,;<>\"]+\\.[^@\\s,;<>\"]+$");
 
     /** Jedna poruka za jednu pretplatu, spremna za red. */
@@ -69,11 +71,13 @@ public class PushPosiljalac {
     }
 
     /**
-     * VAPID {@code sub}: {@code mailto:} adresa nastavnika ({@code gfs.nastavnik.mejl}), a bez nje adresa prvog
-     * {@code gfs.front.url} (bez završne {@code /}).
+     * VAPID {@code sub}: {@code mailto:} adresa nastavnika ({@code gfs.nastavnik.mejl}), a bez nje (ili kad je njen domen
+     * rezervisan, {@link #rezervisanDomen}) adresa prvog {@code gfs.front.url} (bez završne {@code /}). Apple
+     * ({@code web.push.apple.com}) odbija JWT sa {@code mailto:} na rezervisanom domenu: 403 {@code BadJwtToken} za svaku
+     * poruku (stejdžing ima {@code nastavnik@example.test}).
      */
     static String kontakt(String mejl, String frontUrl) {
-        if (mejl != null && MEJL.matcher(mejl.strip()).matches()) {
+        if (mejl != null && MEJL.matcher(mejl.strip()).matches() && !rezervisanDomen(mejl.strip())) {
             return "mailto:" + mejl.strip();
         }
         String prvi = frontUrl == null ? "" : frontUrl.split(",")[0].strip();
@@ -81,6 +85,16 @@ public class PushPosiljalac {
             prvi = prvi.substring(0, prvi.length() - 1);
         }
         return prvi;
+    }
+
+    /** Domen adrese je rezervisan za primere i testove (RFC 2606, RFC 6761): {@code .test}, {@code .example}, {@code example.com} ... */
+    static boolean rezervisanDomen(String mejl) {
+        String domen = mejl.substring(mejl.lastIndexOf('@') + 1).toLowerCase(Locale.ROOT).replaceAll("\\.+$", "");
+        String tld = domen.substring(domen.lastIndexOf('.') + 1);
+        if (REZERVISANI_TLD.contains(tld)) {
+            return true;
+        }
+        return REZERVISANI_DOMENI.stream().anyMatch(d -> domen.equals(d) || domen.endsWith("." + d));
     }
 
     /**

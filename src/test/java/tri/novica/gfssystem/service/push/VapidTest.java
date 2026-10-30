@@ -64,8 +64,19 @@ class VapidTest {
 
     @Test
     void kontaktIzMejlaIliFronta() {
-        assertEquals("mailto:novica@example.com", PushPosiljalac.kontakt(" novica@example.com ", "https://gfs.trif.rs"));
+        assertEquals("mailto:novica@gmail.com", PushPosiljalac.kontakt(" novica@gmail.com ", "https://gfs.trif.rs"));
         assertEquals("https://gfs.trif.rs", PushPosiljalac.kontakt("", "https://gfs.trif.rs/, http://localhost:4200"));
         assertEquals("https://gfs.trif.rs", PushPosiljalac.kontakt("nije mejl", "https://gfs.trif.rs"));
+    }
+
+    /** Apple odbija {@code mailto:} na rezervisanom domenu (403 BadJwtToken), pa tada ide adresa fronta. */
+    @Test
+    void kontaktBezRezervisanogDomena() {
+        assertEquals("https://gfs.dev.trif.rs", PushPosiljalac.kontakt("nastavnik@example.test", "https://gfs.dev.trif.rs"));
+        assertEquals("https://gfs.dev.trif.rs", PushPosiljalac.kontakt("a@EXAMPLE.com", "https://gfs.dev.trif.rs"));
+        assertEquals("https://gfs.dev.trif.rs", PushPosiljalac.kontakt("a@mail.example.org.", "https://gfs.dev.trif.rs"));
+        assertEquals("https://gfs.dev.trif.rs", PushPosiljalac.kontakt("a@host.localhost", "https://gfs.dev.trif.rs"));
+        assertEquals("mailto:a@example.rs", PushPosiljalac.kontakt("a@example.rs", "https://gfs.dev.trif.rs"));
+        assertEquals("mailto:a@notexample.com", PushPosiljalac.kontakt("a@notexample.com", "https://gfs.dev.trif.rs"));
     }
 }

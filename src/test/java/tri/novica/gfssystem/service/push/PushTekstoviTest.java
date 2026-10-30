@@ -87,7 +87,8 @@ class PushTekstoviTest {
 
     @Test
     void vapidKontakt() {
-        assertEquals("mailto:nastavnik@example.test", PushPosiljalac.kontakt(" nastavnik@example.test ", "https://a"));
+        assertEquals("mailto:nastavnik@gfs.rs", PushPosiljalac.kontakt(" nastavnik@gfs.rs ", "https://a"));
+        assertEquals("https://a", PushPosiljalac.kontakt("nastavnik@example.test", "https://a"));
         assertEquals("https://gfs.example.test", PushPosiljalac.kontakt(null, "https://gfs.example.test/, https://b"));
         assertEquals("https://gfs.example.test", PushPosiljalac.kontakt("nije adresa", "https://gfs.example.test"));
     }
