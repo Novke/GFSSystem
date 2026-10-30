@@ -58,8 +58,10 @@ public class ZadatakDodelaService {
 
     /**
      * Snimak nove runde ZADATAK slajda: {@code min(brojVarijanti, kandidata)} izvučenih ({@code null} = sve) nivoa
-     * {@code nivo} ({@code null} = svi nivoi; nikad drugi nivo kad traženog nema), naizmenično po listovima, sa šemom i
-     * tačnim odgovorima kakvi su sada. U snimku su redom stabla (list, pa id), ne redom
+     * {@code nivo} (nikad drugi nivo kad traženog nema), naizmenično po listovima, sa šemom i
+     * tačnim odgovorima kakvi su sada. Svi u rundi uvek rade isti nivo (rang tačnosti broji ★ po nivou): bez nivoa
+     * ({@code null}) a sa kandidatima više nivoa izvlači se jedan nivo ({@link Random} bean, svaki prisutan nivo jednako) i
+     * samo njegove varijante; snimak nosi nivo runde. U snimku su redom stabla (list, pa id), ne redom
      * izvlačenja. Slajd bez grupe (obrisana) ili sa grupom koje više nema u stablu PREDAVANJE predmeta -> 409
      * {@value #GRUPA_OBRISANA}; bez kandidata -> 409 {@value #NEMA_AKTIVNIH} (sa nivoom {@value #NEMA_AKTIVNIH_NIVOA}). Ništa ne upisuje, ali pre izvlačenja
      * zaključava kandidate do kraja transakcije ({@link #zakljucaj}): nijedna izvučena varijanta ne može biti obrisana pre
@@ -80,6 +82,18 @@ public class ZadatakDodelaService {
             throw new SystemException(nivo == null ? NEMA_AKTIVNIH : NEMA_AKTIVNIH_NIVOA.formatted(Nivo.oznaka(nivo)),
                     HttpStatus.CONFLICT);
         }
+        Integer nivoRunde = nivo;
+        if (nivo == null) {
+            // svi u rundi rade isti nivo: bez nivoa sa slajda ili iz konzole, a kandidati su različitih nivoa, izvlači se jedan
+            List<Integer> nivoi = poListovima.stream().flatMap(List::stream).map(KandidatVarijante::nivo)
+                    .distinct().sorted().toList();
+            nivoRunde = nivoi.get(random.nextInt(nivoi.size()));
+            int izabran = nivoRunde;
+            poListovima = poListovima.stream()
+                    .map(l -> l.stream().filter(v -> v.nivo() == izabran).toList())
+                    .filter(l -> !l.isEmpty())
+                    .toList();
+        }
         Set<Long> izvucene = new HashSet<>();
         IzborVarijanti.izvuci(poListovima, brojVarijanti, random).forEach(v -> izvucene.add(v.varijantaId()));
         List<VarijantaSnimak> varijante = poListovima.stream()
@@ -88,7 +102,7 @@ public class ZadatakDodelaService {
                 .map(ZadatakDodelaService::snimakVarijante)
                 .toList();
         return new ZadatakSnimak(s.getId(), k.opis().grupaId(), k.opis().naziv(), k.opis().putanja(),
-                s.getZadatakVremeSekunde(), varijante, nivo);
+                s.getZadatakVremeSekunde(), varijante, nivoRunde);
     }
 
     /**

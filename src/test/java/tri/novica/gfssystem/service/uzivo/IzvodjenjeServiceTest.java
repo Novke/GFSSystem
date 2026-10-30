@@ -140,8 +140,10 @@ class IzvodjenjeServiceTest {
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
                 stanjeService, zadatakDodelaService, temeZaVezbanje, rangTacnosti,
-                new RangPrikazRegistar(), imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                rangPrikazi, imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
+
+    final RangPrikazRegistar rangPrikazi = new RangPrikazRegistar();
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {
         Pitanje p = new Pitanje();
@@ -693,6 +695,30 @@ class IzvodjenjeServiceTest {
         assertGreska(409, "Na ovom slajdu nema pitanja.", TipKomande.TACAN);
         assertGreska(409, "Na ovom slajdu nema pitanja.", TipKomande.PONOVI);
         assertGreska(409, "Nema rezultata za prikaz.", TipKomande.REZULTATI);
+    }
+
+    @Test
+    void rangBrojOgranicavaProjektorIBriseSeNaKraju() {
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 5));
+        assertEquals(5, rangPrikazi.broj(IZ));
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 0));
+        assertNull(rangPrikazi.broj(IZ), "0 = svi");
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 30));
+        assertEquals(30, rangPrikazi.broj(IZ));
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, null));
+        assertNull(rangPrikazi.broj(IZ), "null = svi");
+        for (Integer los : new Integer[]{-1, 31}) {
+            SystemException e = assertThrows(SystemException.class,
+                    () -> service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, los)));
+            assertEquals(400, e.getCode());
+            assertEquals(IzvodjenjeService.RANG_BROJ_GRANICE, e.getMessage());
+        }
+
+        rangPrikazi.postaviBroj(IZ, 5);
+        rangPrikazi.ukloni(IZ);
+        assertEquals(5, rangPrikazi.broj(IZ), "skrivanje ranga čuva izbor");
+        rangPrikazi.zavrsi(IZ);
+        assertNull(rangPrikazi.broj(IZ), "kraj izvođenja briše izbor");
     }
 
     @Test

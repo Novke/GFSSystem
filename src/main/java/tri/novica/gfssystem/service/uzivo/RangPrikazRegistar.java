@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RangPrikazRegistar {
 
     private final Map<Long, RangPrikaz> prikazi = new ConcurrentHashMap<>();
+    private final Map<Long, Integer> brojevi = new ConcurrentHashMap<>();
 
     /** Prikaz izvođenja; bez zapisa rang izvođenja. */
     public RangPrikaz prikaz(Long izvodjenjeId) {
@@ -26,5 +27,21 @@ public class RangPrikazRegistar {
 
     public void ukloni(Long izvodjenjeId) {
         prikazi.remove(izvodjenjeId);
+    }
+
+    /** Koliko prvih redova ranga ide na projektor; {@code null} = svi (do {@link RangTacnostiService#RANG_PROJEKTOR_MAX}). */
+    public Integer broj(Long izvodjenjeId) {
+        return brojevi.get(izvodjenjeId);
+    }
+
+    public void postaviBroj(Long izvodjenjeId, Integer broj) {
+        if (broj == null) brojevi.remove(izvodjenjeId);
+        else brojevi.put(izvodjenjeId, broj);
+    }
+
+    /** Kraj izvođenja: briše i prikaz i broj redova. */
+    public void zavrsi(Long izvodjenjeId) {
+        prikazi.remove(izvodjenjeId);
+        brojevi.remove(izvodjenjeId);
     }
 }
