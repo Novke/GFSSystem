@@ -66,7 +66,7 @@ public class Izvodjenje {
     @Column(nullable = false) private boolean resenjePrikazano;
     /** Broj varijanti za sledeće otvaranje ZADATAK slajda iz konzole: null = kao na slajdu, 0 = sve aktivne, n = toliko. */
     private Integer zadatakBrojVarijanti;
-    /** Nivo za sledeće otvaranje ZADATAK slajda iz konzole: null = kao na slajdu, 0 = svi nivoi, 1-3. Kolona je tinyint. */
+    /** Nivo za sledeće otvaranje ZADATAK slajda iz konzole: null = kao na slajdu, 0 = bez izbora (jedan nivo nasumično pri otvaranju), 1-3. Kolona je tinyint. */
     @JdbcTypeCode(SqlTypes.TINYINT)
     private Integer zadatakNivo;
 

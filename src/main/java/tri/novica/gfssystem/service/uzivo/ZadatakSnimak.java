@@ -9,7 +9,7 @@ import java.util.Optional;
 /**
  * Snimak runde Zadatak slajda: čvor banke ({@code grupaId}, naziv i putanja od korena) i samo izvučene varijante, sa
  * šemom i tačnim odgovorima kakvi su bili pri otvaranju (spec 11, banka spec 4). {@code nivo}: nivo koji je važio pri
- * otvaranju (sa slajda ili iz konzole), {@code null} = svi nivoi, a i za snimak od pre nivoa varijante.
+ * otvaranju (sa slajda ili iz konzole), {@code null} samo u snimku od pre ovog pravila (tada su nivoi mogli biti izmešani) i pre nivoa varijante; inače nivo runde.
  */
 public record ZadatakSnimak(Long slajdId, Long grupaId, String grupaNaziv, List<GrupaPutanja> putanja,
                             Integer vremeSekunde, List<VarijantaSnimak> varijante, Integer nivo) implements SnimakRunde {

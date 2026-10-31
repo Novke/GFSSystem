@@ -139,6 +139,19 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   slide or a presentation copies it, import keeps it. A `PUT` without `prelaz` clears it (full replacement, like
   `platno`), so the old frontend, which does not send it, removes a transition on save (it also never shows one). The
   server only stores it; the frontend plays it (audience window only, one slide forward).
+- **Order of presentations (vežba number, V21; spec `docs/superpowers/specs/2026-10-29-redosled-prezentacija-design.md` in the wrapper repo):**
+  `Prezentacija.vezba` (Integer 0-99, `null` = no number; `utility/Vezba`: bounds, 400 `Broj vežbe mora biti od 0 do 99.`, `izNaziva` = first number
+  after a leading `Vežbe`/`Vezbe`, the same rule as the V21 fill). Set on `POST /prezentacije` (`CreatePrezentacijaCmd.vezba`, strict integer) and
+  changed only by `PATCH /prezentacije/{id}/vezba` (`VezbaCmd`, strict like `PragProlazaCmd`; locks only the presentation row, does not touch
+  `izmenjeno`); `PUT` of a presentation ignores it, duplicating copies it, MCP `napravi_prezentaciju` takes an optional `vezba` and otherwise derives it
+  from the name. The kind `VrstaPrezentacije` (`GRADIVO` = no question, `PITANJA` = questions but no ZADATAK slide, `ZADACI` = at least one ZADATAK
+  slide) is **never stored**: `PrezentacijaInfo`/`Details` compute it with `brojZadataka`, plus `kreirano` and `poslednjePustanje` (latest run start).
+  `GET /prezentacije/izbor?predmetId&grupaId&posle` (ADMIN, readOnly; `predmetId` required) returns `IzborPrezentacija {stavke, predlog}`: every
+  presentation of the subject in the order of `RedosledPrezentacija.REDOSLED` (vežba ascending, no number last; within a vežba gradivo, pitanja, zadaci;
+  then name and id; the front's `porediPoVezbi` mirrors it), each with `pustenoGrupi` (latest run of that group, any status); `predlog` (at most 3 ids) is
+  `RedosledPrezentacija.zaGrupu` with a group (owed ZADACI of vežbe below the furthest vežba the group has run, then every unplayed numbered presentation
+  from that vežba on; older unplayed gradivo is not suggested; presentations without a number and ones in progress never) and `posle(posleId)` without one
+  (the next ones in order). A run counts as played for the group whatever its length or status.
 - **Formulas are not interpreted on the server:** the round snapshot (`PitanjeSnimak.od`) copies question and option
   texts with `$...$` (and `\$`) verbatim, also through the JSON round trip (`PitanjeSnimakTest.snimakCuvaFormuleDoslovno`);
   there is no LaTeX check on the server, the front renders them.
@@ -223,6 +236,10 @@ group's schema, the console and projector show results per variant and, on `Shif
   (1-50 or null = all active). `SlajdCmd.zadatak` / `SlajdDetails.zadatak` (`ZadatakSlajdaInfo`: path, leaf or not, candidates, schema
   for a leaf, exclusions, warnings, built by `ZadaciSlajdova` in one batch per request). The group must be of the same subject,
   purpose PREDAVANJE (400 otherwise); a deleted group leaves the slide without one (warning, 409 on opening).
+  `ZadatakSlajdaInfo.primerSvgId` (last component) is the text SVG of one candidate for the editor's example: the lowest variant id in
+  the first leaf (tree order) that has a candidate of the slide's level (`StabloPredavanja.primer`, from `min(v.id)` of the same
+  aggregate query, plus one batch query `svgTeksta` for all slides). It reaches only teacher views (editor, console state); MCP
+  (`McpZadatakSazetak`) leaves it out and no phone or projector projection carries it.
 - **Candidates and drawing** (`service/banka/KandidatiZadatka`, `service/uzivo/IzborVarijanti`): AKTIVNE variants with a render SVG in the
   leaves under the node, excluded subtrees (`iskljucene_teme`) skipped with a warning; `min(N, candidates)` drawn alternately per leaf.
   Randomness only from the `java.util.Random` bean (tests: `SeedRandom`).
@@ -274,10 +291,54 @@ group's schema, the console and projector show results per variant and, on `Shif
   without one).
 - **Not done yet (BE-8):** activities in a scored run (attendance and solved tasks written to the lecture) are not implemented, also
   not with the login: a scored run takes the student but records nothing on the lecture yet. When it is added, manual activity
-  edits in `PredavanjeService` must lock the lecture row first (plan task BE-8).
+  edits in `PredavanjeService` must lock the lecture row first (plan task BE-8). **That locking is already in place** since the
+  check-in work (see "Čekiranje"): every manual activity change locks the lecture row (`PredavanjeRepository.findByIdForUpdate`).
+  BE-8 must write an activity only for a student with a **current check-in** on the lecture: removing attendance deletes the check-in
+  but keeps the student's participant row in a running scored run (security review 2026-10-28).
 - Tests: `ZadatakRundaDbTest` (drawing, assignment, commands, deletion during opening), `ZadatakOdgovorDbTest` (answers, snapshot
   grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
+
+### Rang tačnosti (leaderboard)
+
+Spec `docs/superpowers/specs/2026-10-28-rang-tacnosti-design.md` (deploy repo). No migration, no new table: everything is computed from rounds,
+answers, participants and `zadatak_dodele`. Code: pure `service/uzivo/RangTacnosti` (rules and ordering), `RangTacnostiService` (queries and
+aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the projector), `KratakOdgovor` (answer preview), DTOs in `dto/uzivo`
+(`RangTacnostiStavka`, `RangPrikaz`, `RangPredavanja`, `UzivoStudenta`, `UzivoStudentaRed`, `UzivoGrupe`).
+- **Measure:** the last round of every slide counts (same rule as `StanjeService.bodovniOdgovori`); a PITANJE with a correct answer, or a ZADATAK
+  for a participant whose assigned variant has fields (paper work never counts). A participant **owes** a round they answered, or one closed after
+  they joined (an open round is owed only once answered). **An unanswered owed round is wrong.** ★: a correct PITANJE 1, a correct ZADATAK the
+  level of the assigned variant (snapshot without `nivo` = 2). **Order (revision 2026-10-29, Novica): ★ desc, then average answer time (`vremeMs`
+  of answered rounds) asc with no answer last, then name; accuracy is shown, never ranked.** The same place for equal ★ and average rounded to
+  100 ms. Rows that owe nothing are left out. Every row carries `indeks` (student, canonical `GD5`; `null` for a guest and on the projector).
+- **Identity across runs:** `s:<studentId>` for logged-in students, `g:<normalized name>` for guests (lower case, no diacritics, `đ`->`d`, one
+  space) and only inside one lecture; never across lectures. `IzvodjenjeService`/`StanjeService` keep the old per-run `rangLista` (points,
+  takmičenje) unchanged.
+- **Endpoints (all ADMIN, outside `/public/**`):** `GET /izvodjenja/{id}/rang` (list; `poeni` only in takmičenje), `GET /predavanja/{id}/rang`
+  (`RangPredavanja`: runs with rounds + the lecture aggregate with `izvodjenja` per row), `GET /studenti/{id}/uzivo?predmetId&godina` (one row per
+  class: a lecture with all its runs, or a run without a lecture; place in that class's rank, plus the total with `casova`), `GET
+  /grupe/{id}/uzivo?predmetId&godina` (rank of the group roster over all its classes; students without a single owed question at the bottom with
+  `mesto = null`; guests never). `godina` is the school year (`SkolskaGodina.proveri`, 400 otherwise).
+- **Console and projector:** `UcesnikStanje` now carries `tacno`, `vremeMs`, `odgovor` (short preview by `KratakOdgovor`: option letters by `rb`,
+  numbers with a decimal comma, text cut to 40 chars, Zadatak fields joined with ` · `) and `odgovorSakriven` for the current round (teacher only).
+  `NastavnickoStanje` gained `javniRangTacnosti` (the first `rangBroj` rows, all up to `RangTacnostiService.RANG_PROJEKTOR_MAX` = 30 when
+  `null`; without ids and indeks, names short "Ime P." (`kratkoIme`; the full name where two short ones collide); `null` while hidden; before
+  `TACAN` the current round is left out, like `javnaRangLista`), `rangPrikaz` (`IZVODJENJE` | `PREDAVANJE` | `null`), `imaRangPredavanja` (the
+  lecture has another run with rounds) and `rangBroj` (last field). `RANG_BROJ` (`vrednost` 0 or `null` = all, 1-30, else 400) sets how many rows
+  the projector shows; the console sends the teacher's browser preference on load and on change (no DB, `RangPrikazRegistar`, cleared by `ZAVRSI`).
+  `RANG_LISTA` (L) toggles the run rank in every run (in takmičenje the projector keeps the points list and the podium), `RANG_PREDAVANJA`
+  (Shift+L) the lecture rank (409 `Predavanje nema druga izvođenja.` otherwise); the other key switches, the same key hides; `ZAVRSI` clears it.
+  The projector choice lives only in memory (`RangPrikazRegistar`): after a backend restart a shown rank falls back to the run rank. Phones get
+  nothing new for others: `javnaRangLista` stays `null` outside takmičenje. **Own accuracy on the phone** (branch `feature/portal-pocetna`):
+  `LicnoStanje.tacnih` and `dugovanih` (last two fields) are the participant's own `Zbir` by the same rule (`StanjeService.javnaTacnost`, one
+  extra query for `zadatak_dodele` only when the run has a ZADATAK round), with the current round left out until `TACAN` (like `poeni`), in
+  every run, takmičenje or not; never anyone else's numbers.
+- **Same level in a Zadatak round:** `ZadatakDodelaService.snimak` never mixes levels: without a level on the slide or in the console and with
+  candidates of several levels it draws one present level (the `Random` bean, each present level equally) and only its variants, and the snapshot
+  carries that `nivo`. `ZadaciSlajdova` warns (`NIVO_NIJE_IZABRAN`) on such a slide in the editor, console and MCP; the console's
+  `brojZaOtvaranje` is then the largest per-level count (upper bound).
+- Tests: `RangTacnostiTest` (pure rules, short names), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
+  `TACAN`, student card, group, 404/400), plus the command tests in `IzvodjenjeServiceTest`.
 
 ## Banka zadataka (faza 1)
 
@@ -322,7 +383,12 @@ variant with `ikadOdobrena` are never deleted, neither on a new render nor on de
   `oznaka` 1-200 chars (a plain description, e.g. `Dekadna vrednost`; a list letter `a)` only when the task text itself has parts with
   those letters, never on a one-field schema: the projector and the overview hide the label of a single field, the phone strips a
   leading `a) ` there; the MCP guide `vodic-banka.md` teaches the same, `VodicTest.vodicBankaUciOznakeBezSlova`), `tip` one of `BROJ` | `TEKST` | `JEDAN_TACAN` | `VISE_TACNIH`. `BROJ`: `odstupanje` >= 0 (default 0)
-  with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`).
+  with `odstupanjeTip` `APSOLUTNO` (default) | `PROCENAT`, `jedinica` <= 30. `TEKST`: `zanemariVelicinu` and `zanemariRazmake` (default `true`),
+  `zanemariVodeceNule` (last component of `Polje`, default off; stored only when `true`, so an existing schema column stays the same):
+  `01111111` = `1111111` (`OcenaPolja.bezVodecihNula`: zeros at the start, after an optional sign, followed by a letter or digit, so
+  `0.101` stays). Only where a leading zero does not change the result (sums, differences, conversions in a base); never for a
+  fixed-width representation (complement, 8 bits), where `00000101` is not `101`. It is part of the round snapshot like every
+  schema property, so a round graded before it keeps its result until it is regraded.
   `JEDAN_TACAN`/`VISE_TACNIH`: 2-6 `opcije`, text 1-200 (may hold `$formula$`); the option `id` is stable inside the group and an option
   without an id gets the next one above the largest id given in the request **and** the largest stored for the same key (`PUT` of a group,
   under the lock: `BankaPP.normalizujPolja(polja, sacuvana)`), so a client that omits ids (MCP) never gets the id of an option removed in the same
@@ -781,6 +847,229 @@ Spec: `docs/superpowers/specs/2026-10-19-prijava-design.md` in the wrapper repo 
   `pokusaji` **only by the student-id key**, so tests that create HMAC-keyed rows track and delete their own keys), `PristupBravama` (lock names and wait times).
   `scripts/flyway-provera.sh` hardcodes `fw_<scenario>` databases: on a shared box run a copy that uses `fw_prijava_<scenario>` and `APP_PORT=18092`.
 
+## Čekiranje (student check-in by QR, studentski deo faza 1)
+
+Spec `docs/superpowers/specs/2026-10-28-studentski-portal-design.md` (deploy repo), section 4; plan next to it. Packages `entity|repository|service|rest|dto/cas`.
+- **Tables (V17):** `cekiranja` (one row per lecture and student, `vreme` = first scan, never changed; `uredjaj_hash` = SHA-256 of cookie
+  `gfs_uredjaj`), `cekiranja_na_cekanju` (one-time key of a student who scanned before logging in: SHA-256 only, 15 min, `iskorisceno`,
+  `uredjaj_hash` of the scanning phone),
+  `predavanja.cekiranje_tajna` (32 chars from `TokenGenerator`, `@JsonIgnore`, never leaves the server) and `cekiranje_tajna_od`.
+- **Token (`CekiranjeToken`, pure static logic):** `<predavanjeId>.<h>`, `h` = first 22 chars of `base64url(HMAC-SHA256(tajna, id + ":" + w))`,
+  `w = floor(epochSeconds / 10)`; windows `w`, `w-1`, `w-2` are accepted (20-30 s), compared with `MessageDigest.isEqual`. The secret is created by
+  the teacher view (`GET /predavanja/{id}/cekiranje`) with a compare-and-set update (`PredavanjeRepository.postaviTajnu`), renewed when older than
+  5 h, and cleared by `zavrsiPredavanje`.
+- **`CekiranjeService`** (`READ_COMMITTED`): `skeniraj(token, studentId?, uredjajHash)` (logged in: check-in + class state; anonymous: a key),
+  `potvrdi(kljuc, studentId, uredjajHash)` (consumes the key under `findByKljucHashForUpdate`, **only from the phone that scanned** (same
+  `gfs_uredjaj` hash, else 410 and the key stays), so a key posted to a group chat checks nobody in; the check-in gets the scan time and the scan
+  device; a new anonymous scan from the same phone deletes that phone's unused keys for the lecture, one pending key per phone), `stanje(studentId)`
+  (latest check-in of the last 5 h, finished lecture or not; the newest active run of a live lecture the student was not expelled from),
+  `zaNastavnika(predavanjeId)` (token, window end, list with "kasnio" > 15 min after the first check-in and "isti telefon kao"). Group rule:
+  `Utility.smeNaNastavuGrupe`; a lecture without a group admits nobody. A check-in adds `PRISUSTVO` only when the student has no activity on the
+  lecture (raise, never lower) and bumps `posecenost`.
+- **Lock order:** check-in and every manual activity change in `PredavanjeService` (`dodajPrisutnog`, `skloniPrisutnog`, `dodajZadatak`,
+  `skloniZadatak`, `dodajZadatakSaZvezdicom`, `updateAktivnostNapomenu`, `zavrsiPredavanje`, and `updatePredavanje`, `updatePosecenost`, `obrisi`,
+  because Hibernate writes the whole row and a stale entity would reopen a finished lecture or restore an old secret) lock the lecture row first; check-in **never** locks a run
+  row. A manual add of a student who is already present returns the lecture unchanged (no more 400 "vec zabelezeno"); removing attendance deletes the
+  check-in too (the phone stops following the class).
+- **Uživo:** `UcesnikService.prijavi` gives a logged-in student 403 `Izbačen si iz ovog izvođenja.` when they have an expelled row in that run, and,
+  for a scored run with a lecture, 403 `Prvo se čekiraj: skeniraj QR sa table.` without a check-in on that lecture in the last 5 h (also for an
+  existing participant); order: `Potrebna je prijava studenta.`, then expelled, then check-in. `NastavnickoStanje` ends with `brojOcekivanih`
+  (non-expelled participants plus students on class who are neither participants nor expelled; without a lecture just the participants) and
+  `brojCekiranih` (`null` without a lecture). `JavnoStanje` and every phone snapshot are unchanged.
+- **REST:** `CasPublicRest` `/public/nalog/cas`: `POST skeniraj` ANONIMNO (409 `Odjavi se kao nastavnik.` with a teacher session), `POST potvrdi`
+  and `GET ""` STUDENT; `skeniraj`/`potvrdi` set `gfs_uredjaj` (`Kolacici.UREDJAJ`, 365 days, `Lax`) when missing. `CekiranjeRest`
+  `GET /predavanja/{id}/cekiranje` ADMIN. Messages: `QR je istekao. Skeniraj ponovo sa table.` (410), `Čekiranje za ovaj čas je završeno.` (410),
+  `Nisi u grupi ovog predavanja. Javi se nastavniku.` (403), `Čekiranje je isteklo. Skeniraj QR ponovo.` (410). Cleanup: `CiscenjePrijave` deletes
+  keys expired or used more than 1 h ago.
+- **Lecture in progress (Početna/Čas on the phone, branch `feature/portal-pocetna`):** `CasStanje.uToku` (`CasUToku {predmet, tema}`, last field,
+  no id) is filled only when the student is not on an unfinished lecture: the newest lecture of **today**, not finished, with a group that is the
+  student's own or (older generation) one where the student already has an activity or a check-in on a lecture of the same subject and group
+  (the timetable rule), and where the student is **not** checked in (`PredavanjeRepository.uTokuZaStudenta`). A finished check-in plus a new
+  lecture of the group the same day gives both `predavanje` (finished) and `uToku`. The phone shows "Predavanje je u toku, skeniraj QR".
+  `StudentJaInfo.waLink` (last field) carries the group's WhatsApp link (`GET /public/nalog/ja`, canonical only, `null` without one).
+- **Tests:** `V17MigracijaDbTest`, `CekiranjeTokenTest`, `CekiranjeServiceDbTest` (incl. parallel double tap), `PredavanjeAktivnostiDbTest`
+  (lock wait), `CekiranjeUzivoDbTest` (expelled, scored run, `brojOcekivanih`), `CasPublicRestIT` (whole chain, cookie, no secret in JSON); shared
+  JDBC fixtures `service/cas/CasPodaci` (times always from Java, never MySQL `now()`).
+
+## Raspored i najava odsustva (timetable, absence announcements)
+
+Spec `docs/superpowers/specs/2026-10-29-najava-odsustva-design.md` (deploy repo; decisions in section 11), plan next to it. Packages
+`entity|repository|service|rest|dto/raspored`, plus `dto/pregled/{TerminKratkoInfo,RasporedTablaInfo}`.
+- **Tables (V18):** `rasporedi` (period: `naziv`, `vazi_od`/`vazi_do`, `prag_najava` default 5; periods may overlap, old ones stay),
+  `raspored_stavke` (predmet, grupa required, ISO weekday `dan` 1-7, `pocetak`/`kraj`; **no DB unique key**, the duplicate check (predmet, grupa,
+  dan, pocetak) runs under the period row lock, so two lines can swap times in one `PUT`), `otkazani_termini` (`UNIQUE(stavka_id, datum)`,
+  optional `napomena`), `najave_odsustva` (`UNIQUE(stavka_id, datum, student_id)`, optional `razlog` <= 200), all `ON DELETE CASCADE`;
+  `obavestenja.kljuc` varchar(100) with a unique index (only `MNOGO_NAJAVA` sets it). **Termini (dates) are computed, never stored**
+  (`service/raspored/Termini`, pure static functions); an announcement whose date stops being a termin after an edit simply stops showing, while a
+  future cancellation that stops being a termin is deleted by the edit and counted (see `RasporedService`).
+- **Who a line applies to: one query**, `RasporedStavkaRepository.parovi(stavkaId?, studentId?, od)`: students of the line's group plus older
+  generations with an activity or a check-in on a lecture of the same predmet and grupa. Used by the student list, by every announce/withdraw check
+  and for cancellation mail recipients.
+- **`RasporedService`** (teacher): list, detail, create, `PUT` of the whole period with lines (a line with `id` keeps its row, announcements and
+  cancellations while predmet and grupa stay the same; changing either deletes the line and creates a new one, so announcements never move to
+  another group), delete (cascade; notifications stay). Validation messages are Serbian 400s ("Termin N: ..."). **Overlap rule:** a line with the same
+  predmet, grupa, dan and pocetak in *another* period whose dates overlap in at least one such weekday is a 400 `Termin N već postoji u rasporedu
+  „<naziv>“ (<od> – <do>): ...` (`RasporedStavkaRepository.uDrugimPeriodima`; checked on create and, after the ownership checks, on `PUT`; so
+  "Kopiraj u novi" with overlapping dates fails; two simultaneous new periods are not locked against each other, one teacher). **Lost
+  cancellations:** `StavkaInfo.otkazani` (last field) lists the line's cancellations from today on that are still termini, so the form can warn; a
+  `PUT` deletes every cancellation from today on whose line is removed (or re-created for another predmet/grupa) or whose date is no longer a termin
+  (other weekday, outside the new period) and returns their number in `RasporedDetails.izgubljenaOtkazivanja` (last field; 0 elsewhere), so a
+  cancellation never silently comes back when the line is moved back.
+- **`NajavaService`** (student; `READ_COMMITTED`): `naredni` = next 4 termini per applicable line (today's until it starts, Clock bean),
+  `najavi` / `povuci` with lock order **line row (`findByIdForUpdate`) -> named MySQL lock of the teacher mail**: 404 `Taj čas nije u tvom
+  rasporedu.` (not applicable, missing line, date not a termin, or a termin outside the student's next 4 = `Termini.naredni(..., NAREDNIH)`, so a
+  student announces only what the card shows), 409 `Čas je već počeo.`, 409 `Ovaj čas je otkazan.`, 400 for a reason over 200.
+  Repeated `najavi` only changes the reason; `povuci` without an announcement is not an error. The student comes only from `gfs_student`, never
+  from the body; the answer (`StudentskiTermin`) never carries counts or other names.
+- **Threshold notification:** when a *new* announcement makes the count **greater than** the period's `prag_najava`,
+  `ObavestenjeServis.mnogoNajava` (`propagation = MANDATORY`, inside the line lock) creates one `MNOGO_NAJAVA` notification with
+  `kljuc = MNOGO_NAJAVA:<stavkaId>:<datum>` (exists -> nothing, never a second one; the unique index is the backstop) and mails the teacher through
+  the generalized `mejlNastavniku` (limits per kind+key 1/h and 20/h total). Mail text: subject, group, date, time, count, threshold and the
+  relative link `raspored/termini?od=<datum>`; **never a reason or a student name**. Cancelling the termin resolves it (`resiZaTermin`).
+- **`TerminService`** (teacher): `termini(od?, dana?)` (default today and 28 days, 1-120 else 400 `Neispravan parametar: dana.`) with names and
+  reasons, `predavanjeId` (lecture of the same predmet, grupa and date) and `poceo`; `otkazi` / `vrati` lock the line row, 404 `Termin ne
+  postoji.`, 409 `Termin je već počeo.`. `otkazi` / `vrati` are `NOT_SUPPORTED` and run the DB change in their own `TransactionTemplate`
+  (`READ_COMMITTED`), then hand the mails over **after the commit**, so the answer carries exact numbers. A new cancellation mails every applicable
+  student with an email through `ObavestavanjeStudenata` (subject `Nema časa: <predmet>, sreda 4. 11.`, the teacher's note in the body); a repeated
+  cancel only updates the note (no mails); `vrati` of a cancelled termin mails `Čas se ipak održava: ...`, of a non-cancelled one does nothing.
+  `TerminCmd.posaljiMejl` (`null` = true for an older client) lets the teacher skip the mails. `MejlObavestavanjeStudenata` sends **one mail per
+  address** (lower-cased, trimmed) on its own executor **`mejlStudentimaIzvrsilac`** (1 thread, queue `gfs.mail.studenti.red`, default 500,
+  `AbortPolicy`; each task runs `MejlPosleCommita.posaljiSaPokusajima`), so login codes on `mejlIzvrsilac` never wait behind a cancellation.
+  `PromenaTerminaOdgovor` = `{termin, obavesteno, neposlato}`: `obavesteno` counts only mails actually queued, `neposlato` the recipients whose mail
+  was rejected (queue full) or not attempted (SMTP not configured); the teacher sees both. Students who turned off "Javi mi mejlom kad je čas
+  otkazan" (tab Ja, `podesavanja_studenta`) are dropped **before** the address dedupe, so both counts cover only students who would really get
+  a mail (a shared address still gets one mail when only one of its students opted out); `posaljiMejl: false` sends nothing either way. Gmail SMTP allows about 500 mails a day (README).
+- **`CiscenjeNajava`** (hourly at minute 17, `gfs.najave.ciscenje.cron`, `-` disables it as in tests): clears `najave_odsustva.razlog` (the row
+  stays, so counts and history do not change) 30 days after the termin's date, in batches of 5000.
+- **Dashboard:** `KontrolnaTablaInfo.raspored` (last field) = `{pokrivaDanas, naredni}` (termini today .. today + 6 with counts, cancellation and
+  lecture id); `SledecePredavanjeInfo` ends with `termin` and `izvor` (`POSLEDNJE` | `RASPORED_DANAS` | `RASPORED_SLEDECI`): when a period covers
+  today, the first of today's termini that is not cancelled, has no lecture and has not ended, else the first non-cancelled termin within 60 days,
+  else the old heuristic; `rb` from the timetable is the global max + 1 (as `POST /predavanja/start`). **Known limitation:** `Predavanje` has only a
+  date (no start time), so with two blocks of the same predmet and grupa on one day, a lecture started for the first block also counts as the lecture
+  of the second and the suggestion skips it.
+- **REST:** `RasporedRest` `/rasporedi` (ADMIN): `GET`, `POST` (201), `GET|PUT|DELETE {id}`, `GET termini?od=&dana=`, `POST termini/otkazi`,
+  `POST termini/vrati` (`{stavkaId, datum, napomena?, posaljiMejl?}` -> `{termin, obavesteno, neposlato}`). `CasoviPublicRest` `/public/nalog/casovi` (STUDENT): `GET`,
+  `POST najavi`, `POST povuci` (`{stavkaId, datum, razlog?}`). Announcements do not touch attendance or grading.
+- **Tests:** `TerminiTest`, `RasporedServiceDbTest` (also the overlap 400 and lost cancellations), `NajavaServiceDbTest` (older generation by
+  activity/check-in, threshold, one notification for 8 parallel announcements, no reason in the teacher mail, the next-4 window),
+  `TerminServiceDbTest` (mails via `LazniMejlServis`, `posaljiMejl=false`, one mail per address, dashboard suggestion),
+  `MejlObavestavanjeStudenataTest` (dedupe, full queue -> `neposlato`, no SMTP), `CiscenjeNajavaDbTest`,
+  `CasoviPublicRestIT` (whole chain, no counts or names in student JSON), `V18MigracijaDbTest`. Time: `service/raspored/RasporedSatConfig`
+  (`@Primary` movable clock, dates in 2030 so they never meet other test data); fixture `RasporedPodaci` on top of `service/cas/CasPodaci`.
+
+## Student account, phases 2 and 3 (subjects, history, practice, presentation review, grades)
+
+Branch `feature/studentski-portal-2` (as of 2026-10-29 not on staging). Spec: deploy repo
+`docs/superpowers/specs/2026-10-28-studentski-portal-design.md`, sections 5, 6, 7 and **12** (revision 2026-10-29, wins where it differs).
+Package `portal` in `entity`, `repository`, `service`, `rest`, `dto`.
+- **Who is the student:** only `StudentAutentikacija` (session). His groups only from `KontekstStudenta.Kontekst.grupe(predmetId)` (own group
+  plus, **per subject**, the groups of that subject's lectures where he has an activity or a check-in: a repeater sees the younger generation
+  only in the subject he attends with it; `GrupeStudenta.dodatne` is keyed by subject); predmeti = subjects with a lecture of the own group plus
+  subjects with an extra group (`KontekstStudenta.predmeti`). Never read `student.grupa` in a student query and never merge the extra groups
+  across subjects. Anything foreign or missing is the same **404 `Nije pronađeno.`** (`KontekstStudenta.nema()`), never 403.
+- **Opened for practice (`otvorene_teme`, V20):** `TemeZaVezbanje.krajIzvodjenja` is called by `IzvodjenjeService.zavrsi` (ZAVRSI and the 12 h
+  auto end) in the same transaction, **before** the "Ne čuvaj" deletion: the leaves of the variants actually drawn in the run's ZADATAK rounds
+  (`ZadatakSnimak.varijante[].grupaId`) open for the run's group (`CAS`, insert "if missing" via `INSERT ... SELECT ... ON DUPLICATE KEY`, so a
+  deleted leaf never fails the end). Never at round opening (a student would spin "next task" until his class variant). Manual
+  (`RUCNO`): `PUT|DELETE /banka/grupe/{id}/otvoreno/{grupaStudenataId}`, `GET /banka/grupe/{id}/otvoreno` (panel per student group: OTVORENO,
+  PREKO_TEME, DELIMICNO, ZATVORENO); closing deletes the records of the node **and its whole subtree**; an open ancestor keeps it open. Open
+  leaves = for each record of the student's groups, `StabloPredavanja.opis(node).listovi()` (same exclusion rule as the class draw; the node
+  itself is never skipped). Only leaves are practised.
+- **Shown slides (`prikazani_slajdovi`, V20):** `IzvodjenjeService.idiNa` calls `TemeZaVezbanje.prikazan` for runs with a group, one row per
+  (group, slide, run) (insert "if missing"). A slide is visible to the group when at least one of its runs is `ZAVRSENO`; the FK to the run is
+  `ON DELETE CASCADE`, so deleting a run (e.g. a dry run) hides what only that run revealed. The V20 first fill is conservative (only slides with
+  a round in the run and the slide the run stopped on with `prikaz = SLAJD`): under-revealing is fine, over-revealing never.
+- **Practice (`VezbanjeStudenta`, table `vezbanja`):** `POST /public/nalog/vezbanje {tipId, nivo?, novi?}`. Without `novi=true` ("Novi
+  zadatak") it returns the student's newest untouched attempt (no check, no solution) of that leaf (and level) younger than 10 min, so a reload
+  inserts nothing. Otherwise it draws from `KandidatiZadatka.kandidati(stablo, ...)` (the tree built once per request; AKTIVNA with SVG,
+  `Random` bean), avoiding the student's last 5 variants of that leaf when there is a choice (and the last one when possible), at most 60 new
+  draws per student per hour (`pokusaji`, kind `VEZBANJE_IZVLACENJE`, 429 `Previše novih zadataka za sat vremena. ...`); returns SVG + schema
+  **without** answers (`ZadatakVezbanja`). **A variant in a round snapshot of an `AKTIVNO` run (`PitanjeRundaRepository.naCasu`) is never
+  drawn** (409 `Zadaci ovog tipa su upravo na času; pokušaj posle.` when that leaves nothing), and `provera`/`resenje` of an attempt with such a
+  variant answer 409 `Ovaj zadatak je upravo na času; pokušaj posle.`: otherwise a student draws in a second tab until he gets the variant on the
+  board and takes its solution. `provera` grades with `OcenaZadatka.oceni` over the **current** variant and schema (same 400 messages as in
+  class) and returns only true/false per field; after "Prikaži rešenje" a check still answers but counts nothing (`brojProvera`,
+  `prvaProveraTacno`, `tacno` unchanged). `resenje` returns `resenjeSvgId` and `tacneVrednosti`. Both go through `pokusajId` + the session
+  student (`findForUpdate`), and re-check that the variant is still AKTIVNA and its leaf still open (else 404). 409 `Za ovaj nivo nema zadataka.`
+  / `Ovaj tip trenutno nema zadataka.`. No points, no activities. `CiscenjePrijave` deletes untouched attempts older than 30 days.
+- **History (`IstorijaStudenta`):** my tasks from class = `zadatak_dodele` of participants with `student_id` = me in `ZAVRSENO` runs, everything from
+  the round snapshot (solution shown even if not released in class); review = current slide version, only visible slides, DTO `SlajdPregleda`
+  without `beleske`/`serija`/`izvor` (PLATNO without strokes). **PITANJE comes from the round snapshot** of the newest round of that slide in an
+  ended run with one of the student's groups (text, options, correct answer, `prihvatljiviOdgovori`; `tacanPoznat=true`), never from the
+  current slide: an edit for another group must not leak the new answer to earlier groups. Without such a round: current question without any
+  answer field (`tacanPoznat=false`). "Tvoj odgovor" from the student's own last answer.
+- **Grades (`ObjavaOcenaServis`, tables `objave_ocena` + `objavljene_ocene`):** nothing about grades reaches a student until the teacher
+  publishes for subject + group (`PUT /ocenjivanje/predmet/{p}/objava/{g}`; `GET ...?grupa=` state; `DELETE` withdraws). Publish = snapshot per
+  student from `OcenjivanjeService.getRezultati` (`SnimakOcene` JSON: proposal, total, pre-exam, activity, homework, points per test type);
+  re-publish replaces the group's snapshot. Publish first inserts the row "if missing" (`ObjavaOcenaRepository.obezbedi`, `INSERT ... ON
+  DUPLICATE KEY`) and only then locks it: `findForUpdate` on a missing row takes only a gap lock, and a double click on the first publish
+  deadlocked. A student sees only his own row of his **own** group's publication, and only a publication from the current school year (a
+  repeater's old group does not show last year's proposal).
+- **Statistics:** `GET /predmeti/{id}/vezbanje/statistika?grupa=&od=&do=` (`StatistikaVezbanja`), aggregate per leaf only.
+- **Student paths** (all STUDENT in `PristupMatrica`, OSIV off under `/public/nalog/**`, DTOs built in the service transaction): `GET
+  /public/nalog/predmeti`, `GET /public/nalog/predmeti/{id}/{prisustvo,vezbanje,moji-zadaci,prezentacije,ocena}`, `GET
+  /public/nalog/prezentacije/{id}`, `POST /public/nalog/vezbanje`, `POST /public/nalog/vezbanje/{pokusajId}/{provera,resenje}`, `GET|PUT
+  /public/nalog/podesavanja` (`{mejlOtkazanCas}`); `GET /public/nalog/ja` now also has `grupa` and `generacija`.
+- **Settings (`podesavanja_studenta`, V20, `PodesavanjaStudentaServis`):** one row per student only after the first change (no row = defaults;
+  upsert `INSERT ... AS novo ON DUPLICATE KEY UPDATE`). `mejlOtkazanCas` ("Javi mi mejlom kad je čas otkazan", default true) is read by
+  `MejlObavestavanjeStudenata`, the only path that mails a student about a schedule change (cancelled and restored): students who switched it
+  off are dropped before the address dedupe and the `mejlStudentimaIzvrsilac` queue, so they count in neither `obavesteno` nor `neposlato`
+  (`MejlObavestavanjeStudenataTest`, `TerminServiceDbTest`). A later channel keeps filtering there.
+- **Tests:** `PortalDbTest` (three students: two groups and a repeater; nothing open while the run lasts, only drawn leaves, Ne čuvaj, manual
+  open/close, practice + IDOR, variant live in class (409, never drawn), reuse + 60/h + cleanup, check after solution, extra group only for its
+  subject, PITANJE review from the snapshot after an edit, deleted run hides its slides, concurrent first publish, last year's publication,
+  settings, grades, the V20 first fill run twice, forbidden fields in every student JSON), `NalogPortalRestIT` (whole chain: 401, 404 text,
+  origin check, teacher paths refuse a student session, settings GET/PUT), `TerminServiceDbTest` (a student who switched the mail off gets
+  neither the cancel nor the restore mail).
+
+## Aplikacija i obaveštenja (push, student bell, reminder; studentski deo faza 4)
+
+Branch `feature/aplikacija-push` in all three repos. Spec: deploy repo `docs/superpowers/specs/2026-10-29-aplikacija-i-obavestenja-design.md`
+(sections 5 and 6, 6.8 = the student bell), plan next to it. Migration **`V22__aplikacija_push.sql`** (additive: new tables `push_pretplate`,
+`studentska_obavestenja`, `podesavanja_nastavnika_push`, `posle_casa_poslato`, push/bell columns on `podesavanja_studenta` with DDL defaults,
+nullable `rasporedi.podsetnik_vreme` filled with 18:00 for existing periods). Package `push` in `entity`, `repository`, `service`, `rest`, `dto`.
+- **Keys and crypto (JDK only, no library):** the VAPID pair lives in `kljucevi_aplikacije` (`PushKljucevi`, created once under the MySQL lock
+  `gfs-vapid`, checked by a signature on load, never logged, **never rotated**: a new pair voids every subscription). `WebPushSifra` = RFC 8291
+  `aes128gcm` (checked with the RFC vector), `Vapid` = RFC 8292 ES256 JWT (`aud` = endpoint origin, `exp` 12 h, `sub` = `mailto:` from
+  `gfs.nastavnik.mejl` or the first `gfs.front.url`). No new env variable or secret.
+- **Sending (`PushPosiljalac`):** endpoint host allow-list (`PushEndpoint`: `fcm.googleapis.com`, `*.push.apple.com`,
+  `updates.push.services.mozilla.com`, `*.notify.windows.com`; https, default port, checked on subscribe **and** before every send: SSRF),
+  `HttpPushTransport` without redirects, 10 s; own executor `pushIzvrsilac` (2 threads, queue 1000; a full queue drops the message, never
+  blocks), so login codes on `mejlIzvrsilac` never wait. 2xx resets errors, 404/410 delete the subscription, 5 consecutive errors delete it.
+  Logs carry only `PushEndpoint.trag` (host + 8 hex of the hash), never the endpoint, keys or content. **Push work triggered by a commit runs on
+  the push thread** (`uPozadiniPosleCommita`, `uPozadini` from an `AFTER_COMMIT` listener): in `afterCommit` the request thread still holds its
+  connection, and a `REQUIRES_NEW` read there would take a second one (a burst of public requests exhausted the pool of 10 in
+  `ObavestenjeMejlIT`). Tests never reach a real push service: `gfs.push.http=false` in test resources, `LazniPushTransport`.
+- **Subscriptions (`PushPretplate`):** owned by the device from the session (student `studentski_uredjaji` row or teacher `nastavnicke_sesije`
+  row), never by an id from the request; one per device (a new one replaces it), the same endpoint moves to the new owner (shared phone). Limits
+  per device in `pokusaji`: 20 subscribes/h (`PUSH_PRETPLATA`), 5 test pushes/h (`PUSH_PROBA`). Logout, logout everywhere and device revocation
+  delete the device's subscriptions; the sender skips a subscription whose owner is no longer valid.
+- **Student bell = the only source of student pushes (`StudentskaObavestenja`, table `studentska_obavestenja`):** every event writes one row per
+  student in the event's transaction (content frozen, unique `(student_id, kljuc)`, so a repeated event writes and pushes nothing), regardless
+  of switches; bell switches filter what the bell shows, push switches filter what is sent. Kinds: `PODSETNIK` (never shown in the bell),
+  `OTKAZAN_CAS` and `ODRZAVA_SE` (always shown), `OCENE`, `POSLE_CASA` (switchable). `GET /public/nalog/obavestenja` = `{novo, stavke}` (the
+  last 30 visible, newest first, `novo` = newer than `podesavanja_studenta.zvono_otvoreno`); `POST /public/nalog/obavestenja/otvoreno` sets
+  it (per student, across devices). Mail stays only for the cancellation (`MejlIPushObavestavanje` composes mail + push behind
+  `ObavestavanjeStudenata`; `posaljiMejl=false` sends neither; `PromenaTerminaOdgovor.pushPoslato` is the number of queued pushes).
+- **Events:** reminder `PodsetnikPosao` (every 5 min, `gfs.push.podsetnik.cron`, `-` disables; one per student per day at the earliest reminder
+  time of his periods, skips cancelled termini and termini he announced absence for, catches up at most 3 h and never after 22:00; the period's
+  time is `rasporedi.podsetnik_vreme`, 06:00-21:30, `RasporedCmd.podsetnik`/`podsetnikVreme`, null = off); cancelled / restored termin
+  (`TerminService`); grades published or re-published (`ObjavaOcenaServis`, never on withdrawal, text without numbers); "posle časa"
+  (`PosleCasaPosao`, every 5 min, `gfs.push.posle-casa.cron`; scheduled in `posle_casa_poslato` 30 min after the group's last run ends, only
+  when something became visible to the group for the first time, same day, 07:00-22:00). Teacher push (`PushNastavniku`): every new row in
+  `obavestenja` goes to the teacher's subscriptions unless its kind is switched off in `podesavanja_nastavnika_push`. Texts (`PushTekstovi`) are
+  built only from teacher-entered data and counts: **never a grade, another student's name, an absence reason or text typed by a student**
+  (lock screen).
+- **Paths:** STUDENT `GET|PUT|DELETE /public/nalog/push`, `POST /public/nalog/push/proba`, `GET /public/nalog/obavestenja`,
+  `POST /public/nalog/obavestenja/otvoreno`; ADMIN `GET|PUT|DELETE /push`, `POST /push/proba`, `GET|PUT /push/podesavanja`. `GET .../push` =
+  `{javniKljuc, pretplacen}`; `PUT` body `{endpoint, p256dh, auth}` (base64url, 65 and 16 bytes). `PodesavanjaNaloga` gained `pushPodsetnik`,
+  `pushOtkazanCas`, `pushOcene`, `pushPosleCasa`, `zvonoOcene`, `zvonoPosleCasa` (a `PUT` without them keeps the stored values). Nothing new for
+  nginx (`/api/public/nalog/...` is already public).
+- **Cleanup (`CiscenjePrijave`):** subscriptions whose device or session expired or was revoked more than 30 days ago, bell rows older than 90
+  days, `posle_casa_poslato` older than 60 days.
+- **Tests:** `PushTekstoviTest`, `WebPushSifraTest` (RFC vector), `PushDbTest` (subscriptions, ownership, limits, bell), `PushPortalDbTest`
+  (grades, after class), `PushRasporedDbTest` (reminder rules, cancellation, teacher push), `CiscenjePrijaveIT`, `PristupMatricaTest` snapshot.
+
 ## Build & Run
 
 ```bash
@@ -838,7 +1127,21 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `kodovi_za_prijavu.nacin` (`NOT NULL DEFAULT 'MEJL'`); strips a `/YYYY` suffix from `studenti.indeks` when it equals `godina` and the short form
   collides with no other row of that year; phones of `studenti` and `prijave` to E.164 only for unambiguous forms (`+...` without separators, `00...`,
   `0` + 7-10 digits -> `+381`, `381` + 8-10 digits), the rest stays as typed; all idempotent and additive (an older image reads the text columns
-  unchanged). **Next free version: `V17`.**
+  unchanged). `V17` = check-in (`V17__cekiranje.sql`, branch `feature/studentski-portal`; provisional, re-check against `origin/staging`
+  before the merge): tables `cekiranja` (`UNIQUE(predavanje_id, student_id)`, index `(student_id, vreme)`, FKs `ON DELETE CASCADE`) and
+  `cekiranja_na_cekanju` (PK `kljuc_hash`), nullable `predavanja.cekiranje_tajna` / `cekiranje_tajna_od`; idempotent and additive (an older image
+  maps none of it, rollback needs no DB work). `V18` = timetable and absence announcements (`V18__raspored_najave.sql`, branch
+  `feature/najava-odsustva`; re-check against `origin/staging` before the merge; portal phase 2, which had reserved "V18 (privremeno)", takes
+  V20; V19 had been claimed by the presentation-order branch, which then took V21): tables `rasporedi`, `raspored_stavke`, `otkazani_termini`, `najave_odsustva` (FKs `ON DELETE CASCADE`), nullable
+  `obavestenja.kljuc` with unique index `uk_obavestenja_kljuc`; idempotent and additive. An older image does not map the new tables, but it
+  cannot read an `obavestenja` row of kind `MNOGO_NAJAVA` (unknown enum constant): before a rollback across V18 run
+  `delete from obavestenja where vrsta = 'MNOGO_NAJAVA'`. `V19` = **permanently unused** (it was claimed by the presentation-order branch,
+  but the portal merged first; never reuse the number).
+  `V20` = student account phases 2 and 3 (`V20__studentski_portal.sql`, branch `feature/studentski-portal-2`): new tables `otvorene_teme`,
+  `vezbanja`, `prikazani_slajdovi`, `objave_ocena`, `objavljene_ocene`, `podesavanja_studenta` only,
+  plus a conservative one-time first fill in SQL (drawn leaves of finished runs; shown slides only where provable); additive.
+  `V21` = vežba number of a presentation (`V21__vezba_prezentacije.sql`, branch `feature/redosled-prezentacija`): nullable `prezentacije.vezba`
+  int, filled from names that start with `Vežbe N` / `Vezbe N`; idempotent and additive (an older image does not map it). **Next free version: `V22`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

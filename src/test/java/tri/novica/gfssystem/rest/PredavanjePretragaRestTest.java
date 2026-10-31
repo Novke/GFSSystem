@@ -20,6 +20,7 @@ import tri.novica.gfssystem.dto.predavanje.PredavanjeListItem;
 import tri.novica.gfssystem.dto.predmet.PredmetInfo;
 import tri.novica.gfssystem.entity.Predavanje;
 import tri.novica.gfssystem.service.PredavanjeService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -34,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PredavanjePretragaRestTest {
 
     @Autowired MockMvc mvc;
+    @MockitoBean RangTacnostiService rangTacnostiService;
     @MockitoBean PredavanjeService service;
 
     private Pageable uhvatiPageable() {

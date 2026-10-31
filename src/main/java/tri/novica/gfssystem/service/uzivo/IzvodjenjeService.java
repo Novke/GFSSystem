@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.service.portal.TemeZaVezbanje;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
 import tri.novica.gfssystem.entity.Predavanje;
@@ -49,7 +50,8 @@ public class IzvodjenjeService {
     static final String PRVO_ZATVORI = "Prvo zatvori pitanje.";
     static final String NEMA_TACNOG = "Ovo pitanje nema tačan odgovor.";
     static final String NEMA_REZULTATA = "Nema rezultata za prikaz.";
-    static final String NIJE_TAKMICENJE = "Takmičenje nije uključeno.";
+    static final String NEMA_RANGA_PREDAVANJA = "Predavanje nema druga izvođenja.";
+    static final String RANG_BROJ_GRANICE = "Broj redova ranga je 0 (svi) ili 1..30.";
     static final String TAJMER_VAN_PITANJA = "Tajmer radi samo dok je pitanje otvoreno.";
     static final String TAJMER_NIJE_POKRENUT = "Tajmer nije pokrenut.";
     static final String NIJE_POSTAVLJENO = "Pitanje još nije postavljeno.";
@@ -88,6 +90,9 @@ public class IzvodjenjeService {
     private final RokPlaner rokPlaner;
     private final StanjeService stanjeService;
     private final ZadatakDodelaService zadatakDodelaService;
+    private final TemeZaVezbanje temeZaVezbanje;
+    private final RangTacnostiService rangTacnosti;
+    private final RangPrikazRegistar rangPrikazi;
     private final ImenaUcesnika imenaUcesnika;
     private final IdentitetStudenta identitet;
     private final ApplicationEventPublisher publisher;
@@ -228,12 +233,8 @@ public class IzvodjenjeService {
             case OTVORI_ZATVORI -> otvoriZatvori(iz, sl);
             case REZULTATI -> rezultatiPrikaz(iz, sl);
             case TACAN -> tacanPrikaz(iz, sl);
-            case RANG_LISTA -> {
-                if (!iz.isTakmicenje() && !iz.isRangListaPrikazana()) {
-                    throw new SystemException(NIJE_TAKMICENJE, HttpStatus.CONFLICT);
-                }
-                iz.setRangListaPrikazana(!iz.isRangListaPrikazana());
-            }
+            case RANG_LISTA -> rangPrikaz(iz, RangPrikaz.IZVODJENJE);
+            case RANG_PREDAVANJA -> rangPrikaz(iz, RangPrikaz.PREDAVANJE);
             case PONOVI -> ponovi(iz, sl);
             case TAJMER -> tajmer(iz);
             case TAJMER_PLUS -> pomeriTajmer(iz, POMAK_TAJMERA_MS);
@@ -248,7 +249,37 @@ public class IzvodjenjeService {
             case RESENJE -> resenjePrikaz(iz, sl);
             case BROJ_VARIJANTI -> brojVarijantiKomanda(iz, sl, cmd.vrednost());
             case NIVO -> nivoKomanda(iz, sl, cmd.vrednost());
+            case RANG_BROJ -> rangBroj(iz, cmd.vrednost());
         }
+    }
+
+    /**
+     * Koliko prvih redova ranga tačnosti ide na projektor: 0 ili {@code null} = svi (najviše
+     * {@link RangTacnostiService#RANG_PROJEKTOR_MAX}), 1..{@value RangTacnostiService#RANG_PROJEKTOR_MAX} = toliko; u svakoj fazi,
+     * važi dok izvođenje traje (konzola ga postavlja iz nastavnikove podešenosti).
+     */
+    private void rangBroj(Izvodjenje iz, Integer vrednost) {
+        if (vrednost != null && (vrednost < 0 || vrednost > RangTacnostiService.RANG_PROJEKTOR_MAX)) {
+            throw new SystemException(RANG_BROJ_GRANICE, HttpStatus.BAD_REQUEST);
+        }
+        rangPrikazi.postaviBroj(iz.getId(), vrednost == null || vrednost == 0 ? null : vrednost);
+    }
+
+    /**
+     * Prekidač ranga na projektoru (spec rang tačnosti 6): isti rang drugi put sklanja listu, drugi rang je zamenjuje.
+     * Rang predavanja traži predavanje sa još izvođenja sa rundama (409).
+     */
+    private void rangPrikaz(Izvodjenje iz, RangPrikaz koji) {
+        if (iz.isRangListaPrikazana() && rangPrikazi.prikaz(iz.getId()) == koji) {
+            iz.setRangListaPrikazana(false);
+            rangPrikazi.ukloni(iz.getId());
+            return;
+        }
+        if (koji == RangPrikaz.PREDAVANJE && !rangTacnosti.imaRangPredavanja(iz)) {
+            throw new SystemException(NEMA_RANGA_PREDAVANJA, HttpStatus.CONFLICT);
+        }
+        iz.setRangListaPrikazana(true);
+        rangPrikazi.postavi(iz.getId(), koji);
     }
 
     /**
@@ -345,6 +376,7 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
+        temeZaVezbanje.prikazan(iz, s.getId());   // studentski pregled: slajd vidljiv grupi posle kraja izvođenja
         if (!TokIzvodjenja.saRundama(s)) {
             iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
@@ -617,7 +649,10 @@ public class IzvodjenjeService {
         }
         iz.setStatus(StatusIzvodjenja.ZAVRSENO);
         iz.setAktivanKod(null);
+        rangPrikazi.zavrsi(iz.getId());
         iz.setKraj(sada());
+        // pre brisanja rundi kod "Ne čuvaj": izvučeni tipovi se otvaraju grupi za vežbanje tek sada (spec studentskog dela 5.3)
+        temeZaVezbanje.krajIzvodjenja(iz);
         if (!iz.isCuvanje()) {
             // runde se brišu, pa ni faza pitanja više ne postoji
             iz.setTrenutnaRundaId(null);

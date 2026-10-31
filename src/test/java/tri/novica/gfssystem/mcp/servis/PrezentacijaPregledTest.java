@@ -10,6 +10,7 @@ import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
 import tri.novica.gfssystem.dto.uzivo.PredmetKratko;
 import tri.novica.gfssystem.dto.uzivo.Prelaz;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaDetails;
+import tri.novica.gfssystem.dto.uzivo.VrstaPrezentacije;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
 import tri.novica.gfssystem.dto.uzivo.ZadatakSlajdaInfo;
 import tri.novica.gfssystem.dto.uzivo.platno.*;
@@ -117,7 +118,8 @@ class PrezentacijaPregledTest {
     static PrezentacijaDetails prezentacija(List<SlajdDetails> slajdovi) {
         return new PrezentacijaDetails(7L, "Vežbe 3: brojni sistemi", "Konverzije između sistema.",
                 new PredmetKratko(1L, "Uvod u računarstvo"), slajdovi.size(), 0, LocalDateTime.of(2026, 10, 18, 9, 0),
-                false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, slajdovi);
+                false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, slajdovi, 3, VrstaPrezentacije.GRADIVO, 0,
+                LocalDateTime.of(2026, 10, 18, 9, 0), null);
     }
 
     static int duzina(Object o) {
@@ -382,7 +384,7 @@ class PrezentacijaPregledTest {
         assertEquals(new SlajdDetails(3L, 2, TipSlajda.PLATNO, "N", "S", new MedijInfo(SLIKA, "a", "image/png", 1), "B",
                 true, null, PlatnoPregled.bezPoteza(platno(1)), new Prelaz(TipPrelaza.FADE, null, 500)), bez);
         ZadatakSlajdaInfo zadatak = new ZadatakSlajdaInfo(3L, 120, 4, null, "2 → 10", List.of(), true, 3, List.of(0, 3, 0), List.of(), false,
-                List.of(), List.of());
+                List.of(), List.of(), null);
         assertEquals(zadatak, PrezentacijaPregled.bezPoteza(new SlajdDetails(3L, 2, TipSlajda.PLATNO, null, null, null,
                 null, false, null, platno(1), null, zadatak)).zadatak(), "zadatak ostaje i kad se potezi brišu");
         SlajdDetails info = new SlajdDetails(4L, 1, TipSlajda.INFO, "N", null, null, null, false, null, null, null);
@@ -404,7 +406,7 @@ class PrezentacijaPregledTest {
     void zadatakSlajdImaSazetakBezSvg() {
         ZadatakSlajdaInfo z = new ZadatakSlajdaInfo(3L, 120, 4, null, "2 → 10",
                 List.of(new GrupaPutanja(1L, "Konverzije"), new GrupaPutanja(3L, "2 → 10")), true, 6, List.of(0, 6, 0), List.of(), false,
-                List.of(), List.of("Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa."));
+                List.of(), List.of("Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa."), null);
         SlajdDetails s = new SlajdDetails(9L, 1, TipSlajda.ZADATAK, null, null, null, null, false, null, null, null, z);
         McpSlajdSazetak m = PrezentacijaPregled.sazetak(s);
         assertEquals(0, m.brojKoraka());

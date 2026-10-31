@@ -27,6 +27,13 @@ public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
     /** Neizbačen učesnik izvođenja iza kog je student (isti student opet ulazi kao isti učesnik). */
     Optional<Ucesnik> findFirstByIzvodjenjeIdAndStudentIdAndIzbacenFalse(Long izvodjenjeId, Long studentId);
 
+    /** Da li je student izbačen iz izvođenja (ne ulazi ponovo, telefon na času ga ne vodi u to izvođenje). */
+    boolean existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(Long izvodjenjeId, Long studentId);
+
+    /** Studenti izbačenih učesnika izvođenja (brojanje očekivanih u konzoli ih preskače). */
+    @Query("select distinct u.student.id from Ucesnik u where u.izvodjenje.id = :id and u.izbacen = true and u.student is not null")
+    List<Long> findIzbaceniStudentIds(@Param("id") Long izvodjenjeId);
+
     /** Broj neizbačenih učesnika po izvođenju: redovi {@code [izvodjenjeId, broj]}. */
     @Query("""
             select u.izvodjenje.id, count(u) from Ucesnik u
@@ -37,4 +44,14 @@ public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
     @Modifying(flushAutomatically = true)
     @Query("delete from Ucesnik u where u.izvodjenje.id = :id")
     void deleteAllByIzvodjenjeId(@Param("id") Long id);
+
+    /** Neizbačeni učesnici više izvođenja sa studentom (rang tačnosti), po prijavi. */
+    @Query("""
+            select u from Ucesnik u left join fetch u.student
+            where u.izvodjenje.id in :ids and u.izbacen = false order by u.kreirano, u.id""")
+    List<Ucesnik> findZaRang(@Param("ids") Collection<Long> ids);
+
+    /** Izvođenja u kojima je student neizbačen učesnik. */
+    @Query("select distinct u.izvodjenje.id from Ucesnik u where u.student.id = :studentId and u.izbacen = false")
+    List<Long> findIzvodjenjaStudenta(@Param("studentId") Long studentId);
 }

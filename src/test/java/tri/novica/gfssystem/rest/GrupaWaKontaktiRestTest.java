@@ -12,6 +12,7 @@ import tri.novica.gfssystem.dto.grupa.WaLinkInfo;
 import tri.novica.gfssystem.service.GrupaService;
 import tri.novica.gfssystem.service.PregledGrupeService;
 import tri.novica.gfssystem.service.StudentService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class GrupaWaKontaktiRestTest {
 
     @Autowired MockMvc mvc;
+    @MockitoBean RangTacnostiService rangTacnostiService;
     @MockitoBean GrupaService grupe;
     @MockitoBean StudentService studenti;
     @MockitoBean PregledGrupeService pregledi;

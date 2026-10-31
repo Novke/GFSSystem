@@ -23,6 +23,8 @@ public final class Kolacici {
 
     public static final String NASTAVNIK = "gfs_nastavnik";
     public static final String STUDENT = "gfs_student";
+    /** Oznaka telefona pri čekiranju (365 dana, nije prijava): "isti telefon kao X" kod nastavnika. */
+    public static final String UREDJAJ = "gfs_uredjaj";
     public static final String LTI = "__Host-gfs_lti";
     public static final String LTI_PAR = "__Host-gfs_lti_par";
 

@@ -50,6 +50,8 @@ public final class PristupMatrica {
 
     private static final HttpMethod GET = HttpMethod.GET;
     private static final HttpMethod POST = HttpMethod.POST;
+    private static final HttpMethod PUT = HttpMethod.PUT;
+    private static final HttpMethod DELETE = HttpMethod.DELETE;
 
     private static final List<Pravilo> ANONIMNO = List.of(
             // samostalni upis studenta (QR)
@@ -67,6 +69,8 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/nalog/prijava"),
             new Pravilo(POST, "/public/nalog/pomoc"),
             new Pravilo(GET, "/public/nalog/stanje"),
+            // čekiranje QR-om: prijavljen se čekira odmah, neprijavljen dobija ključ (student iz sesije, ako postoji)
+            new Pravilo(POST, "/public/nalog/cas/skeniraj"),
             // Moodle LTI 1.3 (prijava i start su i izuzeti iz provere porekla)
             new Pravilo(GET, "/public/lti/prijava"),
             new Pravilo(POST, "/public/lti/prijava"),
@@ -82,6 +86,35 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/nalog/ja"),
             new Pravilo(POST, "/public/nalog/odjava"),
             new Pravilo(POST, "/public/nalog/odjava-svuda"),
+            // čekiranje iz ključa posle prijave i stanje časa (telefon prati čas)
+            new Pravilo(POST, "/public/nalog/cas/potvrdi"),
+            new Pravilo(GET, "/public/nalog/cas"),
+            // naredni časovi i najava odsustva (student samo iz sesije)
+            new Pravilo(GET, "/public/nalog/casovi"),
+            new Pravilo(POST, "/public/nalog/casovi/najavi"),
+            new Pravilo(POST, "/public/nalog/casovi/povuci"),
+            // nalog studenta, faze 2 i 3 (spec studentskog dela 12.7): predmeti, istorija, vežbanje, pregled, ocena; svaki
+            // servis ograničava po studentu iz sesije i njegovim grupama (tuđe = 404)
+            new Pravilo(GET, "/public/nalog/predmeti"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prisustvo"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/vezbanje"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/moji-zadaci"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/prezentacije"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/ocena"),
+            new Pravilo(GET, "/public/nalog/prezentacije/{id}"),
+            new Pravilo(POST, "/public/nalog/vezbanje"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/provera"),
+            new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/resenje"),
+            // podešavanja naloga (tab "Ja"): mejl o otkazanom času
+            new Pravilo(GET, "/public/nalog/podesavanja"),
+            new Pravilo(PUT, "/public/nalog/podesavanja"),
+            // push na ovom uređaju i zvono naloga (spec aplikacije 5.4 i 6.8): uređaj i student samo iz sesije
+            new Pravilo(GET, "/public/nalog/push"),
+            new Pravilo(PUT, "/public/nalog/push"),
+            new Pravilo(DELETE, "/public/nalog/push"),
+            new Pravilo(POST, "/public/nalog/push/proba"),
+            new Pravilo(GET, "/public/nalog/obavestenja"),
+            new Pravilo(POST, "/public/nalog/obavestenja/otvoreno"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

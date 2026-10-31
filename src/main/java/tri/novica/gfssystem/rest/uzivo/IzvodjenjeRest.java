@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.uzivo.StatusIzvodjenja;
 import tri.novica.gfssystem.service.uzivo.IzvodjenjeService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 import tri.novica.gfssystem.service.uzivo.StanjeService;
 
 import java.util.List;
@@ -23,6 +24,7 @@ public class IzvodjenjeRest {
 
     private final IzvodjenjeService izvodjenjeService;
     private final StanjeService stanjeService;
+    private final RangTacnostiService rangTacnostiService;
 
     /** Najnovija prva; svi filteri su opcioni ({@code predavanjeId}: izvođenja vezana za to predavanje). */
     @GetMapping
@@ -69,6 +71,13 @@ public class IzvodjenjeRest {
     @ResponseStatus(HttpStatus.OK)
     public IzvodjenjeRezultati rezultati(@PathVariable Long id) {
         return izvodjenjeService.rezultati(id);
+    }
+
+    /** Rang tačnosti izvođenja (konzola, pregled): ceo, uživo; poeni samo u takmičenju. */
+    @GetMapping("/{id}/rang")
+    @ResponseStatus(HttpStatus.OK)
+    public List<RangTacnostiStavka> rang(@PathVariable Long id) {
+        return rangTacnostiService.zaIzvodjenje(id);
     }
 
     /** Samo završeno izvođenje (aktivno -> 409). */

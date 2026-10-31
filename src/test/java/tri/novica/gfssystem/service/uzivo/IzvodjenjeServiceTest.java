@@ -14,6 +14,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import tools.jackson.databind.json.JsonMapper;
+import tri.novica.gfssystem.service.portal.TemeZaVezbanje;
 import tri.novica.gfssystem.dto.banka.GrupaPutanja;
 import tri.novica.gfssystem.dto.uzivo.*;
 import tri.novica.gfssystem.entity.Grupa;
@@ -50,6 +51,7 @@ class IzvodjenjeServiceTest {
     @Mock PrezentacijaRepository prezentacijaRepository;
     @Mock SlajdRepository slajdRepository;
     @Mock PitanjeRundaRepository rundaRepository;
+    @Mock RangTacnostiService rangTacnosti;
     @Mock OdgovorRepository odgovorRepository;
     @Mock UcesnikRepository ucesnikRepository;
     @Mock PredavanjeRepository predavanjeRepository;
@@ -58,6 +60,7 @@ class IzvodjenjeServiceTest {
     @Mock RokPlaner rokPlaner;
     @Mock StanjeService stanjeService;
     @Mock ZadatakDodelaService zadatakDodelaService;
+    @Mock TemeZaVezbanje temeZaVezbanje;
     @Mock ImenaUcesnika imenaUcesnika;
     @Mock IdentitetStudenta identitet;
     @Mock ApplicationEventPublisher publisher;
@@ -136,8 +139,11 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, zadatakDodelaService, imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                stanjeService, zadatakDodelaService, temeZaVezbanje, rangTacnosti,
+                rangPrikazi, imenaUcesnika, identitet, publisher, jsonMapper, clock);
     }
+
+    final RangPrikazRegistar rangPrikazi = new RangPrikazRegistar();
 
     Slajd pitanje(Long id, int rb, TipPitanja tip, Integer sekunde) {
         Pitanje p = new Pitanje();
@@ -666,9 +672,14 @@ class IzvodjenjeServiceTest {
         assertGreska(409, "Ovo pitanje nema tačan odgovor.", TipKomande.TACAN);
         assertGreska(409, "Tajmer radi samo dok je pitanje otvoreno.", TipKomande.TAJMER);
 
-        // bez takmičenja
+        // bez takmičenja rang (tačnosti) radi; rang predavanja traži predavanje sa još izvođenja
         iz.setTakmicenje(false);
-        assertGreska(409, "Takmičenje nije uključeno.", TipKomande.RANG_LISTA);
+        k(TipKomande.RANG_LISTA);
+        assertTrue(iz.isRangListaPrikazana());
+        k(TipKomande.RANG_LISTA);
+        assertFalse(iz.isRangListaPrikazana());
+        assertGreska(409, "Predavanje nema druga izvođenja.", TipKomande.RANG_PREDAVANJA);
+        assertFalse(iz.isRangListaPrikazana());
 
         // nepostojeći slajd
         for (Integer indeks : new Integer[]{99, 4, -2, null}) {
@@ -684,6 +695,30 @@ class IzvodjenjeServiceTest {
         assertGreska(409, "Na ovom slajdu nema pitanja.", TipKomande.TACAN);
         assertGreska(409, "Na ovom slajdu nema pitanja.", TipKomande.PONOVI);
         assertGreska(409, "Nema rezultata za prikaz.", TipKomande.REZULTATI);
+    }
+
+    @Test
+    void rangBrojOgranicavaProjektorIBriseSeNaKraju() {
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 5));
+        assertEquals(5, rangPrikazi.broj(IZ));
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 0));
+        assertNull(rangPrikazi.broj(IZ), "0 = svi");
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, 30));
+        assertEquals(30, rangPrikazi.broj(IZ));
+        service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, null));
+        assertNull(rangPrikazi.broj(IZ), "null = svi");
+        for (Integer los : new Integer[]{-1, 31}) {
+            SystemException e = assertThrows(SystemException.class,
+                    () -> service.komanda(IZ, new KomandaCmd(TipKomande.RANG_BROJ, los)));
+            assertEquals(400, e.getCode());
+            assertEquals(IzvodjenjeService.RANG_BROJ_GRANICE, e.getMessage());
+        }
+
+        rangPrikazi.postaviBroj(IZ, 5);
+        rangPrikazi.ukloni(IZ);
+        assertEquals(5, rangPrikazi.broj(IZ), "skrivanje ranga čuva izbor");
+        rangPrikazi.zavrsi(IZ);
+        assertNull(rangPrikazi.broj(IZ), "kraj izvođenja briše izbor");
     }
 
     @Test
@@ -1166,6 +1201,7 @@ class IzvodjenjeServiceTest {
     @EnumSource(value = TipKomande.class, names = {"TAJMER", "TAJMER_PLUS", "TAJMER_MINUS", "RESENJE", "BROJ_VARIJANTI", "NIVO"},
             mode = EnumSource.Mode.EXCLUDE)
     void svakaKomandaZakljucavaObjavljujeIVracaStanje(TipKomande tip) {
+        when(rangTacnosti.imaRangPredavanja(iz)).thenReturn(true);
         doS2Zatvoreno();
         proveriKomandu(tip);
     }

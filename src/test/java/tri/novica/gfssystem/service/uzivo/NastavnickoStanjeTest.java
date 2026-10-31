@@ -120,7 +120,9 @@ class NastavnickoStanjeTest {
         when(odgovorRepository.findAllByRundaIzvodjenjeId(IZ)).thenReturn(odgovori);
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
+                org.mockito.Mockito.mock(RangTacnostiService.class), new RangPrikazRegistar(), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {
@@ -213,7 +215,8 @@ class NastavnickoStanjeTest {
                 rez.opcije());
 
         // učesnici bez izbačenih; poeni samo iz poslednje runde (Anin poen iz runde 1 više ne važi)
-        assertEquals(List.of(new UcesnikStanje(31L, "Ana", 0, true, false), new UcesnikStanje(32L, "Bojan", 800, false, true)),
+        assertEquals(List.of(new UcesnikStanje(31L, "Ana", 0, true, false), new UcesnikStanje(32L, "Bojan", 800, false, true,
+                        null, true, 3000L, "A", false)),
                 st.ucesnici());
         assertEquals(1, st.brojPovezanih());
         assertEquals(List.of(new RangStavka(1, 32L, "Bojan", 800), new RangStavka(2, 31L, "Ana", 0)), st.rangLista());
@@ -221,7 +224,7 @@ class NastavnickoStanjeTest {
 
     static ZadatakSlajdaInfo opisZadatka(long grupaId) {
         return new ZadatakSlajdaInfo(grupaId, 120, 2, null, "Grupa " + grupaId, List.of(), true, 3, List.of(0, 3, 0), List.of(), false, List.of(),
-                List.of());
+                List.of(), null);
     }
 
     static void uZadatak(Slajd s) {

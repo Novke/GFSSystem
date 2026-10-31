@@ -36,8 +36,11 @@ import tri.novica.gfssystem.service.prijava.StudentskaPrijava;
 import tri.novica.gfssystem.service.prijava.TestStudenti;
 import tri.novica.gfssystem.service.uzivo.ImenaUcesnika;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
+import tri.novica.gfssystem.service.uzivo.UcesnikService;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -71,6 +74,7 @@ class BodovanoUzivoIT {
     @Autowired PredavanjeRepository predavanjeRepository;
     @Autowired PrezentacijaService prezentacijaService;
     @Autowired JdbcTemplate jdbc;
+    @Autowired Clock clock;
 
     TestStudenti studenti;
     String nastavnickiKolacic;
@@ -139,6 +143,12 @@ class BodovanoUzivoIT {
         return json.readTree(iz.getResponse().getContentAsString()).get("kod").asText();
     }
 
+    /** Čekiranje na predavanju izvođenja (kao skeniranje QR-a), bez kojeg bodovano izvođenje ne prima studenta. */
+    void cekiraj(Student s) {
+        jdbc.update("insert into cekiranja (predavanje_id, student_id, vreme, uredjaj_hash) values (?, ?, ?, ?)",
+                predavanje.getId(), s.getId(), LocalDateTime.now(clock), "a".repeat(64));
+    }
+
     /** Nov uređaj studenta (kao prijava kodom na jednom telefonu); vraća kolačić {@code gfs_student}. */
     Cookie telefon(Student s) {
         MockHttpServletResponse res = new MockHttpServletResponse();
@@ -175,6 +185,13 @@ class BodovanoUzivoIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.prijavaObavezna").value(true))
                 .andExpect(jsonPath("$.prijavljenStudent").value(true));
+
+        // bodovano izvođenje sa predavanja traži čekiranje (studentski portal, faza 1)
+        mvc.perform(ulaz(kod, "Lažno ime").cookie(prvi))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value(UcesnikService.PRVO_CEKIRANJE));
+        assertEquals(0, ucesnika(kod));
+        cekiraj(s);
 
         MvcResult r1 = mvc.perform(ulaz(kod, "Lažno ime").cookie(prvi))
                 .andExpect(status().isCreated()).andReturn();

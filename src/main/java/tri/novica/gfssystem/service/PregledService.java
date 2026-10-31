@@ -25,24 +25,30 @@ import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.TestRepository;
 import tri.novica.gfssystem.repository.spec.DomaciSpecs;
 import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
+import tri.novica.gfssystem.repository.raspored.RasporedRepository;
 import tri.novica.gfssystem.repository.spec.TestSpecs;
+import tri.novica.gfssystem.service.raspored.TerminService;
+import tri.novica.gfssystem.service.raspored.Termini;
 import tri.novica.gfssystem.utility.PageableUtil;
 import tri.novica.gfssystem.utility.SkolskaGodina;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * Kontrolna tabla (početna) i globalna pretraga. Liste koriste {@code pretraga} servisa iz lista (isti filteri,
  * mapiranje i brojači), "danas", tekuća nedelja i tekuća školska godina dolaze iz {@link Clock} bean-a.
  * "Čeka na tebe" i broj starijih su ograničeni na tekuću školsku godinu; testovi i domaći u "čeka" samo ako su
- * već održani (datum do danas), budući su u "ova nedelja" i listama.
+ * već održani (datum do danas), budući su u "ova nedelja" i listama. Kad neki period rasporeda pokriva danas, predlog
+ * sledećeg predavanja dolazi iz rasporeda (spec najave odsustva, odeljak 8).
  */
 @Service
 @RequiredArgsConstructor
@@ -53,6 +59,10 @@ public class PregledService {
     static final int MAX_U_TOKU = 10;
     static final int MAX_PRETRAGA = 5;
     static final int MIN_DUZINA_UPITA = 2;
+    /** Termini na početnoj: danas i narednih 6 dana. */
+    static final int DANA_RASPOREDA = 7;
+    /** Koliko unapred se traži sledeći termin kad danas nema časa po rasporedu. */
+    static final int DANA_SLEDECEG = 60;
     private static final Sort PO_DATUMU = Sort.by(Sort.Order.asc("datum"), Sort.Order.asc("id"));
 
     private final PredavanjeService predavanjeService;
@@ -65,6 +75,8 @@ public class PregledService {
     private final DomaciRepository domaciRepository;
     private final TestRepository testRepository;
     private final StudentRepository studentRepository;
+    private final RasporedRepository rasporedRepository;
+    private final TerminService terminService;
     private final Clock clock;
 
     public KontrolnaTablaInfo kontrolnaTabla() {
@@ -88,7 +100,13 @@ public class PregledService {
                         .toList(),
                 nezavrsena.getContent(),
                 ukupno(testovi), ukupno(domaci), onboardingService.brojPrijavaNaCekanju(), ukupno(nezavrsena));
-        return new KontrolnaTablaInfo(sledece(godina), uToku, ceka, nedelja(danas));
+        LocalDateTime sada = LocalDateTime.now(clock);
+        boolean pokriva = rasporedRepository.pokriva(danas);
+        List<TerminService.Termin> termini = terminService.uProzoru(danas, danas.plusDays(DANA_RASPOREDA - 1L), null);
+        RasporedTablaInfo raspored = new RasporedTablaInfo(pokriva, termini.stream().map(PregledService::kratko).toList());
+        SledecePredavanjeInfo sledece = (pokriva ? izRasporeda(termini, sada, godina) : Optional.<SledecePredavanjeInfo>empty())
+                .orElseGet(() -> sledece(godina));
+        return new KontrolnaTablaInfo(sledece, uToku, ceka, nedelja(danas), raspored);
     }
 
     /** Ukupan broj redova upita (ne samo prve strane); metadata nikad nije null kad je lista napravljena iz {@code Page}. */
@@ -127,8 +145,50 @@ public class PregledService {
                     : studentRepository.brojStarijihNaPredmetu(p.getPredmet().getId(), g.getGodinaUpisa(),
                             SkolskaGodina.pocetak(godina), SkolskaGodina.kraj(godina));
             GrupaInfo grupa = g == null ? null : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata);
-            return new SledecePredavanjeInfo(predmet(p.getPredmet()), grupa, p.getRb() + 1, brojStudenata, brojStarijih);
+            return new SledecePredavanjeInfo(predmet(p.getPredmet()), grupa, p.getRb() + 1, brojStudenata, brojStarijih,
+                    null, SledecePredavanjeInfo.Izvor.POSLEDNJE);
         }).orElse(null);
+    }
+
+    /**
+     * Predlog iz rasporeda (period pokriva danas): prvi današnji termin koji nije otkazan, nema predavanje i nije završen;
+     * inače prvi neotkazan termin posle danas, do {@value #DANA_SLEDECEG} dana. Prazno: stara heuristika.
+     */
+    private Optional<SledecePredavanjeInfo> izRasporeda(List<TerminService.Termin> nedelja, LocalDateTime sada, int godina) {
+        LocalDate danas = sada.toLocalDate();
+        Optional<TerminService.Termin> danasnji = nedelja.stream()
+                .filter(t -> t.datum().equals(danas) && t.otkazan() == null && t.predavanjeId() == null
+                        && !Termini.zavrsen(sada, t.datum(), t.stavka().getKraj()))
+                .findFirst();
+        if (danasnji.isPresent()) {
+            return Optional.of(predlog(danasnji.get(), SledecePredavanjeInfo.Izvor.RASPORED_DANAS, godina));
+        }
+        Optional<TerminService.Termin> sledeci = nedelja.stream()
+                .filter(t -> t.datum().isAfter(danas) && t.otkazan() == null).findFirst();
+        if (sledeci.isEmpty()) {
+            sledeci = terminService.uProzoru(danas.plusDays(DANA_RASPOREDA), danas.plusDays(DANA_SLEDECEG), null).stream()
+                    .filter(t -> t.otkazan() == null).findFirst();
+        }
+        return sledeci.map(t -> predlog(t, SledecePredavanjeInfo.Izvor.RASPORED_SLEDECI, godina));
+    }
+
+    private SledecePredavanjeInfo predlog(TerminService.Termin t, SledecePredavanjeInfo.Izvor izvor, int godina) {
+        Grupa g = t.stavka().getGrupa();
+        Predmet p = t.stavka().getPredmet();
+        long brojStudenata = studentRepository.countByGrupaId(g.getId());
+        long brojStarijih = g.getGodinaUpisa() == null ? 0
+                : studentRepository.brojStarijihNaPredmetu(p.getId(), g.getGodinaUpisa(),
+                        SkolskaGodina.pocetak(godina), SkolskaGodina.kraj(godina));
+        Integer poslednji = predavanjeRepository.findPoslednjiRB();
+        int rb = poslednji == null ? 1 : poslednji + 1;
+        return new SledecePredavanjeInfo(predmet(p), new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata),
+                rb, brojStudenata, brojStarijih, kratko(t), izvor);
+    }
+
+    private static TerminKratkoInfo kratko(TerminService.Termin t) {
+        return new TerminKratkoInfo(t.stavka().getId(), t.datum(), t.stavka().getPocetak(), t.stavka().getKraj(),
+                predmet(t.stavka().getPredmet()), grupa(t.stavka().getGrupa()), t.otkazan() != null,
+                t.otkazan() == null ? null : t.otkazan().getNapomena(), t.najave().size(), t.predavanjeId());
     }
 
     /** Predavanja, domaći i testovi od ponedeljka do nedelje tekuće nedelje; po datumu, pa tipu, pa id-ju. */

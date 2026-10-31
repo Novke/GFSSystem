@@ -47,7 +47,7 @@ Server odbija tekst i rešenje sa bilo kojom od ovih komandi pre rendera, i kad 
 ## Šema polja
 Šema (`polja`) kaže šta student unosi na telefonu i kako se ocenjuje; `[]` znači rad na papiru (telefon samo prikaže zadatak). Najviše 10 polja; `kljuc` je 1-10 malih slova i cifara, počinje slovom i jedinstven je; `oznaka` ima 1-200 znakova i kratko kaže šta se unosi, velikim početnim slovom (npr. `Dekadna vrednost`). Slova `a)`, `b)` na početak oznake stavljaj samo kad tekst zadatka sam ima delove označene tim slovima; šema sa jednim poljem nikad nema slovo (tabla i pregled oznaku jedinog polja ni ne prikazuju).
 - `BROJ`: broj; `odstupanje` >= 0 (podrazumevano 0) sa `odstupanjeTip` `APSOLUTNO` (podrazumevano) ili `PROCENAT`, `jedinica` do 30 znakova. Student sme decimalni zarez ili tačku.
-- `TEKST`: kratak tekst; `zanemariVelicinu` i `zanemariRazmake` (podrazumevano true); ćirilica i dijakritici se porede kao latinica bez njih.
+- `TEKST`: kratak tekst; `zanemariVelicinu` i `zanemariRazmake` (podrazumevano true); ćirilica i dijakritici se porede kao latinica bez njih. `zanemariVodeceNule` (podrazumevano false): `01111111` je isto što i `1111111`; uključi ga za rezultat u brojnom sistemu (zbir, razlika, konverzija), a nikad za zapis fiksne širine (komplement, 8 bita), gde je `00000101` drugo od `101`.
 - `JEDAN_TACAN`: tačna je jedna od 2-6 `opcije` (`tekst` 1-200 znakova, sme `$formula$`).
 - `VISE_TACNIH`: tačan je skup od 2-6 `opcije`.
 

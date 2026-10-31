@@ -27,6 +27,7 @@ import tri.novica.gfssystem.service.DomaciService;
 import tri.novica.gfssystem.service.OcenjivanjeService;
 import tri.novica.gfssystem.service.StudentService;
 import tri.novica.gfssystem.service.TestService;
+import tri.novica.gfssystem.service.uzivo.RangTacnostiService;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -43,6 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PretragaRestTest {
 
     @Autowired MockMvc mvc;
+    @MockitoBean RangTacnostiService rangTacnostiService;
     @MockitoBean DomaciService domaci;
     @MockitoBean TestService testovi;
     @MockitoBean StudentService studenti;

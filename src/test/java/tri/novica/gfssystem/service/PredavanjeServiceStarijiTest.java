@@ -36,7 +36,7 @@ class PredavanjeServiceStarijiTest {
     @BeforeEach
     void setUp() {
         service = new PredavanjeService(predavanjeRepository, predmetRepository, grupaRepository, studentRepository,
-                aktivnostRepository, mapper);
+                aktivnostRepository, org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), mapper);
         when(predavanjeRepository.save(any(Predavanje.class))).thenAnswer(inv -> inv.getArgument(0));
         when(mapper.map(any(), eq(PredavanjeDetails.class))).thenReturn(new PredavanjeDetails());
     }
@@ -53,7 +53,7 @@ class PredavanjeServiceStarijiTest {
         Predavanje p = new Predavanje();
         p.setId(10L);
         p.setGrupa(g);
-        when(predavanjeRepository.findById(10L)).thenReturn(Optional.of(p));
+        when(predavanjeRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(p));
         return p;
     }
 

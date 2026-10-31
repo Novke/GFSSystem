@@ -116,7 +116,9 @@ class JavnoStanjeTest {
                 .filter(u -> u.getId().equals(i.getArgument(0))).findFirst());
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci, clock);
+                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
+                org.mockito.Mockito.mock(RangTacnostiService.class), new RangPrikazRegistar(), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {
@@ -881,6 +883,46 @@ class JavnoStanjeTest {
         assertEquals(new LicniOdgovor(RUNDA, true, true, 500), ceca.odgovor());
         assertEquals(0, service.licno(IZ, 40L).poeni());
         assertEquals(new LicniOdgovor(RUNDA, false, null, null), service.licno(IZ, 40L).odgovor());
+    }
+
+    @Test
+    void licnaTacnostTekPosleTacan() {
+        // ranije pitanje (drugi slajd, zatvoreno): Ana tačno, Bojan netačno, Ceca propustila; anketa se ne računa
+        PitanjeRunda ranija = runda(201L, pitanja.get(TipPitanja.TACNO_NETACNO), 1);
+        ranija.setZatvoreno(T0.plusSeconds(100));
+        PitanjeRunda anketa = runda(203L, pitanja.get(TipPitanja.ANKETA), 2);
+        anketa.setZatvoreno(T0.plusSeconds(100));
+        na(TipPitanja.JEDAN_TACAN, Faza.ZATVORENO);
+        trenutna().setRedniBroj(3);
+        trenutna().setZatvoreno(T0.plusSeconds(200));
+        Ucesnik ana = ucesnik(31L, "Ana");
+        Ucesnik bojan = ucesnik(32L, "Bojan");
+        ucesnik(33L, "Ceca");
+        odgovor(ranija, ana, 0, true);
+        odgovor(ranija, bojan, 0, false);
+        odgovor(anketa, ana, 0, null);
+        odgovor(trenutna(), ana, 0, true);
+
+        // pre TACAN trenutna runda ne ulazi (ni u tačne ni u dugovane), inače bi broj odao tačnost
+        LicnoStanje a = service.licno(IZ, 31L);
+        assertEquals(1, a.tacnih());
+        assertEquals(1, a.dugovanih());
+        assertEquals(0, service.licno(IZ, 32L).tacnih());
+        assertEquals(1, service.licno(IZ, 32L).dugovanih());
+        assertEquals(1, service.licno(IZ, 33L).dugovanih(), "propušteno zatvoreno pitanje se duguje");
+
+        iz.setTacanPrikazan(true);
+        a = service.licno(IZ, 31L);
+        assertEquals(2, a.tacnih());
+        assertEquals(2, a.dugovanih());
+        // Bojan je ušao pre zatvaranja a nije odgovorio: duguje i trenutno
+        assertEquals(0, service.licno(IZ, 32L).tacnih());
+        assertEquals(2, service.licno(IZ, 32L).dugovanih());
+        // licnaZaSve daje isto što i pojedinačno
+        assertEquals(a, service.licnaZaSve(IZ).get(31L));
+        // bez takmičenja tačnost postoji, poena nema
+        iz.setTakmicenje(false);
+        assertEquals(2, service.licno(IZ, 31L).tacnih());
     }
 
     @Test

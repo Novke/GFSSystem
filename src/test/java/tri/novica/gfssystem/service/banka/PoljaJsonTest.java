@@ -87,6 +87,17 @@ class PoljaJsonTest {
     }
 
     @Test
+    void vodeceNuleSeCitajuIUpisujuSamoKadSuUkljucene() {
+        var p = PoljaJson.polja("[{\"kljuc\":\"r\",\"oznaka\":\"R\",\"tip\":\"TEKST\",\"zanemariVodeceNule\":true}]");
+        assertThat(p.get(0).zanemariVodeceNule()).isTrue();
+        assertThat(PoljaJson.uJson(p)).contains("\"zanemariVodeceNule\":true");
+        var bez = PoljaJson.polja("[{\"kljuc\":\"r\",\"oznaka\":\"R\",\"tip\":\"TEKST\"}]");
+        assertThat(bez.get(0).zanemariVodeceNule()).as("stara šema bez polja").isNull();
+        assertThat(PoljaJson.uJson(bez)).as("isključeno se ne upisuje, kolona ostaje ista").doesNotContain("zanemariVodeceNule");
+        odbija(() -> PoljaJson.polja("[{\"kljuc\":\"a\",\"zanemariVodeceNule\":\"true\"}]"));
+    }
+
+    @Test
     void pogresanTipJe400() {
         odbija(() -> PoljaJson.polja("[{\"kljuc\":1}]"));
         odbija(() -> PoljaJson.polja("[{\"kljuc\":\"a\",\"tip\":\"NEPOZNAT\"}]"));

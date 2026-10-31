@@ -10,6 +10,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -28,6 +29,7 @@ import tri.novica.gfssystem.repository.prijava.ObavestenjeRepository;
 import tri.novica.gfssystem.repository.prijava.StudentskiUredjajRepository;
 import tri.novica.gfssystem.service.mejl.MejlPoruke;
 import tri.novica.gfssystem.service.mejl.MejlServis;
+import tri.novica.gfssystem.service.raspored.TerminOpis;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.IndeksUtil;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -66,6 +68,7 @@ public class ObavestenjeServis {
     static final String PREVISE = "Previše pokušaja. Pokušaj ponovo kasnije.";
     static final String NASLOV_POMOC = "GFS: studentu ne stiže kod";
     static final String NASLOV_PREVISE = "GFS: previše zahteva za kod";
+    static final String NASLOV_MNOGO_NAJAVA = "GFS: mnogo najava odsustva";
     static final Duration SAT = Duration.ofHours(1);
     static final Duration DAN = Duration.ofDays(1);
     static final int LIMIT_POMOC_IP = 10;
@@ -179,7 +182,9 @@ public class ObavestenjeServis {
         Obavestenje o = snimi(VrstaObavestenja.NE_STIZE_KOD, student.orElse(null), podaci);
         log.info("Obaveštenje 'ne stiže kod' napravljeno, obavestenje={}, student={}, indeks={}, ip={}", o.getId(),
                 student.map(Student::getId).orElse(null), i.trag(), ip);
-        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, i.trag(), student.orElse(null), cekanjeBraveMejlS);
+        mejlNastavniku(VrstaObavestenja.NE_STIZE_KOD, kljuc, i.trag(), NASLOV_POMOC,
+                telo(VrstaObavestenja.NE_STIZE_KOD, student.map(ObavestenjeServis::indeksSaGodinom).orElse(null),
+                        student.map(Student::getId).orElse(null)), cekanjeBraveMejlS);
     }
 
     /** Da li bar jedan token pripada uređaju studenta (opozvan i istekao se računaju: pamti se da je uređaj bio njegov). */
@@ -223,7 +228,8 @@ public class ObavestenjeServis {
             String identitet = KodServis.Indeks.identitet(n == null ? "" : n, st.getGodina());
             // red studenta je zaključan: brava mejla se čeka kratko (najviše 1 s), da zastoj na njoj ne drži taj red
             mejlNastavniku(VrstaObavestenja.PREVISE_KODOVA, kodovi.kljucIndeksa(identitet),
-                    KodServis.trag(identitet), student.get(),
+                    KodServis.trag(identitet), NASLOV_PREVISE,
+                    telo(VrstaObavestenja.PREVISE_KODOVA, indeksSaGodinom(st), st.getId()),
                     Math.min(CEKANJE_BRAVE_MEJL_PREVISE_S, cekanjeBraveMejlS));
         });
     }
@@ -255,45 +261,107 @@ public class ObavestenjeServis {
         o.setStudent(student);
         o.setPodaci(JSON.writeValueAsString(podaci));
         o.setKreirano(LocalDateTime.now(clock));
-        return obavestenja.save(o);
+        o = obavestenja.save(o);
+        dogadjaji.publishEvent(new NovoObavestenje(vrsta, null, 0, 0));
+        return o;
     }
 
     // ------------------------------------------------------------------ mejl nastavniku
 
     /**
      * Mejl nastavniku uz obaveštenje, u tekućoj transakciji (šalje se posle commit-a). Bez adrese ({@code
-     * gfs.nastavnik.mejl}) ili bez SMTP-a: ništa, ni brojač. Naslov nema ime studenta; telo za poznatog studenta ima njegov
-     * <b>upisan</b> indeks (iz baze) i relativni link na karticu ({@code studenti/<id>}), a bez studenta samo stalnu
-     * rečenicu: ono što je napadač ukucao u javnu formu nikad ne ide u mejl nastavniku (indeks je u aplikaciji, gde ga
-     * Angular escape-uje). Najviše 1 mejl po (vrsta, indeks) na sat i 20 na sat ukupno; provera i upis oba brojača idu pod
-     * MySQL bravom {@value #BRAVA_MEJL}, inače bi istovremeni zahtevi za različite indekse prešli ukupni limit. Redosled
-     * brava: brava pomoći, red studenta, pa ova (poslednja; iz {@link #previseKodova}, koja drži red studenta, čeka se najviše 1 s). Ne dobije li se brava, mejl se preskače
-     * (obaveštenje u bazi postoji).
+     * gfs.nastavnik.mejl}) ili bez SMTP-a: ništa, ni brojač. Naslov i telo sastavlja pozivalac samo iz podataka iz baze:
+     * naslov nema ime studenta; telo za poznatog studenta ima njegov <b>upisan</b> indeks i relativni link na karticu
+     * ({@code studenti/<id>}), bez studenta samo stalnu rečenicu, a za termin ({@code MNOGO_NAJAVA}) broj, predmet, grupu i
+     * vreme. Ono što je student ili napadač ukucao (indeks u javnoj formi, razlog najave) nikad ne ide u mejl nastavniku
+     * (vidi se u aplikaciji, gde ga Angular escape-uje). Najviše 1 mejl po (vrsta, ključ) na sat i 20 na sat ukupno;
+     * provera i upis oba brojača idu pod MySQL bravom {@value #BRAVA_MEJL}, inače bi istovremeni zahtevi za različite
+     * ključeve prešli ukupni limit. Redosled brava: brava pomoći, red studenta ili red stavke rasporeda, pa ova (poslednja;
+     * pozivaoci koji drže red čekaju je najviše 1 s). Ne dobije li se brava, mejl se preskače (obaveštenje u bazi postoji).
      *
-     * @param kljucIndeksa HMAC ključ indeksa ({@link KodServis#kljucIndeksa}), kao u ostalim brojačima
-     * @param student      pronađen student ili {@code null}
+     * @param kljucBrojaca ključ brojača po (vrsta, ključ): HMAC indeksa ({@link KodServis#kljucIndeksa}) ili termin
+     * @param trag         samo za log (prvih 8 hex indeksa, ili id termina)
      * @param cekanjeS     koliko (s) se najduže čeka brava ukupnog brojača
      */
-    private void mejlNastavniku(VrstaObavestenja vrsta, String kljucIndeksa, String trag, Student student, int cekanjeS) {
+    private void mejlNastavniku(VrstaObavestenja vrsta, String kljucBrojaca, String trag, String naslov, String telo,
+                                int cekanjeS) {
         String adresa = nastavnik.mejl();
         if (adresa.isEmpty() || !mejl.dostupan()) {
             return;
         }
         if (!kodovi.uzmiBravu(BRAVA_MEJL, cekanjeS, "mejl-nastavniku")) {
-            log.warn("Mejl nastavniku preskočen (brava zauzeta), vrsta={}, indeks={}", vrsta, trag);
+            log.warn("Mejl nastavniku preskočen (brava zauzeta), vrsta={}, kljuc={}", vrsta, trag);
             return;
         }
-        String kljuc = vrsta.name() + ":" + kljucIndeksa;
+        String kljuc = vrsta.name() + ":" + kljucBrojaca;
         if (pokusaji.dostignut(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc, LIMIT_MEJL_INDEKS, SAT)
                 || pokusaji.dostignut(VrstaPokusaja.MEJL_NASTAVNIKU_UKUPNO, UKUPNO, LIMIT_MEJL_UKUPNO, SAT)) {
-            log.info("Mejl nastavniku preskočen (limit), vrsta={}, indeks={}", vrsta, trag);
+            log.info("Mejl nastavniku preskočen (limit), vrsta={}, kljuc={}", vrsta, trag);
             return;
         }
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU, kljuc);
         pokusaji.zabeleziUTransakciji(VrstaPokusaja.MEJL_NASTAVNIKU_UKUPNO, UKUPNO);
-        dogadjaji.publishEvent(poruke.nastavniku(adresa,
-                vrsta == VrstaObavestenja.NE_STIZE_KOD ? NASLOV_POMOC : NASLOV_PREVISE,
-                telo(vrsta, student == null ? null : indeksSaGodinom(student), student == null ? null : student.getId())));
+        dogadjaji.publishEvent(poruke.nastavniku(adresa, naslov, telo));
+    }
+
+    // ------------------------------------------------------------------ mnogo najava odsustva
+
+    /**
+     * Za termin {@code t} odsustvo je najavilo {@code broj} studenata, više od praga perioda (spec najave odsustva, odeljak
+     * 5): pravi <b>jedno</b> obaveštenje {@code MNOGO_NAJAVA} po terminu (ključ {@link TerminOpis#kljucObavestenja()}); ako
+     * ono već postoji (otvoreno ili rešeno), ne radi ništa, pa ni pad pa rast broja ne pravi drugo. Mora se zvati u
+     * transakciji koja drži red stavke ({@code RasporedStavkaRepository.findByIdForUpdate}): sve najave stavke idu redom,
+     * pa je provera tačna (jedinstven ključ u bazi je druga linija). Mejl nastavniku kroz iste limite, sa brojem, predmetom,
+     * grupom i vremenom; nikad imena ni razlozi studenata.
+     *
+     * @return da li je obaveštenje napravljeno
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean mnogoNajava(TerminOpis t, long broj, int prag) {
+        String kljuc = t.kljucObavestenja();
+        if (obavestenja.existsByKljuc(kljuc)) {
+            return false;
+        }
+        Map<String, Object> podaci = new LinkedHashMap<>();
+        podaci.put("stavkaId", t.stavkaId());
+        podaci.put("datum", t.datum().toString());
+        podaci.put("pocetak", TerminOpis.hhmm(t.pocetak()));
+        podaci.put("kraj", TerminOpis.hhmm(t.kraj()));
+        podaci.put("predmet", t.predmet());
+        podaci.put("grupa", t.grupa());
+        podaci.put("broj", broj);
+        podaci.put("prag", prag);
+        Obavestenje o = new Obavestenje();
+        o.setVrsta(VrstaObavestenja.MNOGO_NAJAVA);
+        o.setKljuc(kljuc);
+        o.setPodaci(JSON.writeValueAsString(podaci));
+        o.setKreirano(LocalDateTime.now(clock));
+        o = obavestenja.save(o);
+        dogadjaji.publishEvent(new NovoObavestenje(VrstaObavestenja.MNOGO_NAJAVA, t, broj, prag));
+        log.info("Obaveštenje 'mnogo najava' napravljeno, obavestenje={}, stavka={}, datum={}, broj={}", o.getId(),
+                t.stavkaId(), t.datum(), broj);
+        mejlNastavniku(VrstaObavestenja.MNOGO_NAJAVA, t.stavkaId() + ":" + t.datum(), "stavka " + t.stavkaId(),
+                NASLOV_MNOGO_NAJAVA, teloMnogoNajava(t, broj, prag),
+                Math.min(CEKANJE_BRAVE_MEJL_PREVISE_S, cekanjeBraveMejlS));
+        return true;
+    }
+
+    /** Rešava obaveštenje {@code MNOGO_NAJAVA} termina (otkazan termin); vraća koliko ih je rešeno (0 ili 1). */
+    @Transactional
+    public int resiZaTermin(TerminOpis t) {
+        return obavestenja.resiPoKljucu(t.kljucObavestenja(), LocalDateTime.now(clock));
+    }
+
+    /** Telo mejla za {@code MNOGO_NAJAVA}: samo podaci iz baze (predmet, grupa, vreme) i brojevi. */
+    static String teloMnogoNajava(TerminOpis t, long broj, int prag) {
+        return """
+                Za čas iz predmeta %s (grupa %s) %s %s od %s odsustvo je najavilo %s (prag je %d).
+
+                Termini: raspored/termini?od=%s
+
+                Obaveštenja su u aplikaciji, u listi iz gornje trake.
+                """.formatted(t.predmet(), t.grupa(), t.uDan(), t.datumPun(), t.blok().replace("–", " do "),
+                TerminOpis.studenata(broj), prag, t.datum());
     }
 
     /** Upisan indeks studenta sa godinom upisa, za mejl ({@code GD5/2026}). */

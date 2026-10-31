@@ -6,9 +6,11 @@ import tri.novica.gfssystem.entity.uzivo.Tema;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** Polja iz {@link PrezentacijaInfo} i slajdovi po {@code rb}. */
+/** Polja iz {@link PrezentacijaInfo} i slajdovi po {@code rb}; nova polja idu iza {@code slajdovi}. */
 public record PrezentacijaDetails(Long id, String naziv, String opis, PredmetKratko predmet, long brojSlajdova,
                                   long brojPitanja, LocalDateTime izmenjeno, boolean takmicenje,
                                   TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, long brojIzvodjenja,
-                                  Long aktivnoIzvodjenjeId, Tema tema, List<SlajdDetails> slajdovi) {
+                                  Long aktivnoIzvodjenjeId, Tema tema, List<SlajdDetails> slajdovi, Integer vezba,
+                                  VrstaPrezentacije vrsta, long brojZadataka, LocalDateTime kreirano,
+                                  LocalDateTime poslednjePustanje) {
 }

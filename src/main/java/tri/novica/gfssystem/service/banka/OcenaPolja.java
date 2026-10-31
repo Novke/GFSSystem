@@ -19,6 +19,8 @@ public final class OcenaPolja {
     /** Najveći ceo broj koji double predstavlja tačno; veći "ids" nisu id-jevi opcija. */
     private static final double MAX_CEO = 9_007_199_254_740_992.0;
     private static final Pattern RAZMACI = Pattern.compile("[\\s\\p{Z}]+");
+    /** Nule na početku (iza predznaka) za kojima sledi slovo ili cifra; vidi {@link #bezVodecihNula}. */
+    private static final Pattern VODECE_NULE = Pattern.compile("^([+-]?)0+(?=[\\p{L}\\p{N}])");
 
     private OcenaPolja() {}
 
@@ -43,8 +45,8 @@ public final class OcenaPolja {
 
     /**
      * Ključ za poređenje i grupisanje tekstualnih odgovora: {@link Normalizacija#tekst} (mala slova, ćirilica u latinicu,
-     * bez kvačica, razmaci sažeti) i, kad polje zanemaruje razmake (podrazumevano), svi razmaci uklonjeni. {@code null}
-     * je prazan ključ.
+     * bez kvačica, razmaci sažeti) i, kad polje zanemaruje razmake (podrazumevano), svi razmaci uklonjeni; uz
+     * {@code zanemariVodeceNule} i bez nula na početku ({@link #bezVodecihNula}). {@code null} je prazan ključ.
      */
     public static String kljucTeksta(Polje polje, String s) {
         return kljuc(polje, s, false);
@@ -105,6 +107,20 @@ public final class OcenaPolja {
      * slovo ({@code Đ} i {@code Dj} su isto), inače je sve malim slovima.
      */
     private static String kljuc(Polje polje, String s, boolean sacuvajVelicinu) {
+        String k = kljucBezNula(polje, s, sacuvajVelicinu);
+        return polje != null && Boolean.TRUE.equals(polje.zanemariVodeceNule()) ? bezVodecihNula(k) : k;
+    }
+
+    /**
+     * Bez nula na početku odgovora (iza eventualnog predznaka), samo kad iza njih sledi slovo ili cifra: {@code 01111111}
+     * je {@code 1111111}, {@code 000} je {@code 0}, {@code -007} je {@code -7}, a {@code 0.101} i {@code 0,5} ostaju (nula
+     * pred zarezom nije vodeća).
+     */
+    static String bezVodecihNula(String k) {
+        return VODECE_NULE.matcher(k).replaceFirst("$1");
+    }
+
+    private static String kljucBezNula(Polje polje, String s, boolean sacuvajVelicinu) {
         if (s == null) return "";
         boolean bezRazmaka = polje == null || !Boolean.FALSE.equals(polje.zanemariRazmake());
         String sazeto = RAZMACI.matcher(s).replaceAll(bezRazmaka ? "" : " ").strip();

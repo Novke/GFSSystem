@@ -75,12 +75,44 @@ public class KandidatiZadatka {
         private final Map<Long, Cvor> cvorovi;
         /** Grupa -> broj kandidata po nivou (indeks = nivo - 1). */
         private final Map<Long, int[]> aktivni;
+        /** Grupa -> najmanji id kandidata po nivou (indeks = nivo - 1; 0 = nema kandidata tog nivoa). */
+        private final Map<Long, long[]> prvi;
         private final Set<Long> iskljucene;
 
-        private StabloPredavanja(Map<Long, Cvor> cvorovi, Map<Long, int[]> aktivni, Set<Long> iskljucene) {
+        private StabloPredavanja(Map<Long, Cvor> cvorovi, Map<Long, int[]> aktivni, Map<Long, long[]> prvi,
+                                 Set<Long> iskljucene) {
             this.cvorovi = cvorovi;
             this.aktivni = aktivni;
+            this.prvi = prvi;
             this.iskljucene = iskljucene;
+        }
+
+        /**
+         * Primer za editor: kandidat nivoa {@code nivo} ({@code null} = bilo kog) sa najmanjim id-jem u prvom listu
+         * opisa (redom stabla) koji ima takvog kandidata, tj. prva varijanta koju izvlačenje razmatra. {@code null} kad
+         * kandidata nema.
+         */
+        public Long primer(Opis opis, Integer nivo) {
+            if (opis == null || opis.brojKandidata(nivo) == 0) {
+                return null;
+            }
+            for (Long list : opis.listovi()) {
+                long[] ids = prvi.get(list);
+                if (ids == null) {
+                    continue;
+                }
+                long najmanji = 0;
+                for (int i = 0; i < ids.length; i++) {
+                    boolean nivoOdgovara = nivo == null || nivo == i + 1;
+                    if (nivoOdgovara && ids[i] > 0 && (najmanji == 0 || ids[i] < najmanji)) {
+                        najmanji = ids[i];
+                    }
+                }
+                if (najmanji > 0) {
+                    return najmanji;
+                }
+            }
+            return null;
         }
 
         /** Opis grupe, {@code null} kad grupe nema u ovom stablu (nepostojeća, drugi predmet ili namena TEST). */
@@ -110,6 +142,49 @@ public class KandidatiZadatka {
             return new Opis(cvor.id(), cvor.naziv(), List.copyOf(putanja), list, list ? polja(cvor.id()) : null,
                     iskljucena, List.copyOf(iskljucenePodgrupe), List.copyOf(listovi), Arrays.stream(poNivou).sum(),
                     Arrays.stream(poNivou).boxed().toList());
+        }
+
+        /** Svi čvorovi stabla redom stabla (koreni po {@code rb}, pa dubinski), za redosled tipova na nalogu studenta. */
+        public List<Long> redom() {
+            List<Long> ids = new ArrayList<>();
+            for (Cvor c : cvorovi.values()) {
+                if (c.roditeljId() == null || !cvorovi.containsKey(c.roditeljId())) {
+                    podstabloDubinski(c, ids, new HashSet<>());
+                }
+            }
+            return List.copyOf(ids);
+        }
+
+        private void podstabloDubinski(Cvor c, List<Long> ids, Set<Long> vidjeni) {
+            if (c == null || !vidjeni.add(c.id())) {
+                return;
+            }
+            ids.add(c.id());
+            for (Long d : c.deca()) {
+                podstabloDubinski(cvorovi.get(d), ids, vidjeni);
+            }
+        }
+
+        /**
+         * Svi čvorovi podstabla, sa samim čvorom i sa isključenim podgrupama (zatvaranje za vežbanje briše zapise celog
+         * podstabla); prazno kad čvora nema u stablu.
+         */
+        public List<Long> podstablo(Long grupaId) {
+            Cvor cvor = grupaId == null ? null : cvorovi.get(grupaId);
+            if (cvor == null) {
+                return List.of();
+            }
+            List<Long> ids = new ArrayList<>();
+            Deque<Cvor> red = new ArrayDeque<>(List.of(cvor));
+            while (!red.isEmpty()) {
+                Cvor c = red.removeFirst();
+                if (ids.contains(c.id())) {
+                    continue;
+                }
+                ids.add(c.id());
+                c.deca().forEach(d -> red.addLast(cvorovi.get(d)));
+            }
+            return List.copyOf(ids);
         }
 
         private Cvor roditelj(Cvor c) {
@@ -153,18 +228,32 @@ public class KandidatiZadatka {
             cvorovi.put(g.getId(), new StabloPredavanja.Cvor(g.getId(), g.getNaziv(), roditeljId, g.getPolja(), dete));
         }
         Map<Long, int[]> aktivni = new HashMap<>();
+        Map<Long, long[]> prvi = new HashMap<>();
         Set<Long> iskljucene = Set.of();
         if (!cvorovi.isEmpty()) {
             for (Object[] red : varijantaRepository.aktivneSaSvgPoGrupiINivou(cvorovi.keySet())) {
                 int nivo = ((Number) red[1]).intValue();
                 if (nivo >= Nivo.MIN && nivo <= Nivo.MAX) {   // kolona je tinyint; van opsega upisuje samo ručni SQL
-                    aktivni.computeIfAbsent(((Number) red[0]).longValue(), id -> new int[Nivo.MAX])[nivo - 1]
-                            = ((Number) red[2]).intValue();
+                    Long grupaId = ((Number) red[0]).longValue();
+                    aktivni.computeIfAbsent(grupaId, id -> new int[Nivo.MAX])[nivo - 1] = ((Number) red[2]).intValue();
+                    prvi.computeIfAbsent(grupaId, id -> new long[Nivo.MAX])[nivo - 1] = ((Number) red[3]).longValue();
                 }
             }
             iskljucene = temaRepository.iskljuceneGrupe(predmetId).keySet();
         }
-        return new StabloPredavanja(cvorovi, aktivni, iskljucene);
+        return new StabloPredavanja(cvorovi, aktivni, prvi, iskljucene);
+    }
+
+    /** SVG teksta varijanti po id-ju (jedan upit; prazan skup ne ide u bazu). */
+    public Map<Long, String> svgTeksta(Collection<Long> varijantaIds) {
+        if (varijantaIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> svg = new HashMap<>();
+        for (Object[] red : varijantaRepository.svgTeksta(varijantaIds)) {
+            svg.put(((Number) red[0]).longValue(), (String) red[1]);
+        }
+        return svg;
     }
 
     /** Kandidati čvora svih nivoa ({@link #kandidati(Long, Integer)} sa {@code null}). */
@@ -183,8 +272,15 @@ public class KandidatiZadatka {
         if (predmetId.isEmpty()) {
             return BEZ_GRUPE;
         }
-        StabloPredavanja stablo = stablo(predmetId.get());
-        Opis opis = stablo.opis(grupaId);
+        return kandidati(stablo(predmetId.get()), grupaId, nivo);
+    }
+
+    /**
+     * Isto, nad stablom koje je pozivalac već izgradio za predmet čvora (vežbanje na nalogu: jedno stablo po zahtevu, ne
+     * dva). Čvor van tog stabla: {@code opis == null} i prazna lista.
+     */
+    public Kandidati kandidati(StabloPredavanja stablo, Long grupaId, Integer nivo) {
+        Opis opis = grupaId == null ? null : stablo.opis(grupaId);
         return opis == null ? BEZ_GRUPE : new Kandidati(opis, poListovima(stablo, opis, nivo));
     }
 

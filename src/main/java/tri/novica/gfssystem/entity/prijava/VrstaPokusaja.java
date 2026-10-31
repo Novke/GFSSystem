@@ -24,5 +24,11 @@ public enum VrstaPokusaja {
     /** Mejl nastavniku, po (vrsta obaveštenja, indeks). */
     MEJL_NASTAVNIKU,
     /** Mejl nastavniku, ukupno. */
-    MEJL_NASTAVNIKU_UKUPNO
+    MEJL_NASTAVNIKU_UKUPNO,
+    /** Novo izvlačenje zadatka pri vežbanju na nalogu, po studentu (ponovo prikazan pokušaj se ne broji). */
+    VEZBANJE_IZVLACENJE,
+    /** Upis push pretplate, po uređaju studenta ({@code u:<id>}) ili sesiji nastavnika ({@code s:<id>}). */
+    PUSH_PRETPLATA,
+    /** Probno push obaveštenje, po uređaju ili sesiji (isti ključ). */
+    PUSH_PROBA
 }

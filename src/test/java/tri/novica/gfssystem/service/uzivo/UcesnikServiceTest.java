@@ -74,7 +74,8 @@ class UcesnikServiceTest {
         });
 
         service = new UcesnikService(izvodjenjeRepository, ucesnikRepository, studentRepository,
-                new ImenaUcesnika(ucesnikRepository), zadatakDodelaService, tokenGenerator, publisher, clock);
+                new ImenaUcesnika(ucesnikRepository), zadatakDodelaService, tokenGenerator, publisher,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), clock);
     }
 
     static Izvodjenje izvodjenje(Long id, String kod, Prezentacija prez) {

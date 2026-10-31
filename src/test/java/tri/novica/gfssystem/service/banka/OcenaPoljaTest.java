@@ -24,6 +24,10 @@ class OcenaPoljaTest {
         return new Polje("b", "b)", TipPolja.TEKST, null, null, null, velicina, razmaci, null);
     }
 
+    private static Polje bezNula(Boolean vodeceNule) {
+        return new Polje("b", "b)", TipPolja.TEKST, null, null, null, null, null, null, vodeceNule);
+    }
+
     private static Polje opcije(TipPolja tip) {
         return new Polje("c", "c)", tip, null, null, null, null, null, OPCIJE);
     }
@@ -147,6 +151,40 @@ class OcenaPoljaTest {
         assertThat(OcenaPolja.tacno(p, new OdgovorPolja(null, null, null, null), "a")).isFalse();
         assertThat(OcenaPolja.tacno(p, new OdgovorPolja(null, List.of(), null, null), "a")).isFalse();
         assertThat(OcenaPolja.tacno(p, tekstOdg("a"), 5L)).isFalse();
+    }
+
+    @Test
+    void vodeceNuleSeZanemarujuSamoKadJePoljeTakoPodeseno() {
+        OdgovorPolja o = tekstOdg("1111111");
+        assertThat(OcenaPolja.tacno(bezNula(true), o, "01111111")).isTrue();
+        assertThat(OcenaPolja.tacno(bezNula(true), o, "0001111111")).isTrue();
+        assertThat(OcenaPolja.tacno(bezNula(true), o, "0 111 1111")).isTrue();
+        assertThat(OcenaPolja.tacno(bezNula(true), o, "11111110")).isFalse();
+        // i kad prihvatljivi odgovor ima nule (a učenik ih nema)
+        assertThat(OcenaPolja.tacno(bezNula(true), tekstOdg("0A3F"), "a3f")).isTrue();
+        // bez opcije (podrazumevano i stara šema bez polja): fiksna širina, komplement
+        OdgovorPolja komplement = tekstOdg("00000101");
+        assertThat(OcenaPolja.tacno(bezNula(null), komplement, "101")).isFalse();
+        assertThat(OcenaPolja.tacno(bezNula(false), komplement, "101")).isFalse();
+        assertThat(OcenaPolja.tacno(bezNula(false), komplement, "0000 0101")).isTrue();
+        assertThat(OcenaPolja.tacno(bezNula(false), o, "01111111")).isFalse();
+    }
+
+    @Test
+    void vodeceNuleSamoNaPocetkuIIspredCifreIliSlova() {
+        assertThat(OcenaPolja.bezVodecihNula("01111111")).isEqualTo("1111111");
+        assertThat(OcenaPolja.bezVodecihNula("000")).isEqualTo("0");
+        assertThat(OcenaPolja.bezVodecihNula("0")).isEqualTo("0");
+        assertThat(OcenaPolja.bezVodecihNula("-007")).isEqualTo("-7");
+        assertThat(OcenaPolja.bezVodecihNula("+0a")).isEqualTo("+a");
+        assertThat(OcenaPolja.bezVodecihNula("0.101")).isEqualTo("0.101");
+        assertThat(OcenaPolja.bezVodecihNula("00,5")).isEqualTo("0,5");
+        assertThat(OcenaPolja.bezVodecihNula("1001")).isEqualTo("1001");
+        assertThat(OcenaPolja.bezVodecihNula("")).isEmpty();
+        // ključ rezultata spaja "01111111" i "1111111" u isti čip
+        assertThat(OcenaPolja.kljucTeksta(bezNula(true), "0111 1111")).isEqualTo("1111111");
+        assertThat(OcenaPolja.kljucOcene(bezNula(true), "0111 1111")).isEqualTo("1111111");
+        assertThat(OcenaPolja.kljucTeksta(bezNula(false), "0111 1111")).isEqualTo("01111111");
     }
 
     @Test
