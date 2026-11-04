@@ -109,7 +109,7 @@ class RangTacnostiTest {
                 new Kandidat<>("f", "Fića", zbir(0, 0, 0, 0, 0)));      // ništa nije dugovao: izostaje
         List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(k, (x, mesto) -> new RangTacnostiStavka(mesto, null, null,
                 x.ime(), false, x.zbir().tacnih(), x.zbir().dugovanih(), x.zbir().odgovorenih(), x.zbir().procenat(),
-                x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null, null));
+                x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null, null, false));
         assertEquals(List.of("Bojan", "Ana", "Cvele", "Dara", "Ema"), rang.stream().map(RangTacnostiStavka::ime).toList());
         assertEquals(List.of(1, 2, 3, 3, 5), rang.stream().map(RangTacnostiStavka::mesto).toList());
         assertEquals(67, rang.get(1).procenat());

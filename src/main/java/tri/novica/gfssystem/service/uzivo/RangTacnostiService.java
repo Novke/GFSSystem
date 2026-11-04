@@ -76,7 +76,8 @@ public class RangTacnostiService {
                 k.kljuc().getStudent() == null ? null : k.kljuc().getStudent().getId(), k.ime(),
                 k.kljuc().getStudent() == null, k.zbir(),
                 saPoenima ? p.poeni().getOrDefault(k.kljuc().getId(), 0) : null, null, null,
-                k.kljuc().getStudent() == null ? null : k.kljuc().getStudent().getIndeks()));
+                k.kljuc().getStudent() == null ? null : k.kljuc().getStudent().getIndeks(),
+                k.kljuc().getStudent() != null && k.kljuc().getStudent().isStariji()));
     }
 
     // ---------------------------------------------------------------- predavanje
@@ -131,7 +132,7 @@ public class RangTacnostiService {
         for (int i = 0; i < prvi.size(); i++) {
             RangTacnostiStavka s = prvi.get(i);
             javni.add(new RangTacnostiStavka(s.mesto(), null, null, imena.get(i), s.gost(), s.tacnih(), s.dugovanih(),
-                    s.odgovorenih(), s.procenat(), s.prosekMs(), s.zvezdice(), null, null, null, null));
+                    s.odgovorenih(), s.procenat(), s.prosekMs(), s.zvezdice(), null, null, null, null, false));
         }
         return javni;
     }
@@ -183,7 +184,7 @@ public class RangTacnostiService {
                 String kljuc = s != null ? "s:" + s.getId() : "g:" + RangTacnosti.kljucImena(u.getIme());
                 Identitet id = poKljucu.computeIfAbsent(kljuc, k -> new Identitet(
                         s == null ? null : s.getId(), s == null ? u.getIme() : ImenaUcesnika.imeStudenta(s),
-                        s == null ? null : s.getIndeks()));
+                        s == null ? null : s.getIndeks(), s != null && s.isStariji()));
                 id.zbir.dodaj(z);
                 if (uIzvodjenju.add(kljuc)) id.izvodjenja++;
             }
@@ -195,7 +196,7 @@ public class RangTacnostiService {
         List<Kandidat<Identitet>> kandidati = poKljucu.values().stream()
                 .map(i -> new Kandidat<>(i, i.ime, i.zbir)).toList();
         return RangTacnosti.rangiraj(kandidati, (k, mesto) -> stavka(mesto, null, k.kljuc().studentId, k.ime(),
-                k.kljuc().studentId == null, k.zbir(), null, k.kljuc().izvodjenja, null, k.kljuc().indeks));
+                k.kljuc().studentId == null, k.zbir(), null, k.kljuc().izvodjenja, null, k.kljuc().indeks, k.kljuc().stariji));
     }
 
     /** Identitet u zbiru: student ili gost (po imenu). */
@@ -203,14 +204,16 @@ public class RangTacnostiService {
         final Long studentId;
         final String ime;
         final String indeks;
+        final boolean stariji;
         final Zbir zbir = new Zbir();
         int izvodjenja;
         final Set<String> casovi = new HashSet<>();
 
-        Identitet(Long studentId, String ime, String indeks) {
+        Identitet(Long studentId, String ime, String indeks, boolean stariji) {
             this.studentId = studentId;
             this.ime = ime;
             this.indeks = indeks;
+            this.stariji = stariji;
         }
     }
 
@@ -249,6 +252,7 @@ public class RangTacnostiService {
         Zbir ukupno = new Zbir();
         String ime = null;
         String indeks = null;
+        boolean stariji = false;
         List<UzivoStudentaRed> redovi = new ArrayList<>();
         for (Map.Entry<String, List<PodaciIzvodjenja>> cas : casovi.entrySet()) {
             Map<String, Identitet> naCasu = identiteti(cas.getValue(), null, null);
@@ -258,6 +262,7 @@ public class RangTacnostiService {
             RangTacnostiStavka moja = rang.stream().filter(s -> studentId.equals(s.studentId())).findFirst().orElseThrow();
             ime = moja.ime();
             indeks = moja.indeks();
+            stariji = moja.stariji();
             ukupno.dodaj(ja.zbir);
             Izvodjenje prvo = cas.getValue().getFirst().iz();
             Predavanje pred = prvo.getPredavanje();
@@ -267,7 +272,7 @@ public class RangTacnostiService {
                     pred != null ? naslovPredavanja(pred) : prvo.getPrezentacija().getNaziv(), moja, rang.size()));
         }
         RangTacnostiStavka zbir = redovi.isEmpty() ? null
-                : stavka(null, null, studentId, ime, false, ukupno, null, null, redovi.size(), indeks);
+                : stavka(null, null, studentId, ime, false, ukupno, null, null, redovi.size(), indeks, stariji);
         return new UzivoStudenta(zbir, redovi);
     }
 
@@ -294,7 +299,7 @@ public class RangTacnostiService {
         List<Student> studenti = studentRepository.findAllByGrupaId(grupaId);
         Map<Long, Identitet> poStudentu = new LinkedHashMap<>();
         studenti.forEach(s -> poStudentu.put(s.getId(),
-                new Identitet(s.getId(), ImenaUcesnika.imeStudenta(s), s.getIndeks())));
+                new Identitet(s.getId(), ImenaUcesnika.imeStudenta(s), s.getIndeks(), s.isStariji())));
         Set<String> casovi = new HashSet<>();
         for (PodaciIzvodjenja p : podaci.values()) {
             Map<Long, Zbir> zbir = p.zbir(null);
@@ -313,11 +318,12 @@ public class RangTacnostiService {
         List<Kandidat<Identitet>> kandidati = poStudentu.values().stream()
                 .map(i -> new Kandidat<>(i, i.ime, i.zbir)).toList();
         List<RangTacnostiStavka> rang = new ArrayList<>(RangTacnosti.rangiraj(kandidati, (k, mesto) -> stavka(mesto,
-                null, k.kljuc().studentId, k.ime(), false, k.zbir(), null, null, k.kljuc().casovi.size(), k.kljuc().indeks)));
+                null, k.kljuc().studentId, k.ime(), false, k.zbir(), null, null, k.kljuc().casovi.size(), k.kljuc().indeks,
+                k.kljuc().stariji)));
         poStudentu.values().stream()
                 .filter(i -> i.zbir.dugovanih() == 0)
                 .sorted(Comparator.comparing((Identitet i) -> i.ime, String.CASE_INSENSITIVE_ORDER))
-                .forEach(i -> rang.add(stavka(null, null, i.studentId, i.ime, false, i.zbir, null, null, 0, i.indeks)));
+                .forEach(i -> rang.add(stavka(null, null, i.studentId, i.ime, false, i.zbir, null, null, 0, i.indeks, i.stariji)));
         return new UzivoGrupe(grupaId, casovi.size(), rang);
     }
 
@@ -334,9 +340,10 @@ public class RangTacnostiService {
     }
 
     private static RangTacnostiStavka stavka(Integer mesto, Long ucesnikId, Long studentId, String ime, boolean gost,
-                                             Zbir z, Integer poeni, Integer izvodjenja, Integer casova, String indeks) {
+                                             Zbir z, Integer poeni, Integer izvodjenja, Integer casova, String indeks,
+                                             boolean stariji) {
         return new RangTacnostiStavka(mesto, ucesnikId, studentId, ime, gost, z.tacnih(), z.dugovanih(),
-                z.odgovorenih(), z.procenat(), z.prosekMs(), z.zvezdice(), poeni, izvodjenja, casova, indeks);
+                z.odgovorenih(), z.procenat(), z.prosekMs(), z.zvezdice(), poeni, izvodjenja, casova, indeks, stariji);
     }
 
     /** Runde, učesnici, odgovori i dodele svih datih izvođenja, po jedan upit po tabeli; ključ je id izvođenja. */

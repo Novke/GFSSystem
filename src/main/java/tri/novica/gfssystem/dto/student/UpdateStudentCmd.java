@@ -43,4 +43,6 @@ public class UpdateStudentCmd {
     private LocalDate datumRodjenja;
     @Size(max = 100, message = "Opština može imati najviše 100 znakova.")
     private String opstina;
+    /** Bez polja (stariji front) oznaka ostaje kakva je bila. */
+    private Boolean stariji;
 }

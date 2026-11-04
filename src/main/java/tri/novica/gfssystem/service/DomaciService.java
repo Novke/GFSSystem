@@ -83,6 +83,9 @@ public class DomaciService {
                 domaciDetails.getStudenti().add(mapper.map(st, DomaciStudentiInfo.class))
         );
 
+        Set<Long> stariji = studentRepository.stariji(studentiViews.stream().map(DomaciEvidentiranjeView::getStudentId).toList());
+        domaciDetails.getStudenti().forEach(s -> s.setStariji(stariji.contains(s.getStudentId())));
+
         domaciDetails.getStudenti().sort((s1, s2) -> {
             return Utility.index2int(s1.getIndeks()) - Utility.index2int(s2.getIndeks());
         });
