@@ -77,7 +77,7 @@ class VodicTest {
         String s = tekst(VodicTema.BANKA);
         for (String izraz : List.of("standalone", "84 mm", "\\includegraphics{", "TikZ", "preambula", "gfs-mcp-upload",
                 "izmeni_polja_grupe", "kopiraj_grupu", "uputstvo", "slikaResenja", "proba_rendera",
-                "Slika nije stigla na vreme.", "između okruženja")) {
+                "Slika nije stigla na vreme.", "između okruženja", "**isti postupak**")) {
             assertTrue(s.contains(izraz), "vodič banka nema: " + izraz);
         }
         for (TipPolja tip : TipPolja.values()) {
