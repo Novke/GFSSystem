@@ -44,7 +44,6 @@ class BankaAlatiGrupeDbTest extends McpDbTestOsnova {
             .getBytes(StandardCharsets.UTF_8);
     static final Polje BROJ_A = new Polje("a", "a) binarni u dekadni", TipPolja.BROJ, null, null, null, null, null, null);
     static final Map<String, OdgovorPolja> ODGOVOR_A = Map.of("a", new OdgovorPolja(11.0, null, null, null));
-    static final String NOVICINA = "Ovu grupu je napravio Novica; izmenu radi on u UI-ju.";
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 
     @Autowired GrupaZadatakaService grupaService;
@@ -193,19 +192,13 @@ class BankaAlatiGrupeDbTest extends McpDbTestOsnova {
     // ---------------------------------------------------------------- izmene
 
     @Test
-    void novicinaGrupaSeKrozMcpNeMenja() {
-        ocekujGresku("izmeni_grupu", mapa("serija", serija, "grupaId", rucniList.id(), "naziv", "Drugo"), NOVICINA);
-        ocekujGresku("izmeni_polja_grupe", mapa("serija", serija, "grupaId", rucniList.id(), "polja", List.of()),
-                NOVICINA);
-        ocekujGresku("premesti_grupu", mapa("serija", serija, "grupaId", rucniList.id()), NOVICINA);
-        ocekujGresku("obrisi_grupu", mapa("serija", serija, "grupaId", rucniList.id()), NOVICINA);
-        GrupaDetails posle = grupaService.detalji(rucniList.id());
-        assertEquals("2 → 10", posle.naziv());
-        assertEquals(rucniKoren.id(), posle.roditeljId());
-        assertEquals(rucniList.polja(), posle.polja());
-
-        ocekujGresku("izmeni_grupu", mapa("serija", serija, "grupaId", Long.MAX_VALUE, "naziv", "x"),
-                "Grupa nije pronađena.");
+    void novicinaGrupaSeKrozMcpMenja() {
+        uspeh("izmeni_grupu", mapa("serija", serija, "grupaId", rucniList.id(), "naziv", "Drugo"));
+        assertEquals("Drugo", grupaService.detalji(rucniList.id()).naziv());
+        uspeh("premesti_grupu", mapa("serija", serija, "grupaId", rucniList.id()));
+        assertNull(grupaService.detalji(rucniList.id()).roditeljId());
+        uspeh("obrisi_grupu", mapa("serija", serija, "grupaId", rucniList.id()));
+        ocekujGresku("izmeni_grupu", mapa("serija", serija, "grupaId", rucniList.id(), "naziv", "x"), "Grupa nije pronađena.");
     }
 
     @Test

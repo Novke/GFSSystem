@@ -67,16 +67,20 @@ public final class ZadatakRezultatBuilder {
                                        boolean tacanVidljiv) {
         OdgovorPolja tacno = v.odgovori() == null ? null : v.odgovori().get(p.kljuc());
         List<Object> vrednosti = new ArrayList<>();
+        Map<String, Boolean> ocena = new HashMap<>();
         for (OdgovorZadatka o : odgovori) {
             PoljeOdgovora po = o.polja() == null ? null : o.polja().get(p.kljuc());
             if (po != null && po.vrednost() != null) {
                 vrednosti.add(po.vrednost());
+                if (po.vrednost() instanceof String s && kljuc(p, s) != null) {
+                    ocena.merge(kljuc(p, s), po.tacno(), Boolean::logicalOr);
+                }
             }
         }
         List<RezultatTekst> tekstovi = null;
         List<RezultatOpcija> opcije = null;
         switch (p.tip()) {
-            case BROJ, TEKST -> tekstovi = odgovoriVidljivi ? grupe(p, tacno, vrednosti, tacanVidljiv) : null;
+            case BROJ, TEKST -> tekstovi = odgovoriVidljivi ? grupe(p, tacno, vrednosti, ocena, tacanVidljiv) : null;
             case JEDAN_TACAN, VISE_TACNIH -> opcije = opcije(p, tacno, vrednosti, odgovoriVidljivi, tacanVidljiv);
         }
         return new RezultatPolja(p.kljuc(), p.oznaka(), p.tip(), p.jedinica(), tekstovi, opcije,
@@ -84,7 +88,8 @@ public final class ZadatakRezultatBuilder {
     }
 
     /** BROJ i TEKST: grupe istih vrednosti (broj po vrednosti, tekst po ključu ocene, {@link OcenaPolja#kljucOcene}), najčešće prve, najviše 10. */
-    private static List<RezultatTekst> grupe(Polje p, OdgovorPolja tacno, List<Object> vrednosti, boolean tacanVidljiv) {
+    private static List<RezultatTekst> grupe(Polje p, OdgovorPolja tacno, List<Object> vrednosti, Map<String, Boolean> ocena,
+                                             boolean tacanVidljiv) {
         Map<String, Map<String, Integer>> oblici = new LinkedHashMap<>();
         for (Object o : vrednosti) {
             if (!(o instanceof String str)) continue;
@@ -98,7 +103,7 @@ public final class ZadatakRezultatBuilder {
             String tekst = m.entrySet().stream()
                     .sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
                     .map(Map.Entry::getKey).findFirst().orElse(kljuc);
-            Boolean tacan = tacanVidljiv ? OcenaPolja.tacno(p, tacno, tekst) : null;
+            Boolean tacan = tacanVidljiv ? ocena.getOrDefault(kljuc, OcenaPolja.tacno(p, tacno, tekst)) : null;
             lista.add(new RezultatTekst(kljuc, tekst, broj, false, tacan));
         });
         lista.sort(Comparator.comparingInt(RezultatTekst::broj).reversed().thenComparing(RezultatTekst::kljuc));

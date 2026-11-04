@@ -39,6 +39,7 @@ class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
     static final AtomicInteger KOD = new AtomicInteger((int) (Math.random() * 400_000) + 100_000);
 
     @Autowired PrezentacijaService prezentacijaService;
+    @Autowired tri.novica.gfssystem.service.banka.GrupaZadatakaService grupaService;
     @MockitoSpyBean McpBudzet budzet;
 
     Predmet predmet;
@@ -240,7 +241,7 @@ class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
         assertFalse(McpTestKlijent.greska(r), r.toString());
         assertFalse(McpTestKlijent.tekst(r).contains("\"tacke\""), McpTestKlijent.tekst(r));
         JsonNode j = McpTestKlijent.json(r);
-        assertEquals(Set.of("slajd", "brojTacaka", "link"), new TreeSet<>(j.propertyNames()), j.toString());
+        assertEquals(Set.of("slajd", "brojTacaka", "otisak", "link"), new TreeSet<>(j.propertyNames()), j.toString());
         assertEquals("http://localhost:4200/prezentacije/" + prezentacija, j.path("link").asString());
         assertEquals(3, j.path("brojTacaka").path("c1").asInt());
         assertEquals(1, j.path("brojTacaka").size());
@@ -385,5 +386,197 @@ class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
         z.path("upozorenja").forEach(n -> upozorenja.add(n.asString()));
         assertTrue(upozorenja.contains("Tema je isključena."), upozorenja.toString());
         assertEquals(1, brojSlajdova(prezentacija), "upozorenje nije blokada");
+    }
+
+    // ---------------------------------------------------------------- povratne izmene postojećeg
+
+    static final String IZMENJEN_MCP = "Slajd je u međuvremenu izmenjen; pročitaj ga ponovo.";
+
+    /** Novicin INFO slajd (bez serije). */
+    Long infoSlajd(String naslov) {
+        return prezentacijaService.dodajSlajd(prezentacija, new SlajdCmd(TipSlajda.INFO, naslov, "Telo.", null,
+                "Beleška.", false, null, null, null), null).id();
+    }
+
+    String naslov(Long slajdId) {
+        return jdbc.queryForObject("select naslov from slajdovi where id = ?", String.class, slajdId);
+    }
+
+    List<Long> redosled() {
+        return jdbc.queryForList("select id from slajdovi where prezentacija_id = ? order by rb", Long.class, prezentacija);
+    }
+
+    @Test
+    void izmeniSlajdMenjaSamoNavedenoIVracaSeIzIstorije() {
+        Long id = infoSlajd("Staro");
+        JsonNode r = uspeh("izmeni_slajd", mapa("serija", serija, "slajdId", id, "opis", "Ispravljen naslov", "naslov", "Novo"));
+        assertTrue(r.path("izmenaId").asLong() > 0, r.toString());
+        assertEquals("Novo", naslov(id));
+        assertEquals("Telo.", jdbc.queryForObject("select sadrzaj from slajdovi where id = ?", String.class, id));
+        assertEquals("Beleška.", jdbc.queryForObject("select beleske from slajdovi where id = ?", String.class, id));
+
+        JsonNode istorija = uspeh("istorija_slajda", mapa("slajdId", id));
+        assertEquals(1, istorija.size(), istorija.toString());
+        assertEquals("Ispravljen naslov", istorija.get(0).path("opis").asString());
+        assertEquals(serija, istorija.get(0).path("serija").asString());
+
+        uspeh("vrati_izmenu", mapa("serija", serija, "izmenaId", r.path("izmenaId").asLong()));
+        assertEquals("Staro", naslov(id));
+        assertEquals(2, uspeh("istorija_slajda", mapa("slajdId", id)).size());
+    }
+
+    @Test
+    void izmeniSlajdOdbijaPoljeDrugogTipaIPraznuIzmenu() {
+        Long id = infoSlajd("Staro");
+        ocekujGresku("izmeni_slajd", mapa("serija", serija, "slajdId", id, "opis", "x", "pitanje",
+                jedanTacan().get("pitanje")), "Polje 'pitanje' ne važi za slajd tipa INFO.");
+        ocekujGresku("izmeni_slajd", mapa("serija", serija, "slajdId", id, "opis", "x"),
+                "Izmena mora sadržati bar jedno polje slajda.");
+        assertEquals(0, uspeh("istorija_slajda", mapa("slajdId", id)).size());
+    }
+
+    @Test
+    void dokSeIzvodiSlajdSeNeMenjaNiNeBrise() {
+        Long id = infoSlajd("Staro");
+        aktivnoIzvodjenje(prezentacija);
+        ocekujGresku("izmeni_slajd", mapa("serija", serija, "slajdId", id, "opis", "x", "naslov", "Novo"), IZVODI_SE);
+        ocekujGresku("obrisi_slajd", mapa("serija", serija, "slajdId", id), IZVODI_SE);
+        ocekujGresku("premesti_slajd", mapa("serija", serija, "slajdId", id), IZVODI_SE);
+        assertEquals("Staro", naslov(id));
+    }
+
+    @Test
+    void klodovaIzmenaPodizeVerzijuAStaroCuvanjeIzEditoraJe409() {
+        Long id = infoSlajd("Staro");
+        int verzija = prezentacijaService.slajd(id).verzija();
+        uspeh("izmeni_slajd", mapa("serija", serija, "slajdId", id, "opis", "x", "naslov", "Novo"));
+        assertEquals(verzija + 1, prezentacijaService.slajd(id).verzija());
+
+        SlajdCmd staro = new SlajdCmd(TipSlajda.INFO, "Iz editora", "Telo.", null, "Beleška.", false, null, null, null, null, verzija);
+        SystemException e = assertThrows(SystemException.class, () -> prezentacijaService.izmeniSlajd(id, staro));
+        assertEquals("Slajd je u međuvremenu izmenjen.", e.getMessage());
+        assertEquals("Novo", naslov(id));
+
+        // Novicino čuvanje verziju ne dira, pa njegov sledeći autosave prolazi
+        SlajdCmd svez = new SlajdCmd(TipSlajda.INFO, "Iz editora", "Telo.", null, "Beleška.", false, null, null, null, null, verzija + 1);
+        prezentacijaService.izmeniSlajd(id, svez);
+        prezentacijaService.izmeniSlajd(id, svez);
+        assertEquals(verzija + 1, prezentacijaService.slajd(id).verzija());
+    }
+
+    @Test
+    void obrisanSlajdSeObnavljaNaIstomMestu() {
+        Long a = infoSlajd("A");
+        Long b = infoSlajd("B");
+        Long c = infoSlajd("C");
+        JsonNode r = uspeh("obrisi_slajd", mapa("serija", serija, "slajdId", b));
+        assertEquals(List.of(a, c), redosled());
+
+        JsonNode v = uspeh("vrati_izmenu", mapa("serija", serija, "izmenaId", r.path("izmenaId").asLong()));
+        Long obnovljen = v.path("slajdId").asLong();
+        assertNotEquals(b, obnovljen);
+        assertEquals(List.of(a, obnovljen, c), redosled());
+        assertEquals("B", naslov(obnovljen));
+
+        // istorija prelazi na nov id
+        JsonNode drugi = uspeh("istorija_slajda", mapa("slajdId", obnovljen));
+        assertTrue(drugi.size() >= 1, drugi.toString());
+    }
+
+    /** Završeno izvođenje sa rundom nad slajdom. */
+    void rundaNadSlajdom(Long slajdId) {
+        String kod = String.valueOf(KOD.incrementAndGet());
+        jdbc.update("""
+                insert into izvodjenja (prezentacija_id, kod, cuvanje, status, pocetak, prikaz, korak,
+                  rezultati_prikazani, tacan_prikazan, rang_lista_prikazana, ekran, qr_prikazan, telefon_prikaz,
+                  detalji_dozvoljeni, takmicenje, verzija)
+                values (?, ?, 1, 'ZAVRSENO', now(6), 'PRIJAVA', 0, 0, 0, 0, 'NORMALAN', 0, 'DUGMAD', 1, 0, 1)""",
+                prezentacija, kod);
+        Long izvodjenje = jdbc.queryForObject("select id from izvodjenja where kod = ?", Long.class, kod);
+        jdbc.update("insert into pitanje_runde (izvodjenje_id, slajd_id, redni_broj, snimak, otvoreno) values (?, ?, 1, '{}', now(6))",
+                izvodjenje, slajdId);
+    }
+
+    @Test
+    void slajdKoriscenNaCasuBriseSeSamoPosebnimAlatom() {
+        Long id = infoSlajd("Sa časa");
+        rundaNadSlajdom(id);
+        JsonNode r = mcp.pozovi("obrisi_slajd", mapa("serija", serija, "slajdId", id));
+        assertTrue(McpTestKlijent.greska(r), r.toString());
+        assertTrue(McpTestKlijent.tekst(r).startsWith("Slajd je korišćen na času"), r.toString());
+        assertEquals(1, brojSlajdova(prezentacija));
+
+        JsonNode brisanje = uspeh("obrisi_koriscen_slajd", mapa("serija", serija, "slajdId", id));
+        assertEquals(0, brojSlajdova(prezentacija));
+        JsonNode v = uspeh("vrati_izmenu", mapa("serija", serija, "izmenaId", brisanje.path("izmenaId").asLong()));
+        assertEquals("Sa časa", naslov(v.path("slajdId").asLong()));
+    }
+
+    @Test
+    void zadatakCijaJeGrupaObrisanaVracaSeBezGrupe() {
+        tri.novica.gfssystem.dto.banka.GrupaDetails grupa = grupaService.kreiraj(new tri.novica.gfssystem.dto.banka.GrupaCmd(predmet.getId(),
+                null, tri.novica.gfssystem.entity.banka.Namena.PREDAVANJE, "Prazna", null, null, null, null));
+        Long id = prezentacijaService.dodajSlajd(prezentacija, new SlajdCmd(TipSlajda.ZADATAK, null, null, null, null, false, null, null,
+                null, new tri.novica.gfssystem.dto.uzivo.ZadatakSlajda(grupa.id(), 60, 2, 1)), null).id();
+        JsonNode brisanje = uspeh("obrisi_slajd", mapa("serija", serija, "slajdId", id));
+        grupaService.obrisiPraznu(grupa.id());
+
+        JsonNode v = uspeh("vrati_izmenu", mapa("serija", serija, "izmenaId", brisanje.path("izmenaId").asLong()));
+        Long novi = v.path("slajdId").asLong();
+        assertNull(jdbc.queryForObject("select grupa_zadataka_id from slajdovi where id = ?", Long.class, novi));
+        assertEquals(60, jdbc.queryForObject("select zadatak_vreme_sekunde from slajdovi where id = ?", Integer.class, novi));
+    }
+
+    @Test
+    void premestiSlajdNaPocetakIIzaDrugog() {
+        Long a = infoSlajd("A");
+        Long b = infoSlajd("B");
+        Long c = infoSlajd("C");
+        uspeh("premesti_slajd", mapa("serija", serija, "slajdId", c));
+        assertEquals(List.of(c, a, b), redosled());
+        uspeh("premesti_slajd", mapa("serija", serija, "slajdId", c, "posle", a));
+        assertEquals(List.of(a, c, b), redosled());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void zameniPlatnoTraziOtisakIZadrzavaPoteze() {
+        String slika = slika();
+        String crtez = slika();
+        Long id = prezentacijaService.dodajSlajd(prezentacija, new SlajdCmd(TipSlajda.PLATNO, null, null, null,
+                null, false, null, PlatnoTestPodaci.cvor(PlatnoTestPodaci.ispravno(slika, crtez)), null), null).id();
+        JsonNode procitan = uspeh("slajd", mapa("slajdId", id));
+        String otisak = procitan.path("otisak").asString();
+        assertFalse(otisak.isBlank(), procitan.toString());
+        Object platno = new tools.jackson.databind.ObjectMapper().treeToValue(procitan.path("slajd").path("platno"), Object.class);
+
+        ocekujGresku("zameni_platno", mapa("serija", serija, "slajdId", id, "otisak", "drugi", "opis", "x", "platno", platno),
+                IZMENJEN_MCP);
+
+        // JavaScript klijent šalje 300 umesto 300.0: to je ista veličina i potezi ostaju
+        ((List<Map<String, Object>>) ((Map<String, Object>) platno).get("slojevi")).forEach(sloj -> {
+            if ("CRTEZ".equals(sloj.get("tip"))) {
+                sloj.put("sirina", ((Number) sloj.get("sirina")).intValue());
+                sloj.put("visina", ((Number) sloj.get("visina")).intValue());
+            }
+        });
+        uspeh("zameni_platno", mapa("serija", serija, "slajdId", id, "otisak", otisak, "opis", "Isto platno", "platno", platno));
+        assertEquals(1, prezentacijaService.slajd(id).platno().slojevi().stream()
+                .filter(sl -> sl instanceof tri.novica.gfssystem.dto.uzivo.platno.CrtezSloj c && c.potezi() != null)
+                .count());
+    }
+
+    @Test
+    void izmeniPrezentacijuIBrisanjeTraziTacanBrojIzvodjenja() {
+        uspeh("izmeni_prezentaciju", mapa("serija", serija, "prezentacijaId", prezentacija, "naziv", "Vežbe 2", "vezba", 2));
+        assertEquals("Vežbe 2", jdbc.queryForObject("select naziv from prezentacije where id = ?", String.class, prezentacija));
+
+        JsonNode r = mcp.pozovi("obrisi_prezentaciju", mapa("serija", serija, "prezentacijaId", prezentacija,
+                "ocekivanoIzvodjenja", 3));
+        assertTrue(McpTestKlijent.greska(r), r.toString());
+        assertTrue(McpTestKlijent.tekst(r).startsWith("Prezentacija ima 0 izvođenja"), r.toString());
+
+        uspeh("obrisi_prezentaciju", mapa("serija", serija, "prezentacijaId", prezentacija, "ocekivanoIzvodjenja", 0));
+        assertEquals(0L, jdbc.queryForObject("select count(*) from prezentacije where id = ?", Long.class, prezentacija));
     }
 }

@@ -33,8 +33,8 @@ class ZadatakRezultatBuilderTest {
 
     static OdgovorZadatka a(long ucesnik, String broj, String tekst, long opcija, boolean tacno) {
         Map<String, PoljeOdgovora> m = new LinkedHashMap<>();
-        m.put("a", new PoljeOdgovora(broj, true));
-        m.put("b", new PoljeOdgovora(tekst, true));
+        m.put("a", new PoljeOdgovora(broj, tacno));
+        m.put("b", new PoljeOdgovora(tekst, tacno));
         m.put("c", new PoljeOdgovora(List.of(opcija), opcija == 2));
         return new OdgovorZadatka(ucesnik, 1L, m, tacno);
     }
@@ -42,6 +42,14 @@ class ZadatakRezultatBuilderTest {
     static final List<OdgovorZadatka> ODGOVORI = List.of(
             a(10, "45", "1011 0110", 2, true), a(11, "45,0", "10110110", 2, true), a(12, "44", "1111", 1, false),
             new OdgovorZadatka(20L, 2L, Map.of("a", new PoljeOdgovora("13", true)), true));
+
+    @Test
+    void preocenjenaVrednostSePrikazujeKaoTacna() {
+        Map<String, PoljeOdgovora> polja = new LinkedHashMap<>();
+        polja.put("a", new PoljeOdgovora("44", true));
+        ZadatakRezultat r = ZadatakRezultatBuilder.izgradi(S, DODELE, List.of(new OdgovorZadatka(12L, 1L, polja, true)), true, true, true);
+        assertEquals(Boolean.TRUE, r.varijante().getFirst().polja().getFirst().vrednosti().getFirst().tacan());
+    }
 
     @Test
     void vidljivoSve() {

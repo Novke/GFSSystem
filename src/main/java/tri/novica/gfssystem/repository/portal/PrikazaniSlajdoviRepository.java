@@ -12,6 +12,8 @@ import java.time.LocalDateTime;
 @Repository
 public interface PrikazaniSlajdoviRepository extends JpaRepository<PrikazanSlajd, Long> {
 
+    boolean existsBySlajdId(Long slajdId);
+
     /**
      * Upis prikazanog slajda "ako ne postoji" (UNIQUE (grupa, slajd, izvođenje): ponovni prikaz u istom izvođenju ne menja
      * prvi zapis). Bez izuzetka za duplikat, pa komanda konzole nikad ne pada zbog ovoga.

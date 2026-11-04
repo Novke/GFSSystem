@@ -32,6 +32,8 @@ POST /banka/render-proba ADMIN
 GET /banka/serije ADMIN
 POST /banka/serije/{serija}/odbaci ADMIN
 GET /banka/stablo ADMIN
+POST /banka/varijante/odobri-vise ADMIN
+POST /banka/varijante/povuci-odobrenje ADMIN
 DELETE /banka/varijante/{id} ADMIN
 GET /banka/varijante/{id} ADMIN
 PUT /banka/varijante/{id} ADMIN

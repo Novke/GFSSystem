@@ -59,6 +59,7 @@ class PrezentacijaServiceTest {
     @Mock MedijRepository medijRepository;
     @Mock GrupaZadatakaRepository grupaZadatakaRepository;
     @Mock ZadaciSlajdova zadaci;
+    @Mock IstorijaSlajdova istorija;
     @Mock ObjectProvider<PrezentacijaPromene> promeneProvider;
     @Mock PrezentacijaPromene promene;
 
@@ -76,7 +77,7 @@ class PrezentacijaServiceTest {
     void setUp() {
         service = new PrezentacijaService(prezentacijaRepository, slajdRepository, izvodjenjeRepository,
                 predmetRepository, predavanjeRepository, medijService, medijRepository, grupaZadatakaRepository, zadaci,
-                platnoJson, promeneProvider, CLOCK);
+                platnoJson, istorija, promeneProvider, CLOCK);
 
         predmet = new Predmet();
         predmet.setId(7L);

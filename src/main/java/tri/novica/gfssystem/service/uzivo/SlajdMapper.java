@@ -37,7 +37,8 @@ public final class SlajdMapper {
 
     private static SlajdDetails uDetails(Slajd s, Platno platno, ZadatakSlajdaInfo zadatak) {
         return new SlajdDetails(s.getId(), s.getRb(), s.getTip(), s.getNaslov(), s.getSadrzaj(), uInfo(s.getSlika()),
-                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()), platno, uPrelaz(s.getPrelaz()), zadatak);
+                s.getBeleske(), s.isPostepeno(), uDetails(s.getPitanje()), platno, uPrelaz(s.getPrelaz()), zadatak,
+                s.getVerzija());
     }
 
     /** {@code null} kad prelaza nema (i za embeddable bez efekta, npr. ručno upisan red). */

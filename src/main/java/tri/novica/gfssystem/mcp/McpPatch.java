@@ -113,6 +113,10 @@ public final class McpPatch {
     }
 
     /** Šema polja kroz strogi {@link PoljaJson#polja}; odsutno ili {@code null} je {@code null}. */
+    public JsonNode json(String kljuc) {
+        return strogo(kljuc, JsonNode.class);
+    }
+
     public List<Polje> polja(String kljuc) {
         Object vrednost = argumenti.get(kljuc);
         return vrednost == null ? null : PoljaJson.polja(uJson(vrednost));
