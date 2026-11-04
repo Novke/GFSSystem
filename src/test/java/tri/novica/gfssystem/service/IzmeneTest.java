@@ -96,7 +96,7 @@ class IzmeneTest {
     }
 
     static UpdateStudentCmd studentCmd(long grupaId, String indeks, int godina) {
-        return new UpdateStudentCmd(grupaId, "Ana", "Anić", indeks, godina, null, null, null, null);
+        return new UpdateStudentCmd(grupaId, "Ana", "Anić", indeks, godina, null, null, null, null, null);
     }
 
     // ---- student
@@ -111,6 +111,28 @@ class IzmeneTest {
 
         assertEquals("GD12", info.getIndeks());
         verify(studentRepository).save(student);
+    }
+
+    @Test
+    void izmenaPostavljaIskidaOznakuStariji() {
+        UpdateStudentCmd cmd = studentCmd(5L, "GD12", 2025);
+        cmd.setStariji(true);
+
+        assertTrue(studentService.update(11L, cmd).isStariji());
+        assertTrue(student.isStariji());
+
+        cmd.setStariji(false);
+        studentService.update(11L, cmd);
+        assertFalse(student.isStariji());
+    }
+
+    @Test
+    void izmenaBezPoljaStarijiOstavljaOznaku() {
+        student.setStariji(true);
+
+        studentService.update(11L, studentCmd(5L, "GD12", 2025));
+
+        assertTrue(student.isStariji());
     }
 
     @Test

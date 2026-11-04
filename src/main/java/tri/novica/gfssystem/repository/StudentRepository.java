@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpecificationExecutor<Student> {
@@ -106,4 +107,8 @@ public interface StudentRepository extends JpaRepository<Student, Long>, JpaSpec
                          and p.test.datum between :od and :doDatuma))""")
     long brojStarijihNaPredmetu(@Param("predmetId") Long predmetId, @Param("godinaUpisa") int godinaUpisa,
                                 @Param("od") LocalDate od, @Param("doDatuma") LocalDate doDatuma);
+
+    /** Oni među datim studentima koji imaju oznaku "stariji" (kolona, ne starija grupa kao u {@link #brojStarijihNaPredmetu}). */
+    @Query("select s.id from Student s where s.id in :ids and s.stariji = true")
+    Set<Long> stariji(@Param("ids") Collection<Long> ids);
 }

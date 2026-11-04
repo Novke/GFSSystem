@@ -8,5 +8,5 @@ import java.util.Map;
  * oba {@code null}. Telefoni i projektor ovaj zapis nikad ne dobijaju.
  */
 public record UcesnikZadatka(Long ucesnikId, String ime, Long varijantaId, String varijantaNaziv, boolean odgovorio,
-                             Boolean tacno, Map<String, Boolean> polja, Map<String, String> uneto) {
+                             Boolean tacno, Map<String, Boolean> polja, Map<String, String> uneto, boolean stariji) {
 }

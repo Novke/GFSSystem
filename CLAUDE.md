@@ -61,6 +61,18 @@ src/main/java/tri/novica/gfssystem/
 - **OnboardingSesija** - Onboarding session of a group (`onboarding_sesije`): public token, active flag, expiry, max submissions
 - **Prijava** - A student's submission in a session (`prijave`), status `StatusPrijave` (`NA_CEKANJU`, `PRIHVACENA`, `ODBIJENA`)
 
+## Manual "older student" flag (`Student.stariji`)
+
+A teacher-only label for students who changed programme and count as part of a younger group (`V23`). It is set through `PUT /studenti/{id}`
+(`UpdateStudentCmd.stariji`, `Boolean`: null leaves it as it is) and read by the teacher DTOs: `StudentInfo`, `StudentListItem`, `GrupaStudentInfo`,
+`PredavanjeStudentInfo`, `DomaciStudentiInfo` (the homework view has no such column, so `DomaciService.getDomaci` fills it with one
+`StudentRepository.stariji` query), `StudentPregledDetails`, and in Uživo `UcesnikStanje`, `UcesnikZadatka`, `RangTacnostiStavka` (one
+`UcesnikRepository.findStariji` query per snapshot; typed-name guests have no student, so no flag).
+- **It changes nothing else:** group, points, grade proposals, access, and the older counters `brojStarijihPrisutnih`, `brojStarijih`, `starijiOdGrupe`,
+  which still mean "outside the group, from an older generation".
+- **Students never see it:** `JavnaRangTacnostiStavka` has no such field, `RangTacnostiService.zaProjektor` passes `false`, and no phone, account or `/public/**` DTO
+  carries it. Any new DTO under `/public/**` must keep it out.
+
 ## Onboarding
 
 A teacher opens a session for a group (`POST /grupe/{id}/onboarding`, link/QR with a 32-char token), students submit
@@ -1150,7 +1162,10 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `vezbanja`, `prikazani_slajdovi`, `objave_ocena`, `objavljene_ocene`, `podesavanja_studenta` only,
   plus a conservative one-time first fill in SQL (drawn leaves of finished runs; shown slides only where provable); additive.
   `V21` = vežba number of a presentation (`V21__vezba_prezentacije.sql`, branch `feature/redosled-prezentacija`): nullable `prezentacije.vezba`
-  int, filled from names that start with `Vežbe N` / `Vezbe N`; idempotent and additive (an older image does not map it). **Next free version: `V22`.**
+  int, filled from names that start with `Vežbe N` / `Vezbe N`; idempotent and additive (an older image does not map it).
+  `V22` = app and push (see "Aplikacija i obaveštenja"). `V23` = manual "older student" flag (`V23__stariji_student.sql`, branch `feature/stariji-student`):
+  `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
+  **Next free version: `V24`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

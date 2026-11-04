@@ -18,4 +18,5 @@ public class StudentListItem {
     private String email;
     private String brojTelefona;
     private GrupaInfo grupa;
+    private boolean stariji;
 }
