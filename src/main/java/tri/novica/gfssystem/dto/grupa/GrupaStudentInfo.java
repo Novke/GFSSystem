@@ -16,5 +16,6 @@ public class GrupaStudentInfo {
     private int godina;
     private String brojTelefona;
     private String email;
+    private boolean stariji;
 
 }

@@ -114,6 +114,7 @@ public class StudentService {
         student.setDatumRodjenja(cmd.getDatumRodjenja());
         student.setOpstina(cmd.getOpstina());
         student.setGrupa(grupa);
+        if (cmd.getStariji() != null) student.setStariji(cmd.getStariji());
 
         return mapper.map(studentRepository.save(student), StudentInfo.class);
     }
@@ -275,6 +276,6 @@ public class StudentService {
         GrupaInfo grupa = g == null ? null
                 : new GrupaInfo(g.getId(), g.getNaziv(), g.getGodinaUpisa(), brojStudenata.getOrDefault(g.getId(), 0L));
         return new StudentListItem(s.getId(), s.getIme(), s.getPrezime(), s.getIndeks(), s.getGodina(), s.getEmail(),
-                s.getBrojTelefona(), grupa);
+                s.getBrojTelefona(), grupa, s.isStariji());
     }
 }

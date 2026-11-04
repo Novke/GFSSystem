@@ -113,6 +113,7 @@ public class StanjeService {
         Map<Long, Odgovor> odgovorUcesnika = new HashMap<>();
         odgovoriRunde.forEach(o -> odgovorUcesnika.putIfAbsent(o.getUcesnik().getId(), o));
         SnimakRunde snimakRunde = runda == null ? null : snimak(runda);
+        Set<Long> stariji = ucesnikRepository.findStariji(iz.getId());
         List<UcesnikStanje> ucesnici = p.ucesnici().stream()
                 .map(u -> {
                     Odgovor o = odgovorUcesnika.get(u.getId());
@@ -120,7 +121,8 @@ public class StanjeService {
                     return new UcesnikStanje(u.getId(), u.getIme(), poeni.getOrDefault(u.getId(), 0),
                             povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId()), varijantaId,
                             o == null ? null : o.getTacno(), o == null ? null : o.getVremeMs(),
-                            kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven());
+                            kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven(),
+                            stariji.contains(u.getId()));
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
@@ -581,6 +583,7 @@ public class StanjeService {
             }
         }
 
+        Set<Long> stariji = ucesnikRepository.findStariji(izvodjenjeId);
         List<RezultatPitanja> pitanja = new ArrayList<>();
         for (PitanjeRunda r : p.runde()) {
             SnimakRunde snimak = snimak(r);
@@ -592,7 +595,7 @@ public class StanjeService {
                 procenat = (int) Math.round(100.0 * tacnih / odgovori.size());
             }
             PregledZadatka zadatak = snimak instanceof ZadatakSnimak zs
-                    ? pregledZadatka(zs, p.ucesnici(), dodelePoRundi.getOrDefault(r.getId(), Map.of()), odgovori) : null;
+                    ? pregledZadatka(zs, p.ucesnici(), dodelePoRundi.getOrDefault(r.getId(), Map.of()), odgovori, stariji) : null;
             pitanja.add(new RezultatPitanja(r.getId(), r.getSlajdId(),
                     r.getSlajdId() == null ? null : rbSlajda.get(r.getSlajdId()), r.getRedniBroj(), pitanje,
                     rezultat(snimak, odgovori, false, true), odgovori.size(), procenat, zadatak));
@@ -602,7 +605,7 @@ public class StanjeService {
 
     /** Runda zadatka u pregledu: rezultat (sve vidljivo) i učesnici sa dodelom, po redu prijave. */
     private PregledZadatka pregledZadatka(ZadatakSnimak s, List<Ucesnik> ucesnici, Map<Long, Long> dodele,
-                                          List<Odgovor> odgovori) {
+                                          List<Odgovor> odgovori, Set<Long> stariji) {
         List<ZadatakRezultatBuilder.OdgovorZadatka> oz = odgovoriZadatka(odgovori);
         Map<Long, ZadatakRezultatBuilder.OdgovorZadatka> poUcesniku = new HashMap<>();
         oz.forEach(o -> poUcesniku.putIfAbsent(o.ucesnikId(), o));
@@ -615,7 +618,7 @@ public class StanjeService {
             String naziv = v == null ? null : v.naziv();
             lista.add(new UcesnikZadatka(u.getId(), u.getIme(), varijantaId, naziv, o != null,
                     o == null ? null : o.tacno(), o == null ? null : ishod(o.polja()),
-                    o == null ? null : UnetoZadatka.tekstovi(v, o.polja())));
+                    o == null ? null : UnetoZadatka.tekstovi(v, o.polja()), stariji.contains(u.getId())));
         }
         Map<Long, Integer> nivoi = new LinkedHashMap<>();
         if (s.varijante() != null) {

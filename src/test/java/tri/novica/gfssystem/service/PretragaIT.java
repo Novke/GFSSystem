@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import tri.novica.gfssystem.dto.domaci.DomaciFilter;
 import tri.novica.gfssystem.dto.domaci.DomaciListItem;
+import tri.novica.gfssystem.dto.domaci.DomaciStudentiInfo;
 import tri.novica.gfssystem.dto.student.StudentFilter;
 import tri.novica.gfssystem.dto.student.StudentListItem;
 import tri.novica.gfssystem.dto.test.TestFilter;
@@ -25,7 +26,9 @@ import tri.novica.gfssystem.utility.PageableUtil;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.*;
@@ -107,6 +110,20 @@ class PretragaIT {
     }
 
     // ================================================================== domaći
+
+    @Test
+    void detaljiDomacegNoseOznakuStariji() {
+        Domaci d = domaci(mat, ga, pred, LocalDate.of(2024, 11, 12), "Oznaka stariji", false);
+        em.find(Student.class, s1.getId()).setStariji(true);
+        em.flush();
+        em.clear();
+
+        Map<Long, Boolean> poStudentu = domaciService.getDomaci(d.getId()).getStudenti().stream()
+                .collect(Collectors.toMap(DomaciStudentiInfo::getStudentId, DomaciStudentiInfo::isStariji));
+
+        assertEquals(true, poStudentu.get(s1.getId()));
+        assertEquals(false, poStudentu.get(s2.getId()));
+    }
 
     @Test
     void domaciBezPredavanjaVracaPredavanjeNull() {

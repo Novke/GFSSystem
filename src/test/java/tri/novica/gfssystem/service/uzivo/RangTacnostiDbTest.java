@@ -241,6 +241,38 @@ class RangTacnostiDbTest {
     }
 
     @Test
+    void oznakaStarijiUSvimRangovimaSamoNaProjektoruNe() {
+        jdbc.update("update studenti set stariji = 1 where id = ?", ana);
+        PrezentacijaDetails p = prezentacija("Oznaka", 1);
+        IzvodjenjeInfo iz = izvodjenjeService.pokreni(p.id(), new PokreniCmd(true, null, predavanjeId));
+        Long uAna = ucesnikService.prijavi(iz.kod(), "x", Optional.of(ana)).info().ucesnikId();
+        Long uBojan = ucesnikService.prijavi(iz.kod(), "x", Optional.of(bojan)).info().ucesnikId();
+        Long runda = otvoriSledece(iz.id());
+        odgovori(iz.id(), uAna, runda, opcija(p, 0, 0));
+        odgovori(iz.id(), uBojan, runda, opcija(p, 0, 1));
+        k(iz.id(), TipKomande.OTVORI_ZATVORI);
+
+        Map<Long, Boolean> izvodjenja = new HashMap<>();
+        rangService.zaIzvodjenje(iz.id()).forEach(s -> izvodjenja.put(s.studentId(), s.stariji()));
+        assertEquals(Map.of(ana, true, bojan, false), izvodjenja);
+        assertTrue(stariji(rangService.zaPredavanje(predavanjeId).rang(), ana));
+        assertFalse(stariji(rangService.zaPredavanje(predavanjeId).rang(), bojan));
+        assertTrue(stariji(rangService.zaGrupu(grupaId, null, null).rang(), ana));
+        assertTrue(rangService.zaStudenta(ana, null, null).ukupno().stariji());
+        assertEquals(Set.of(uAna), new HashSet<>(stanjeService.nastavnicko(iz.id()).ucesnici().stream()
+                .filter(UcesnikStanje::stariji).map(UcesnikStanje::id).toList()));
+
+        k(iz.id(), TipKomande.TACAN);
+        k(iz.id(), TipKomande.RANG_LISTA);
+        assertFalse(stanjeService.nastavnicko(iz.id()).javniRangTacnosti().isEmpty());
+        assertTrue(stanjeService.nastavnicko(iz.id()).javniRangTacnosti().stream().noneMatch(RangTacnostiStavka::stariji));
+    }
+
+    private static boolean stariji(List<RangTacnostiStavka> rang, Long studentId) {
+        return rang.stream().filter(s -> studentId.equals(s.studentId())).findFirst().orElseThrow().stariji();
+    }
+
+    @Test
     void grupaBezUcescaINepoznatId() {
         UzivoGrupe g = rangService.zaGrupu(grupaId, null, null);
         assertEquals(0, g.brojCasova());

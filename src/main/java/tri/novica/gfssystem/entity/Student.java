@@ -30,6 +30,9 @@ public class Student {
     private LocalDate datumRodjenja;
     @Column(length = 100)
     private String opstina;
+    /** Stariji od svoje grupe (promenio smer): samo podsetnik nastavniku pri ocenjivanju, ništa drugo ne menja. */
+    @Column(nullable = false)
+    private boolean stariji;
     @ManyToOne
     private Grupa grupa;
     @OneToMany(mappedBy = "student")

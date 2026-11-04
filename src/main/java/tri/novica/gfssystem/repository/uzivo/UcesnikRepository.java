@@ -10,6 +10,7 @@ import tri.novica.gfssystem.entity.uzivo.Ucesnik;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
@@ -33,6 +34,10 @@ public interface UcesnikRepository extends JpaRepository<Ucesnik, Long> {
     /** Studenti izbačenih učesnika izvođenja (brojanje očekivanih u konzoli ih preskače). */
     @Query("select distinct u.student.id from Ucesnik u where u.izvodjenje.id = :id and u.izbacen = true and u.student is not null")
     List<Long> findIzbaceniStudentIds(@Param("id") Long izvodjenjeId);
+
+    /** Učesnici izvođenja iza kojih je student sa oznakom "stariji" (samo nastavnikov prikaz; gost nije povezan sa studentom). */
+    @Query("select u.id from Ucesnik u where u.izvodjenje.id = :id and u.student.stariji = true")
+    Set<Long> findStariji(@Param("id") Long izvodjenjeId);
 
     /** Broj neizbačenih učesnika po izvođenju: redovi {@code [izvodjenjeId, broj]}. */
     @Query("""
