@@ -2,6 +2,7 @@ package tri.novica.gfssystem.mcp;
 
 import org.junit.jupiter.api.Test;
 import tri.novica.gfssystem.mcp.servis.McpBanka;
+import tri.novica.gfssystem.mcp.servis.McpIzvodjenja;
 import tri.novica.gfssystem.mcp.servis.McpKontekst;
 import tri.novica.gfssystem.mcp.servis.McpPrezentacije;
 
@@ -32,10 +33,18 @@ class McpFasadeTest {
                     "napraviVarijantu(Long, VarijantaCmd, String, ZahtevSlike, McpPoziv)",
                     "izmeniVarijantu(Long, VarijantaPatch, String, ZahtevSlike, McpPoziv)",
                     "duplirajVarijantu(Long, String)", "obrisiVarijantu(Long, String)",
-                    "probaRendera(RenderProbaCmd, ZahtevSlike)", "sacuvajPrilog(byte[], String, String)"),
+                    "probaRendera(RenderProbaCmd, ZahtevSlike)", "sacuvajPrilog(byte[], String, String)",
+                    "odobriNacrte(List, Long, String, Long, Integer, String)", "povuciOdobrenje(List, String)",
+                    "arhivirajVarijante(List, String)", "izmeniNivo(List, Integer, String)"),
             McpPrezentacije.class, Set.of("prezentacije(Long)", "prezentacija(Long, int)", "slajd(Long)",
                     "napraviPrezentaciju(CreatePrezentacijaCmd, String)", "dodajSlajd(Long, Long, SlajdCmd, String)",
-                    "sacuvajSliku(byte[], String, String)"));
+                    "sacuvajSliku(byte[], String, String)", "istorija(Long, Long)",
+                    "izmeniPrezentaciju(Long, PrezentacijaPatch, String)", "obrisiPrezentaciju(Long, Long, String)",
+                    "izmeniSlajd(Long, SlajdPatch, String, String)", "zameniPlatno(Long, JsonNode, String, String, String)",
+                    "premestiSlajd(Long, Long, String)", "obrisiSlajd(Long, String)", "obrisiKoriscenSlajd(Long, String)",
+                    "vratiIzmenu(Long, String)"),
+            McpIzvodjenja.class, Set.of("izvodjenja(Long)", "odgovori(Long)",
+                    "preoceni(Long, List, Boolean, String, String, String)", "vratiPreocenu(Long, String, String)"));
 
     static String kljuc(Method m) {
         return m.getName() + Arrays.stream(m.getParameterTypes()).map(Class::getSimpleName)

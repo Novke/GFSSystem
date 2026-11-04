@@ -20,6 +20,7 @@ public class StudentPregledDetails {
     private String email;
     private LocalDate datumRodjenja;
     private String opstina;
+    private boolean stariji;
     /** Naziv grupe; id grupe je u {@code grupaId}. Null za studenta bez grupe. */
     private String grupa;
     private Long grupaId;

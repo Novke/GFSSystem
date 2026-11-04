@@ -12,4 +12,5 @@ public class PredavanjeStudentInfo {
     private String ime;
     private String prezime;
     private String indeks;
+    private boolean stariji;
 }

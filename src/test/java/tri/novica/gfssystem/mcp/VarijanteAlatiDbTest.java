@@ -632,7 +632,7 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
         verify(latexRender, never()).renderuj(anyString(), anyString(), anyList());
 
         ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", rucna, "nivo", 3),
-                "Nivo odobrene ili Novicine varijante menja Novica u banci.");
+                "Nivo odobrene ili Novicine varijante menja alat izmeni_nivo.");
         ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "nivo", null),
                 "Polje 'nivo' se ne briše.");
         ocekujGresku("izmeni_varijantu", mapa("serija", serija, "varijantaId", id, "nivo", 0),
@@ -666,5 +666,135 @@ class VarijanteAlatiDbTest extends McpDbTestOsnova {
         r.path("stavke").forEach(st -> ids.add(st.path("varijantaId").asLong()));
         assertEquals(List.of(id), ids, r.toString());
         assertEquals(1, r.path("stavke").get(0).path("nivo").asInt());
+    }
+
+    // ---------------------------------------------------------------- odobri_nacrte i masovne radnje
+
+    String status(Long varijantaId) {
+        return (String) red(varijantaId).get("status");
+    }
+
+    Map<String, Object> odobriSeriju(int ocekivano) {
+        return mapa("serija", serija, "ocekivanoBroj", ocekivano, "predmetId", predmet.getId(), "ciljSerija", serija);
+    }
+
+    @Test
+    void odobriNacrteTraziTacanBrojAPovlacenjeVracaUNacrt() {
+        Long a = klodovNacrt(list, TEKST, RESENJE);
+        Long b = klodovNacrt(list, NOVI_TEKST, RESENJE);
+
+        ocekujGresku("odobri_nacrte", odobriSeriju(3), "Za odobravanje je 2 nacrta, a `ocekivanoBroj` je 3.");
+        assertEquals("NACRT", status(a));
+        assertEquals("NACRT", status(b));
+
+        JsonNode r = McpTestKlijent.json(uspeh("odobri_nacrte", odobriSeriju(2)));
+        assertEquals(2, r.path("uspele").size(), r.toString());
+        assertEquals(0, r.path("preskocene").size(), r.toString());
+        assertEquals("AKTIVNA", status(a));
+        assertEquals("AKTIVNA", status(b));
+
+        r = McpTestKlijent.json(uspeh("povuci_odobrenje", mapa("serija", serija, "varijante", List.of(a, b))));
+        assertEquals(2, r.path("uspele").size(), r.toString());
+        assertEquals("NACRT", status(a));
+        assertEquals("NACRT", status(b));
+    }
+
+    @Test
+    void odobriNacrteTraziJedanCiljIPreskaceNeuspeleSaRazlogom() {
+        Long dobar = klodovNacrt(list, TEKST, RESENJE);
+        Long los = klodovNacrt(list, NOVI_TEKST, RESENJE);
+        jdbc.update("update varijante set render_status = 'GRESKA' where id = ?", los);
+
+        String cilj = "Pošalji tačno jedno: `varijante` ili `ciljSerija` uz `predmetId`.";
+        ocekujGresku("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1), cilj);
+        ocekujGresku("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "ciljSerija", serija), cilj);
+        ocekujGresku("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "varijante", List.of(dobar),
+                "ciljSerija", serija, "predmetId", predmet.getId()), cilj);
+
+        JsonNode r = McpTestKlijent.json(uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 2,
+                "varijante", List.of(dobar, los))));
+        assertEquals(dobar, r.path("uspele").get(0).asLong(), r.toString());
+        assertEquals(los, r.path("preskocene").get(0).path("id").asLong(), r.toString());
+        assertFalse(r.path("preskocene").get(0).path("razlog").asString().isBlank(), r.toString());
+        assertEquals("AKTIVNA", status(dobar));
+        assertEquals("NACRT", status(los));
+    }
+
+    @Test
+    void odobrenaKopijaArhiviraOriginalAPovlacenjeGaVraca() {
+        JsonNode izmena = McpTestKlijent.json(uspeh("izmeni_varijantu", mapa("serija", serija, "varijantaId", rucna,
+                "tekst", NOVI_TEKST)));
+        Long kopija = izmena.path("varijanta").path("id").asLong();
+
+        uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "varijante", List.of(kopija)));
+        assertEquals("AKTIVNA", status(kopija));
+        assertEquals("ARHIVIRANA", status(rucna));
+
+        uspeh("povuci_odobrenje", mapa("serija", serija, "varijante", List.of(kopija)));
+        assertEquals("NACRT", status(kopija));
+        assertEquals("AKTIVNA", status(rucna));
+    }
+
+    @Test
+    void nivoIArhiviranjeRadeINaNovicinojOdobrenoj() {
+        uspeh("izmeni_nivo", mapa("serija", serija, "varijante", List.of(rucna), "nivo", 3));
+        assertEquals(3, ((Number) jdbc.queryForObject("select nivo from varijante where id = ?", Integer.class, rucna)).intValue());
+        assertEquals("AKTIVNA", status(rucna));
+
+        JsonNode r = McpTestKlijent.json(uspeh("izmeni_nivo", mapa("serija", serija, "varijante", List.of(rucna, Long.MAX_VALUE),
+                "nivo", 1)));
+        assertEquals(1, r.path("uspele").size(), r.toString());
+        assertEquals(Long.MAX_VALUE, r.path("preskocene").get(0).path("id").asLong(), r.toString());
+
+        uspeh("arhiviraj_varijante", mapa("serija", serija, "varijante", List.of(rucna)));
+        assertEquals("ARHIVIRANA", status(rucna));
+        uspeh("povuci_odobrenje", mapa("serija", serija, "varijante", List.of(rucna)));
+        assertEquals("NACRT", status(rucna));
+        uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "varijante", List.of(rucna)));
+        assertEquals("AKTIVNA", status(rucna));
+    }
+
+    @Test
+    void odobravanjeRadiSamoNadNacrtomIBrojiRazlicite() {
+        Long nacrt = klodovNacrt(list, TEKST, RESENJE);
+        Long arhivirana = klodovNacrt(list, NOVI_TEKST, RESENJE);
+        varijantaService.arhiviraj(arhivirana);
+
+        ocekujGresku("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 3, "varijante", List.of(nacrt, nacrt, arhivirana)),
+                "Za odobravanje je 2 nacrta, a `ocekivanoBroj` je 3.");
+
+        JsonNode r = McpTestKlijent.json(uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 3,
+                "varijante", List.of(nacrt, arhivirana, rucna))));
+        assertEquals(1, r.path("uspele").size(), r.toString());
+        assertEquals(2, r.path("preskocene").size(), r.toString());
+        assertEquals("Varijanta nije nacrt.", r.path("preskocene").get(0).path("razlog").asString());
+        assertEquals("ARHIVIRANA", status(arhivirana));
+        assertEquals("AKTIVNA", status(rucna));
+    }
+
+    @Test
+    void povlacenjeNeAktiviraRucnoArhiviranOriginal() {
+        Long kopija = McpTestKlijent.json(uspeh("izmeni_varijantu", mapa("serija", serija, "varijantaId", rucna,
+                "tekst", NOVI_TEKST))).path("varijanta").path("id").asLong();
+        varijantaService.arhiviraj(rucna);
+        uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "varijante", List.of(kopija)));
+
+        uspeh("povuci_odobrenje", mapa("serija", serija, "varijante", List.of(kopija)));
+        assertEquals("NACRT", status(kopija));
+        assertEquals("ARHIVIRANA", status(rucna));
+    }
+
+    @Test
+    void povlacenjeSePreskaceKadOriginalViseNeProlaziProvere() {
+        Long kopija = McpTestKlijent.json(uspeh("izmeni_varijantu", mapa("serija", serija, "varijantaId", rucna,
+                "tekst", NOVI_TEKST))).path("varijanta").path("id").asLong();
+        uspeh("odobri_nacrte", mapa("serija", serija, "ocekivanoBroj", 1, "varijante", List.of(kopija)));
+        jdbc.update("update varijante set render_status = 'GRESKA' where id = ?", rucna);
+
+        JsonNode r = McpTestKlijent.json(uspeh("povuci_odobrenje", mapa("serija", serija, "varijante", List.of(kopija))));
+        assertEquals(0, r.path("uspele").size(), r.toString());
+        assertEquals(kopija, r.path("preskocene").get(0).path("id").asLong(), r.toString());
+        assertEquals("AKTIVNA", status(kopija));
+        assertEquals("ARHIVIRANA", status(rucna));
     }
 }

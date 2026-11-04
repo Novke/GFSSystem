@@ -67,6 +67,22 @@ public class VarijantaRest {
         return varijantaService.odobri(id);
     }
 
+    /** "Odobri sve" na pregledu nacrta: varijanta koju pravilo odbije se preskače sa razlogom, ostale se odobravaju. */
+    @PostMapping("/varijante/odobri-vise")
+    @ResponseStatus(HttpStatus.OK)
+    public OdobravanjeInfo odobriVise(@RequestBody VarijanteCmd cmd) {
+        IshodVarijanti i = varijantaService.odobriVise(cmd.ids());
+        return new OdobravanjeInfo(i.uspele(), i.preskocene());
+    }
+
+    /** "Poništi" posle masovnog odobravanja: nazad u nacrt, a zamenjeni original ponovo aktivan. */
+    @PostMapping("/varijante/povuci-odobrenje")
+    @ResponseStatus(HttpStatus.OK)
+    public PovlacenjeInfo povuciOdobrenje(@RequestBody VarijanteCmd cmd) {
+        IshodVarijanti i = varijantaService.povuciOdobrenje(cmd.ids());
+        return new PovlacenjeInfo(i.uspele(), i.preskocene());
+    }
+
     @PostMapping("/varijante/{id}/arhiviraj")
     @ResponseStatus(HttpStatus.OK)
     public VarijantaDetails arhiviraj(@PathVariable Long id) {

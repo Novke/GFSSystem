@@ -237,7 +237,7 @@ class PretragaRestTest {
 
     @Test
     void studentOblikOdgovora() throws Exception {
-        StudentListItem bezGrupe = new StudentListItem(1L, "Ana", "Anić", "GD12", 2025, null, null, null);
+        StudentListItem bezGrupe = new StudentListItem(1L, "Ana", "Anić", "GD12", 2025, null, null, null, false);
         when(studenti.pretraga(any(), any())).thenReturn(new PagedModel<>(
                 new PageImpl<>(List.of(bezGrupe), PageRequest.of(0, 25), 1)));
         mvc.perform(get("/studenti/pretraga"))

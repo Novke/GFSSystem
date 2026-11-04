@@ -79,7 +79,7 @@ final class PrezentacijaPregled {
             return s;
         }
         return new SlajdDetails(s.id(), s.rb(), s.tip(), s.naslov(), s.sadrzaj(), s.slika(), s.beleske(), s.postepeno(),
-                s.pitanje(), PlatnoPregled.bezPoteza(s.platno()), s.prelaz(), s.zadatak());
+                s.pitanje(), PlatnoPregled.bezPoteza(s.platno()), s.prelaz(), s.zadatak(), s.verzija());
     }
 
     /**

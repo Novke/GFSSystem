@@ -96,12 +96,31 @@ class McpOpsegTest {
             "VarijantaService.dupliraj(Long, String)",
             "VarijantaService.obrisiSopstveniNacrt(Long)",
             "VarijantaService.probaSaSlikom(RenderProbaCmd)",
+            // McpBanka: odobravanje i ostale masovne radnje (Novicina odluka 2026-11-04; odobri_nacrte ide uz potvrdu)
+            "VarijantaService.odobriVise(List)",
+            "VarijantaService.povuciOdobrenje(List)",
+            "VarijantaService.arhivirajVise(List)",
+            "VarijantaService.promeniNivoVise(List, Integer)",
             // McpPrezentacije: pregled, slajd (i id njegove prezentacije za link), pravljenje i INFO/PITANJE slajd iz serije
             "PrezentacijaService.detalji(Long)",
             "PrezentacijaService.slajd(Long)",
             "PrezentacijaService.prezentacijaSlajda(Long)",
             "PrezentacijaService.kreiraj(CreatePrezentacijaCmd, String)",
             "PrezentacijaService.dodajSlajdIzSerije(Long, SlajdCmd, Long, String)",
+            // McpPrezentacije: povratne izmene postojećeg (istorija) i brisanje prezentacije uz potvrdu
+            "PrezentacijaService.otisakPlatna(Long)",
+            "PrezentacijaService.izmene(Long, Long)",
+            "PrezentacijaService.izmeniIzSerije(Long, PrezentacijaPatch, String)",
+            "PrezentacijaService.obrisiIzSerije(Long, Long, String)",
+            "PrezentacijaService.izmeniSlajdIzSerije(Long, SlajdPatch, String, String, String)",
+            "PrezentacijaService.premestiSlajd(Long, Long, String)",
+            "PrezentacijaService.obrisiSlajdIzSerije(Long, boolean, String)",
+            "PrezentacijaService.vratiIzmenu(Long, String)",
+            // McpIzvodjenja: jedini dodir sa odgovorima studenata; preocena završenog izvođenja ide uz potvrdu
+            "PreocenaOdgovoraService.izvodjenja(Long)",
+            "PreocenaOdgovoraService.odgovori(Long)",
+            "PreocenaOdgovoraService.preoceni(Long, List, boolean, String, String, String)",
+            "PreocenaOdgovoraService.vrati(Long, String, String)",
             // McpBanka i McpPrezentacije: upload priloga i slika (/mcp/prilozi, /mcp/slike), tip po prvim bajtovima
             "MedijService.sacuvaj(byte[], String)",
             "MedijService.sacuvajPrilog(byte[], String)",

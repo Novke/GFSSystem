@@ -12,6 +12,7 @@ import tri.novica.gfssystem.dto.banka.GrupaDetails;
 import tri.novica.gfssystem.dto.banka.GrupaPatch;
 import tri.novica.gfssystem.dto.banka.IskljucenaTemaCmd;
 import tri.novica.gfssystem.dto.banka.IskljucenaTemaInfo;
+import tri.novica.gfssystem.dto.banka.IshodVarijanti;
 import tri.novica.gfssystem.dto.banka.Polje;
 import tri.novica.gfssystem.dto.banka.PonistavanjeInfo;
 import tri.novica.gfssystem.dto.banka.PremestiCmd;
@@ -49,6 +50,7 @@ import tri.novica.gfssystem.utility.Nivo;
 import tri.novica.gfssystem.utility.Serija;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -64,8 +66,8 @@ import java.util.Set;
  * rešenje. Slika koja ne stigne (render ne radi, sva mesta za probe zauzeta, PNG se ne čita, rok) nije greška alata:
  * podaci idu uz napomenu {@value #SLIKA_NIJE_STIGLA}.
  * <p>
- * Grupe (spec MCP 4.1): Klod pravi grupe (izvor CLAUDE, serija), i pod Novicinom grupom; preimenuje, menja šemu polja,
- * premešta i briše samo svoje ({@link #klodova}: izvor se nikad ne menja, pa provera pre ključa servisa nema trku).
+ * Grupe (spec MCP 4.1, dopuna 2026-11-04): Klod pravi grupe (izvor CLAUDE, serija), i pod Novicinom grupom; preimenuje, menja
+ * šemu polja, premešta i briše i Novicine, kad to Novica traži (izmena šeme i brisanje idu uz potvrdu, {@code TraziPotvrdu}).
  * Pravljenje troši dnevni budžet ključa pre upisa (grupa 1, kopija broj stavki podstabla), posle jeftinih provera bez ključa
  * (postojanje izvora, cilj kopije); pokušaj koji servis zatim odbije (409, 400 sadržaja) ostaje potrošen. Svaki upis nosi
  * ispravnu seriju ({@link Serija#proveri}); izmena, premeštanje i brisanje je ne upisuju (serija grupe je ona iz pravljenja).
@@ -87,14 +89,16 @@ public class McpBanka {
     static final String SLIKA_NIJE_STIGLA = "Slika nije stigla na vreme.";
     /** Stavki pretrage po strani u {@code pretraga_banke}. */
     static final int PRETRAGE_PO_STRANI = 25;
+    /** Strana pretrage kad se skupljaju svi nacrti serije za odobravanje. */
+    private static final int MASOVNO_PO_STRANI = 100;
     /** Kao podrazumevani sort REST pretrage, sa {@code id} na kraju da redosled bude isti između strana. */
     static final Sort SORT_PRETRAGE = Sort.by(Sort.Order.desc("izmenjeno"), Sort.Order.desc("id"));
     /** Render servis ne radi (503) ili su sva mesta za probe zauzeta (429): slika ne stiže, alat uspeva. */
     private static final Set<Integer> SLIKA_NEDOSTUPNA = Set.of(HttpStatus.SERVICE_UNAVAILABLE.value(),
             HttpStatus.TOO_MANY_REQUESTS.value());
     private static final String PREDMET_OBAVEZAN = "Predmet je obavezan.";
-    /** 409 za izmenu, šemu polja, premeštanje i brisanje Novicine (RUCNO) grupe. */
-    static final String NOVICINA_GRUPA = "Ovu grupu je napravio Novica; izmenu radi on u UI-ju.";
+    /** Masovno odobravanje: ono što Klod očekuje mora da se poklopi sa onim što bi se stvarno odobrilo. */
+    static final String ODOBRI_CILJ = "Pošalji tačno jedno: `varijante` ili `ciljSerija` uz `predmetId`.";
     /** 400 za {@code izmeni_varijantu} bez ijednog polja: nad tuđom varijantom bi to bila kopija bez izmene. */
     static final String IZMENA_BEZ_POLJA = "Izmena mora sadržati bar jedno polje varijante.";
     /** Nivo nove Klodove varijante je obavezan. */
@@ -213,7 +217,7 @@ public class McpBanka {
     /** Delimična izmena naziva, opisa, težine i uputstva Klodove grupe (merge patch; šema polja ostaje). */
     public GrupaDetails izmeniGrupu(Long id, GrupaPatch patch, String serija) {
         Serija.proveri(serija);
-        return grupaService.izmeniDelimicno(klodova(id), patch);
+        return grupaService.izmeniDelimicno(obavezan(id, "grupaId"), patch);
     }
 
     /**
@@ -222,19 +226,19 @@ public class McpBanka {
      */
     public GrupaDetails izmeniPoljaGrupe(Long id, List<Polje> polja, String serija) {
         Serija.proveri(serija);
-        return grupaService.izmeniPolja(klodova(id), polja);
+        return grupaService.izmeniPolja(obavezan(id, "grupaId"), polja);
     }
 
     /** Premešta Klodovu grupu sa podstablom (i pod Novicinu grupu: to je dopuna njenog podstabla). */
     public GrupaDetails premestiGrupu(Long id, PremestiCmd cmd, String serija) {
         Serija.proveri(serija);
-        return grupaService.premesti(klodova(id), cmd);
+        return grupaService.premesti(obavezan(id, "grupaId"), cmd);
     }
 
     /** Briše praznu Klodovu grupu; grupa sa varijantama ili podgrupama je 409 {@code Briše se samo prazna grupa.} */
     public void obrisiGrupu(Long id, String serija) {
         Serija.proveri(serija);
-        grupaService.obrisiPraznu(klodova(id));
+        grupaService.obrisiPraznu(obavezan(id, "grupaId"));
     }
 
     /**
@@ -395,19 +399,64 @@ public class McpBanka {
                 spoji(banka.preskoceno(), prezentacije.preskoceno()));
     }
 
-    // ---------------------------------------------------------------- pomoćno
+    // ---------------------------------------------------------------- odobravanje i masovne radnje
 
     /**
-     * Id Klodove grupe; Novicina (RUCNO) je 409 {@value #NOVICINA_GRUPA}, nepostojeća 404. Čita grupu pre ključa servisa,
-     * što je bezbedno jer se izvor grupe posle pravljenja ne menja (servis zatim prazni persistence context).
+     * Odobrava nacrte (uz Novicinu potvrdu): spisak {@code varijante} ili svi nacrti serije {@code ciljSerija} predmeta, po
+     * potrebi samo iz lista {@code grupaId}. {@code ocekivanoBroj} je koliko je Klod rekao Novici; drugačiji stvaran broj je
+     * 409 i ništa se ne odobrava, pa nacrt dodat posle pitanja ne prolazi bez pogleda. Pravila su ista kao u UI-ju (render,
+     * potpuni odgovori, arhiviranje zamenjenog originala); varijanta koju odbiju se preskače sa razlogom.
      */
-    private Long klodova(Long id) {
-        Long grupaId = obavezan(id, "grupaId");
-        if (grupaService.detalji(grupaId).izvor() != IzvorVarijante.CLAUDE) {
-            throw new SystemException(NOVICINA_GRUPA, HttpStatus.CONFLICT);
+    public IshodVarijanti odobriNacrte(List<Long> varijante, Long predmetId, String ciljSerija, Long grupaId, Integer ocekivanoBroj,
+                                       String serija) {
+        Serija.proveri(serija);
+        List<Long> ids = nacrti(varijante, predmetId, ciljSerija, grupaId);
+        if (ocekivanoBroj == null || ocekivanoBroj != ids.size()) {
+            throw new SystemException("Za odobravanje je " + ids.size() + " nacrta, a `ocekivanoBroj` je " + ocekivanoBroj + ".",
+                    HttpStatus.CONFLICT);
         }
-        return grupaId;
+        return varijantaService.odobriVise(ids);
     }
+
+    private List<Long> nacrti(List<Long> varijante, Long predmetId, String ciljSerija, Long grupaId) {
+        boolean poSpisku = varijante != null;
+        if (poSpisku == (ciljSerija != null) || (!poSpisku && predmetId == null)) {
+            throw new SystemException(ODOBRI_CILJ, HttpStatus.BAD_REQUEST);
+        }
+        if (poSpisku) {
+            return new ArrayList<>(new LinkedHashSet<>(varijante));
+        }
+        BankaFilter filter = new BankaFilter(predmetId, null, null, StatusVarijante.NACRT, null, ciljSerija, null);
+        List<Long> ids = new ArrayList<>();
+        int strana = 1;
+        McpStrana<BankaPretragaStavka> s;
+        do {
+            s = McpStrana.iz(pretragaService.pretraga(filter, McpStrana.zahtev(strana++, MASOVNO_PO_STRANI, SORT_PRETRAGE)));
+            s.stavke().stream().filter(v -> grupaId == null || grupaId.equals(v.grupaId()))
+                    .forEach(v -> ids.add(v.varijantaId()));
+        } while (strana <= s.brojStrana());
+        return ids;
+    }
+
+    /** Vraća odobrene u nacrt, a zamenjene originale u aktivne: poništavanje {@link #odobriNacrte}. */
+    public IshodVarijanti povuciOdobrenje(List<Long> varijante, String serija) {
+        Serija.proveri(serija);
+        return varijantaService.povuciOdobrenje(varijante);
+    }
+
+    /** Arhivira varijante (i Novicine i odobrene): izlaze iz izvlačenja na času, a {@code odobri_nacrte} ih vraća. */
+    public IshodVarijanti arhivirajVarijante(List<Long> varijante, String serija) {
+        Serija.proveri(serija);
+        return varijantaService.arhivirajVise(varijante);
+    }
+
+    /** Nivo 1-3 bilo koje varijante, bez rendera i bez promene statusa. */
+    public IshodVarijanti izmeniNivo(List<Long> varijante, Integer nivo, String serija) {
+        Serija.proveri(serija);
+        return varijantaService.promeniNivoVise(varijante, nivo);
+    }
+
+    // ---------------------------------------------------------------- pomoćno
 
     /**
      * Upis varijante za Kloda sa slikom po pravilu slika (spec MCP 4.1): bez {@code slika.slika()} bez slike; za grupu namene

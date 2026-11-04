@@ -28,7 +28,7 @@ public final class RezultatBuilder {
                 .toList();
         int ukupno = koristi.size();
         Integer tacnih = tacanPrikazan && p.imaTacanOdgovor()
-                ? (int) koristi.stream().filter(o -> tacan(p, o)).count() : null;
+                ? (int) koristi.stream().filter(o -> ocenjenTacno(p, o)).count() : null;
         return switch (p.tip()) {
             case JEDAN_TACAN, VISE_TACNIH, ANKETA, TACNO_NETACNO ->
                     new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null, tacnih);
@@ -37,6 +37,11 @@ public final class RezultatBuilder {
                     tekstovi(p, koristi, sakriveniKljucevi, tacanPrikazan), null, tacnih);
             case SKALA -> new Rezultat(p.tip(), ukupno, null, null, null, skala(koristi), null);
         };
+    }
+
+    /** Sačuvana ocena odgovora (preocena posle časa menja nju), a bez nje ocena po snimku. */
+    private static boolean ocenjenTacno(PitanjeSnimak p, Odgovor o) {
+        return o.getTacno() != null ? o.getTacno() : tacan(p, o);
     }
 
     /**
@@ -103,14 +108,19 @@ public final class RezultatBuilder {
      */
     private static RezultatBrojevi brojevi(PitanjeSnimak p, List<Odgovor> odgovori, boolean tacanPrikazan) {
         Map<Double, Integer> broj = new HashMap<>();
+        Map<Double, Boolean> ocena = new HashMap<>();
         for (Odgovor o : odgovori) {
             Double v = o.getBroj();
-            if (v != null) broj.merge(v == 0 ? 0.0 : v, 1, Integer::sum);
+            if (v == null) continue;
+            Double kljuc = v == 0 ? 0.0 : v;
+            broj.merge(kljuc, 1, Integer::sum);
+            if (o.getTacno() != null) ocena.merge(kljuc, o.getTacno(), Boolean::logicalOr);
         }
         boolean oceni = tacanPrikazan && p.brojTacno() != null;
         List<BrojStavka> vrednosti = broj.entrySet().stream()
                 .sorted(Map.Entry.<Double, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
-                .map(e -> new BrojStavka(e.getKey(), e.getValue(), oceni ? Ocenjivac.uOdstupanju(p, e.getKey()) : null))
+                .map(e -> new BrojStavka(e.getKey(), e.getValue(),
+                        oceni ? ocena.getOrDefault(e.getKey(), Ocenjivac.uOdstupanju(p, e.getKey())) : null))
                 .toList();
         return new RezultatBrojevi(vrednosti);
     }
@@ -118,15 +128,18 @@ public final class RezultatBuilder {
     private static List<RezultatTekst> tekstovi(PitanjeSnimak p, List<Odgovor> odgovori, Set<String> sakriveniKljucevi,
                                                 boolean tacanPrikazan) {
         Map<String, List<String>> grupe = new LinkedHashMap<>();
+        Map<String, Boolean> ocena = new HashMap<>();
         for (Odgovor o : odgovori) {
             if (o.getTekst() == null) continue;
             grupe.computeIfAbsent(kljuc(o.getTekst()), k -> new ArrayList<>()).add(o.getTekst().trim());
+            if (o.getTacno() != null) ocena.merge(kljuc(o.getTekst()), o.getTacno(), Boolean::logicalOr);
         }
         Set<String> prihvatljivi = prihvatljivi(p);
         boolean proveriTacnost = tacanPrikazan && !prihvatljivi.isEmpty();
         return grupe.entrySet().stream()
                 .map(e -> new RezultatTekst(e.getKey(), najcesciOblik(e.getValue()), e.getValue().size(),
-                        sakriveniKljucevi.contains(e.getKey()), proveriTacnost ? prihvatljivi.contains(e.getKey()) : null))
+                        sakriveniKljucevi.contains(e.getKey()),
+                        proveriTacnost ? ocena.getOrDefault(e.getKey(), prihvatljivi.contains(e.getKey())) : null))
                 .sorted(Comparator.comparingInt(RezultatTekst::broj).reversed().thenComparing(RezultatTekst::kljuc))
                 .toList();
     }

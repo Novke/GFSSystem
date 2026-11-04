@@ -389,8 +389,10 @@ class PrezentacijaPregledTest {
                 null, false, null, platno(1), null, zadatak)).zadatak(), "zadatak ostaje i kad se potezi brišu");
         SlajdDetails info = new SlajdDetails(4L, 1, TipSlajda.INFO, "N", null, null, null, false, null, null, null);
         assertSame(info, PrezentacijaPregled.bezPoteza(info));
-        // nova komponenta (A2: verzija) mora ući i u kopiju bez poteza
-        assertEquals(12, SlajdDetails.class.getRecordComponents().length,
+        assertEquals(7, PrezentacijaPregled.bezPoteza(new SlajdDetails(3L, 2, TipSlajda.PLATNO, null, null, null, null, false,
+                null, platno(1), null, null, 7)).verzija(), "verzija ostaje i kad se potezi brišu");
+        // nova komponenta mora ući i u kopiju bez poteza
+        assertEquals(13, SlajdDetails.class.getRecordComponents().length,
                 "SlajdDetails ima novu komponentu: dopuni PrezentacijaPregled.bezPoteza i ovaj test");
     }
 

@@ -59,7 +59,24 @@ class McpAlatiTest {
             Map.entry("prezentacija", new Red(true, false, true, false)),
             Map.entry("slajd", new Red(true, false, true, false)),
             Map.entry("napravi_prezentaciju", new Red(false, false, false, false)),
-            Map.entry("dodaj_slajd", new Red(false, false, false, false)));
+            Map.entry("dodaj_slajd", new Red(false, false, false, false)),
+            Map.entry("odobri_nacrte", new Red(false, true, true, true)),
+            Map.entry("povuci_odobrenje", new Red(false, true, true, false)),
+            Map.entry("arhiviraj_varijante", new Red(false, true, true, false)),
+            Map.entry("izmeni_nivo", new Red(false, false, true, false)),
+            Map.entry("izmeni_prezentaciju", new Red(false, true, true, false)),
+            Map.entry("obrisi_prezentaciju", new Red(false, true, true, true)),
+            Map.entry("izmeni_slajd", new Red(false, true, true, false)),
+            Map.entry("zameni_platno", new Red(false, true, true, false)),
+            Map.entry("premesti_slajd", new Red(false, false, true, false)),
+            Map.entry("obrisi_slajd", new Red(false, true, true, false)),
+            Map.entry("obrisi_koriscen_slajd", new Red(false, true, true, true)),
+            Map.entry("istorija_slajda", new Red(true, false, true, false)),
+            Map.entry("vrati_izmenu", new Red(false, true, false, false)),
+            Map.entry("izvodjenja_prezentacije", new Red(true, false, true, false)),
+            Map.entry("odgovori_runde", new Red(true, false, true, false)),
+            Map.entry("preoceni_odgovore", new Red(false, true, true, true)),
+            Map.entry("vrati_preocenu", new Red(false, true, true, true)));
 
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 

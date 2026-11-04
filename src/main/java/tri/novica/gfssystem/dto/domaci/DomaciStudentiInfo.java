@@ -20,4 +20,6 @@ public class DomaciStudentiInfo {
     private String uradjenDomaciNapomene;
     private Boolean prepisivanje;
     private Boolean oslobodjen;
+    /** Pogled ga ne nosi: {@code DomaciService} ga popunjava jednim upitom. */
+    private boolean stariji;
 }

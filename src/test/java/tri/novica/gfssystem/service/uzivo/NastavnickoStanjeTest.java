@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -216,7 +217,7 @@ class NastavnickoStanjeTest {
 
         // učesnici bez izbačenih; poeni samo iz poslednje runde (Anin poen iz runde 1 više ne važi)
         assertEquals(List.of(new UcesnikStanje(31L, "Ana", 0, true, false), new UcesnikStanje(32L, "Bojan", 800, false, true,
-                        null, true, 3000L, "A", false)),
+                        null, true, 3000L, "A", false, false)),
                 st.ucesnici());
         assertEquals(1, st.brojPovezanih());
         assertEquals(List.of(new RangStavka(1, 32L, "Bojan", 800), new RangStavka(2, 31L, "Ana", 0)), st.rangLista());
@@ -310,6 +311,15 @@ class NastavnickoStanjeTest {
 
         assertNull(st.trenutniSlajd().prelaz());
         assertNull(st.sledeciSlajd().prelaz());
+    }
+
+    @Test
+    void konzolaZnaKoJeStarijiStudent() {
+        when(ucesnikRepository.findStariji(IZ)).thenReturn(Set.of(32L));
+
+        List<UcesnikStanje> ucesnici = service.nastavnicko(IZ).ucesnici();
+
+        assertEquals(List.of(false, true), ucesnici.stream().map(UcesnikStanje::stariji).toList());
     }
 
     @Test

@@ -14,6 +14,8 @@ import java.util.Optional;
 @Repository
 public interface PitanjeRundaRepository extends JpaRepository<PitanjeRunda, Long> {
 
+    boolean existsBySlajdId(Long slajdId);
+
     List<PitanjeRunda> findAllByIzvodjenjeIdOrderByOtvorenoAsc(Long id);
 
     /** Runde izvođenja po redu otvaranja (id razrešava isti trenutak). */

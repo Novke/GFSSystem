@@ -60,6 +60,9 @@ public class Varijanta {
     /** Original koji ova kopija (Klodova izmena tuđe ili odobrene varijante) zamenjuje; brisanje originala ga postavlja na null. */
     @ManyToOne(fetch = FetchType.LAZY)
     private Varijanta zamenjuje;
+    /** Kopija čije odobrenje je arhiviralo ovaj original; svaka druga promena statusa ga briše, pa ručno arhiviran original ostaje arhiviran. */
+    @Column(name = "zamenjena_kopijom_id")
+    private Long zamenjenaKopijomId;
     /** Klodova serija upisa; null za ručno unete varijante. */
     @Column(length = 60)
     private String serija;

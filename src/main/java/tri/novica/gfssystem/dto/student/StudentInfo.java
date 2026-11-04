@@ -19,4 +19,5 @@ public class StudentInfo {
     private String email;
     private LocalDate datumRodjenja;
     private String opstina;
+    private boolean stariji;
 }

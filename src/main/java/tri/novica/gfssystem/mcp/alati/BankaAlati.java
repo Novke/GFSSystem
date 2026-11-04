@@ -227,16 +227,16 @@ public class BankaAlati {
         });
     }
 
-    @McpTool(name = "izmeni_grupu", description = "Delimična izmena tvoje grupe (izvor `CLAUDE`): izostavljen ključ ostaje "
+    @McpTool(name = "izmeni_grupu", description = "Delimična izmena grupe (Novicine samo kad on to traži): izostavljen ključ ostaje "
             + "kakav jeste, `null` briše `opis`, `tezina` ili `uputstvo` (`naziv` se ne briše). Šemu polja menja "
-            + "`izmeni_polja_grupe`. Novicina grupa (`RUCNO`) je greška: reci Novici da je izmeni u UI-ju. Vraća "
+            + "`izmeni_polja_grupe`. Vraća "
             + "`{grupa, link}`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
                     openWorldHint = false))
     public CallToolResult izmeniGrupu(
             CallToolRequest zahtev,
             @McpToolParam(description = "Serija ovog zahteva.") String serija,
-            @McpToolParam(description = "Id tvoje grupe.") Long grupaId,
+            @McpToolParam(description = "Id grupe.") Long grupaId,
             @McpToolParam(description = "Nov naziv, jedinstven među braćom.", required = false) String naziv,
             @McpToolParam(description = "Nov opis; `null` briše.", required = false) String opis,
             @McpToolParam(description = "Nova težina 1-5; `null` briše (samo grupi bez varijanti).", required = false)
@@ -251,7 +251,7 @@ public class BankaAlati {
         });
     }
 
-    @McpTool(name = "izmeni_polja_grupe", description = "Nova cela šema polja tvoje grupe (izvor `CLAUDE`). Za opciju koju "
+    @McpTool(name = "izmeni_polja_grupe", description = "Nova cela šema polja grupe (Novicine samo kad on to traži). Za opciju koju "
             + "zadržavaš vrati njen `id` (preimenovanje = isti `id`); opcija bez `id` je nova, a izostavljena se briše. Pre "
             + "upisa server isproba izmenu: kad bi ijedna varijanta izgubila odgovor ili ijedna `AKTIVNA` pala u nacrt, "
             + "greška navodi pogođene varijante i ništa se ne upisuje. Vraća `{grupa, link}`.",
@@ -261,7 +261,7 @@ public class BankaAlati {
     public CallToolResult izmeniPoljaGrupe(
             CallToolRequest zahtev,
             @McpToolParam(description = "Serija ovog zahteva.") String serija,
-            @McpToolParam(description = "Id tvoje grupe.") Long grupaId,
+            @McpToolParam(description = "Id grupe.") Long grupaId,
             @McpToolParam(description = "Cela nova šema polja (vodič `banka`); `[]` briše šemu.") List<Polje> polja) {
         return McpGreske.izvrsi("izmeni_polja_grupe", serija, poziv -> {
             poziv.id("grupa", grupaId);
@@ -269,14 +269,14 @@ public class BankaAlati {
         });
     }
 
-    @McpTool(name = "premesti_grupu", description = "Premešta tvoju grupu (izvor `CLAUDE`) sa celim podstablom pod drugog "
+    @McpTool(name = "premesti_grupu", description = "Premešta grupu (Novicinu samo kad on to traži) sa celim podstablom pod drugog "
             + "roditelja istog predmeta i namene (i pod Novicinu grupu) ili u korene, na mesto `rb` među novom braćom. "
             + "Vraća `{grupa, link}`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
     public CallToolResult premestiGrupu(
             @McpToolParam(description = "Serija ovog zahteva.") String serija,
-            @McpToolParam(description = "Id tvoje grupe.") Long grupaId,
+            @McpToolParam(description = "Id grupe.") Long grupaId,
             @McpToolParam(description = "Id novog roditelja; bez njega grupa postaje koren.", required = false)
             Long roditeljId,
             @McpToolParam(description = "Mesto među novom braćom od 1; bez njega na kraj.", required = false) Integer rb) {
@@ -289,14 +289,14 @@ public class BankaAlati {
         });
     }
 
-    @McpTool(name = "obrisi_grupu", description = "Briše tvoju praznu grupu (izvor `CLAUDE`, bez varijanti i podgrupa); "
+    @McpTool(name = "obrisi_grupu", description = "Briše praznu grupu (bez varijanti i podgrupa; Novicinu samo kad on to traži); "
             + "vraća `{obrisano: true}`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
                     openWorldHint = false),
             metaProvider = TraziPotvrdu.class)
     public CallToolResult obrisiGrupu(
             @McpToolParam(description = "Serija ovog zahteva.") String serija,
-            @McpToolParam(description = "Id tvoje prazne grupe.") Long grupaId) {
+            @McpToolParam(description = "Id prazne grupe.") Long grupaId) {
         return McpGreske.izvrsi("obrisi_grupu", serija, poziv -> {
             poziv.id("grupa", grupaId);
             banka.obrisiGrupu(grupaId, serija);

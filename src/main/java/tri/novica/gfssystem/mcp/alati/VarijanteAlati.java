@@ -96,7 +96,7 @@ public class VarijanteAlati {
             + "arhivirana, ikad odobrena) se ne dira: izmena postaje nova kopija-nacrt koja original zamenjuje tek kad je "
             + "Novica odobri (`radnja: \"kopija\"`, `linkOriginala`); svaki takav poziv pravi novu kopiju, i kad poslate "
             + "vrednosti ne menjaju ništa, zato šalji samo polja koja stvarno menjaš. `nivo` (1-3) se ne briše; izmena samo "
-            + "nivoa radi samo na tvom neodobrenom nacrtu (nivo ostalih menja Novica u banci). Render i slika kao u "
+            + "nivoa radi samo na tvom neodobrenom nacrtu (nivo ostalih: `izmeni_nivo`). Render i slika kao u "
             + "`napravi_varijantu`. Vraća `{radnja, varijanta, link}`. " + McpAlati.NE_PONAVLJAJ,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = false,
                     openWorldHint = false))
@@ -130,6 +130,58 @@ public class VarijanteAlati {
             }
             return odgovor.jsonSaSlikom(r.podaci(), r.png(), r.napomena());
         });
+    }
+
+    @McpTool(name = "odobri_nacrte", description = "Odobrava nacrte, samo kad Novica to izričito traži i uz njegovu potvrdu: "
+            + "aktivne varijante se odmah izvlače na času. Pre poziva mu reci koliko nacrta i iz koje serije ili grupe. Cilj je "
+            + "`varijante` (spisak id-jeva) ili `ciljSerija` uz `predmetId` (svi nacrti te serije, sa `grupaId` samo iz tog lista). "
+            + "`ocekivanoBroj` je broj koji si mu rekao: drugačiji stvaran broj je greška i ništa se ne odobrava. Pravila su ista kao "
+            + "u UI-ju: varijanta koja nije nacrt, nema uspeo render ili ima nepotpune odgovore ide u `preskocene` sa razlogom, a kopija "
+            + "pri odobrenju arhivira original. Najviše 200 odjednom. Vraća `{uspele, preskocene}`; poništava se sa `povuci_odobrenje`.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
+                    openWorldHint = false),
+            metaProvider = TraziPotvrdu.class)
+    public CallToolResult odobriNacrte(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Koliko nacrta si rekao Novici da odobravaš.") Integer ocekivanoBroj,
+            @McpToolParam(description = "Id-jevi varijanti.", required = false) List<Long> varijante,
+            @McpToolParam(description = "Id predmeta iz `kontekst`, uz `ciljSerija`.", required = false) Long predmetId,
+            @McpToolParam(description = "Serija čiji se nacrti odobravaju.", required = false) String ciljSerija,
+            @McpToolParam(description = "Samo nacrti iz ovog lista, uz `ciljSerija`.", required = false) Long grupaId) {
+        return McpGreske.izvrsi("odobri_nacrte", serija, poziv ->
+                odgovor.json(banka.odobriNacrte(varijante, predmetId, ciljSerija, grupaId, ocekivanoBroj, serija)));
+    }
+
+    @McpTool(name = "povuci_odobrenje", description = "Poništava odobravanje: aktivne i arhivirane varijante idu u nacrt, a original koji "
+            + "je arhiviralo baš odobrenje te kopije ponovo je aktivan (ručno arhiviran ostaje). Odbijene su u `preskocene` sa razlogom. Najviše 200 odjednom. "
+            + "Vraća `{uspele, preskocene}`.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult povuciOdobrenje(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id-jevi varijanti.") List<Long> varijante) {
+        return McpGreske.izvrsi("povuci_odobrenje", serija, poziv -> odgovor.json(banka.povuciOdobrenje(varijante, serija)));
+    }
+
+    @McpTool(name = "arhiviraj_varijante", description = "Arhivira varijante, i odobrene i Novicine: izlaze iz izvlačenja na času, "
+            + "a ostaju u banci i u istoriji časova. Vraća ih `povuci_odobrenje` u nacrt, pa `odobri_nacrte`. Najviše 200 odjednom. Vraća `{uspele, preskocene}`.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult arhivirajVarijante(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id-jevi varijanti.") List<Long> varijante) {
+        return McpGreske.izvrsi("arhiviraj_varijante", serija, poziv -> odgovor.json(banka.arhivirajVarijante(varijante, serija)));
+    }
+
+    @McpTool(name = "izmeni_nivo", description = "Nivo (1-3) varijanti u svakom statusu, i odobrenih i Novicinih, bez rendera i bez "
+            + "promene statusa: nivo je ocena varijante, ne sadržaj. Najviše 200 odjednom. Vraća `{uspele, preskocene}`.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult izmeniNivo(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id-jevi varijanti.") List<Long> varijante,
+            @McpToolParam(description = "Nov nivo: 1 (lakša), 2 (srednja) ili 3 (teža varijanta).") Integer nivo) {
+        return McpGreske.izvrsi("izmeni_nivo", serija, poziv -> odgovor.json(banka.izmeniNivo(varijante, nivo, serija)));
     }
 
     @McpTool(name = "dupliraj_varijantu", description = "Kopija bilo koje varijante (i Novicine) na kraj iste grupe kao "
