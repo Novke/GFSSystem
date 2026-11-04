@@ -78,9 +78,15 @@ zaustavi_staru() { docker rm -f "$stara_app" >/dev/null 2>&1 || true; }
 pocisti() { zaustavi_app; zaustavi_staru; }
 trap pocisti EXIT
 
+# curl iz kontejnera stare slike: od prijave API traži sesiju nastavnika i proveru porekla, pa svi zahtevi dele kolačić.
+curl_stara() {
+  docker exec "$stara_app" curl -b /tmp/sesija -c /tmp/sesija -H 'Sec-Fetch-Site: same-origin' \
+    -H 'Content-Type: application/json' "$@"
+}
+
 # Stara slika nad bazom $1 (posle novog jar-a): kontejner u mrežnom prostoru test MySQL-a (127.0.0.1:3306 je on), Started,
-# pa kroz curl iz kontejnera PUT INFO slajda $3, pokretanje izvođenja prezentacije $2 ("ne čuvaj") i komanda ZAVRSI. Vraća 0
-# kad PUT vrati izmenjen naslov, pokretanje vrati izvođenje sa kodom i ZAVRSI odgovori 200.
+# pa kroz curl iz kontejnera prijava (javna lozinka dev profila), PUT INFO slajda $3, pokretanje izvođenja prezentacije $2
+# ("ne čuvaj") i komanda ZAVRSI. Vraća 0 kad PUT vrati izmenjen naslov, pokretanje vrati izvođenje sa kodom i ZAVRSI odgovori 200.
 proba_stare_slike() {
   local db="$1" prezentacija="$2" slajd="$3" stari_log="$4" i stanje odgovor izv http
   zaustavi_staru
@@ -108,7 +114,15 @@ proba_stare_slike() {
   echo "STARA SLIKA: OK ($(grep -o 'Started GfsSystemApplication in [0-9.]* seconds' "$stari_log"))"
   grep -E "Flyway|Successfully validated|Schema .* is up to date|newer than" "$stari_log" \
     | sed -E 's/^.*(INFO|WARN|ERROR) +[0-9]+ --- (\[[^]]*\] *)+[^ ]+ +: /  /' || true
-  odgovor="$(docker exec "$stara_app" curl -fsS -X PUT -H 'Content-Type: application/json' \
+  if ! odgovor="$(curl_stara -fsS -o /dev/null -X POST --data '{"korisnik":"nastavnik","lozinka":"gfs-dev-lozinka"}' \
+    "http://127.0.0.1:${APP_PORT}/auth/prijava" 2>&1)"; then
+    docker logs "$stara_app" >"$stari_log" 2>&1 || true
+    zaustavi_staru
+    echo "POST /auth/prijava (stara slika): NEUSPEH, log: $stari_log"
+    printf '  %s\n' "${odgovor:0:300}"
+    return 1
+  fi
+  odgovor="$(curl_stara -fsS -X PUT \
     --data '{"tip":"INFO","naslov":"Rollback proba","postepeno":false}' \
     "http://127.0.0.1:${APP_PORT}/slajdovi/${slajd}" 2>&1)" || odgovor="PUT nije uspeo: $odgovor"
   if [[ "$odgovor" != *'"naslov":"Rollback proba"'* ]]; then
@@ -120,7 +134,7 @@ proba_stare_slike() {
   fi
   echo "PUT /slajdovi/$slajd (stara slika): OK"
   # izvođenje: INSERT u izvodjenja bez novih kolona (DEFAULT u DDL-u), pa ZAVRSI; odgovor počinje sa {"id":<izvođenje>
-  odgovor="$(docker exec "$stara_app" curl -fsS -X POST -H 'Content-Type: application/json' --data '{"cuvanje":false}' \
+  odgovor="$(curl_stara -fsS -X POST --data '{"cuvanje":false}' \
     "http://127.0.0.1:${APP_PORT}/prezentacije/${prezentacija}/izvodjenja" 2>&1)" || odgovor="POST nije uspeo: $odgovor"
   izv="$(sed -nE 's/^\{"id":([0-9]+),.*/\1/p' <<<"$odgovor")"
   if [[ -z "$izv" || "$odgovor" != *'"kod":"'* ]]; then
@@ -131,7 +145,7 @@ proba_stare_slike() {
     return 1
   fi
   echo "POST /prezentacije/$prezentacija/izvodjenja (stara slika): OK (izvođenje $izv)"
-  http="$(docker exec "$stara_app" curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  http="$(curl_stara -sS -o /dev/null -w '%{http_code}' -X POST \
     --data '{"tip":"ZAVRSI"}' "http://127.0.0.1:${APP_PORT}/izvodjenja/${izv}/komande" 2>&1)" || http="curl: $http"
   docker logs "$stara_app" >"$stari_log" 2>&1 || true
   zaustavi_staru

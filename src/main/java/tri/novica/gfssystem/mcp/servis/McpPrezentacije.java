@@ -3,12 +3,18 @@ package tri.novica.gfssystem.mcp.servis;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 import tri.novica.gfssystem.dto.uzivo.CreatePrezentacijaCmd;
+import tri.novica.gfssystem.dto.uzivo.IshodIzmeneSlajda;
 import tri.novica.gfssystem.dto.uzivo.MedijInfo;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PrezentacijaInfo;
+import tri.novica.gfssystem.dto.uzivo.PrezentacijaPatch;
 import tri.novica.gfssystem.dto.uzivo.SlajdCmd;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
+import tri.novica.gfssystem.dto.uzivo.SlajdIzmenaInfo;
+import tri.novica.gfssystem.dto.uzivo.SlajdPatch;
+import tri.novica.gfssystem.dto.uzivo.VracanjeIzmene;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.exceptions.SystemException;
@@ -32,8 +38,9 @@ import java.util.Set;
  * <p>
  * Čitanje je sažeto ({@link PrezentacijaPregled}: strane koje staju u jedan odgovor) ili pun slajd bez poteza crteža
  * ({@link McpSlajd}). Klod pravi prezentacije i dodaje slajdove sa serijom; samo tipove iz {@link #DOZVOLJENI_TIPOVI}
- * (INFO, PITANJE i ZADATAK; A2 dodaje PLATNO), a postojeće slajdove ne menja. Pravljenje troši jedno pravljenje iz dnevnog budžeta ključa
- * pre upisa; prezentacija koja se upravo izvodi se ne menja ({@code PrezentacijaService.dodajSlajdIzSerije}, 409).
+ * (INFO, PITANJE i ZADATAK). Postojeće slajdove menja, premešta i briše povratno: svaka izmena sadržaja i brisanje ostavljaju
+ * unos u istoriji ({@code vrati_izmenu}). Pravljenje troši jedno pravljenje iz dnevnog budžeta ključa
+ * pre upisa; prezentacija koja se upravo izvodi se ne menja ({@code PrezentacijaService}, 409).
  * <p>
  * Slike za slajdove (spec MCP 4.5) stižu kroz {@code POST /mcp/slike} ({@code McpUploadRest}), ne kroz argument alata;
  * {@link #sacuvajSliku} troši dnevni budžet upload-a pre upisa i vraća {@code medijId} vrste {@code SLIKA}.
@@ -84,7 +91,13 @@ public class McpPrezentacije {
         SlajdDetails s = prezentacijaService.slajd(slajdId);
         Long prezentacijaId = prezentacijaService.prezentacijaSlajda(slajdId);
         return new McpSlajd(PrezentacijaPregled.bezPoteza(s),
-                s.platno() == null ? null : PlatnoPregled.brojTacaka(s.platno()), linkovi.prezentacija(prezentacijaId));
+                s.platno() == null ? null : PlatnoPregled.brojTacaka(s.platno()), prezentacijaService.otisakPlatna(slajdId),
+                linkovi.prezentacija(prezentacijaId));
+    }
+
+    /** Istorija Klodovih izmena slajda ili cele prezentacije, najnovije prve (obrisani slajdovi samo kroz prezentaciju ili svoj id). */
+    public List<SlajdIzmenaInfo> istorija(Long slajdId, Long prezentacijaId) {
+        return prezentacijaService.izmene(slajdId, prezentacijaId);
     }
 
     // ---------------------------------------------------------------- upis
@@ -123,6 +136,57 @@ public class McpPrezentacije {
         }
         budzet.trosiPravljenje(McpZahtev.oznaka(), 1);
         return PrezentacijaPregled.sazetak(prezentacijaService.dodajSlajdIzSerije(id, cmd, posle, serija));
+    }
+
+    /** Klodova izmena naziva, opisa, teme i broja vežbe. */
+    public PrezentacijaInfo izmeniPrezentaciju(Long id, PrezentacijaPatch patch, String serija) {
+        return prezentacijaService.izmeniIzSerije(obavezan(id, "prezentacijaId"), patch, serija);
+    }
+
+    /** Brisanje prezentacije sa izvođenjima; {@code ocekivanoIzvodjenja} mora biti tačan broj (409, ništa se ne briše). */
+    public void obrisiPrezentaciju(Long id, Long ocekivanoIzvodjenja, String serija) {
+        prezentacijaService.obrisiIzSerije(obavezan(id, "prezentacijaId"), ocekivanoIzvodjenja, serija);
+    }
+
+    /** Delimična izmena postojećeg slajda; vraća sažetak i id unosa istorije. */
+    public McpIzmenaSlajda izmeniSlajd(Long id, SlajdPatch patch, String opis, String serija) {
+        return izmena(prezentacijaService.izmeniSlajdIzSerije(obavezan(id, "slajdId"), patch, null, opis, serija));
+    }
+
+    /** Zamena celog dokumenta platna; {@code otisak} iz {@code slajd} mora da odgovara sačuvanom (409, pročitaj ponovo). */
+    public McpIzmenaSlajda zameniPlatno(Long id, JsonNode platno, String otisak, String opis, String serija) {
+        if (platno == null || otisak == null) {
+            throw new SystemException(McpGreske.NEISPRAVAN_FORMAT, HttpStatus.BAD_REQUEST);
+        }
+        return izmena(prezentacijaService.izmeniSlajdIzSerije(obavezan(id, "slajdId"), SlajdPatch.samoPlatno(platno), otisak,
+                opis, serija));
+    }
+
+    /** Premeštanje slajda odmah iza {@code posle}, a bez njega na početak. */
+    public McpSlajdSazetak premestiSlajd(Long id, Long posle, String serija) {
+        return PrezentacijaPregled.sazetak(prezentacijaService.premestiSlajd(obavezan(id, "slajdId"), posle, serija));
+    }
+
+    /** Brisanje slajda; vraća id unosa istorije kojim se obnavlja. */
+    public Long obrisiSlajd(Long id, String serija) {
+        return prezentacijaService.obrisiSlajdIzSerije(obavezan(id, "slajdId"), false, serija);
+    }
+
+    /** Brisanje slajda korišćenog na času, uz potvrdu: sadržaj se vraća iz istorije, a veza sa rezultatima ne. */
+    public Long obrisiKoriscenSlajd(Long id, String serija) {
+        return prezentacijaService.obrisiSlajdIzSerije(obavezan(id, "slajdId"), true, serija);
+    }
+
+    /** Vraćanje stanja iz unosa istorije (izmena ili obrisan slajd). */
+    public McpVracanje vratiIzmenu(Long izmenaId, String serija) {
+        VracanjeIzmene v = prezentacijaService.vratiIzmenu(obavezan(izmenaId, "izmenaId"), serija);
+        return new McpVracanje(v.obnovljen() ? "obnovljen" : "vracen", v.slajdId(), v.izmenaId(),
+                linkovi.prezentacija(v.prezentacijaId()));
+    }
+
+    private McpIzmenaSlajda izmena(IshodIzmeneSlajda i) {
+        return new McpIzmenaSlajda(PrezentacijaPregled.sazetak(i.slajd()), i.izmenaId(), i.upozorenja(),
+                linkovi.prezentacija(i.prezentacijaId()));
     }
 
     /**

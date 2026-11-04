@@ -44,6 +44,9 @@ public class Slajd {
     /** Klodova serija upisa (MCP); null za slajdove napravljene u UI-ju ili uvozom. */
     @Column(length = 60)
     private String serija;
+    /** Broj Klodovih izmena (MCP, vraćanje iz istorije); nastavnikov PUT je ne menja, nego je šalje i dobija 409 kad se razlikuje. */
+    @Column(nullable = false)
+    private int verzija;
     /** Čvor banke (list ili unutrašnji) ZADATAK slajda; brisanje grupe ostavlja slajd bez nje (ON DELETE SET NULL). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "grupa_zadataka_id")

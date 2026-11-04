@@ -93,16 +93,17 @@ Primer `napravi_grupu` (list sa sva četiri tipa polja):
 ```
 
 ## Izmena šeme: `izmeni_polja_grupe`
-- Šalje se cela nova šema, i samo za tvoju grupu (izvor `CLAUDE`). Za svaku opciju koju zadržavaš vrati njen `id` (preimenovanje = isti `id`, nov `tekst`). Opcija bez `id` je **nova**, a opcija koju ne navedeš se briše zajedno sa odgovorima koji na nju pokazuju.
+- Šalje se cela nova šema; Novicinu grupu menjaš samo kad on to traži. Za svaku opciju koju zadržavaš vrati njen `id` (preimenovanje = isti `id`, nov `tekst`). Opcija bez `id` je **nova**, a opcija koju ne navedeš se briše zajedno sa odgovorima koji na nju pokazuju.
 - Server pre upisa isproba izmenu: ako bi ijedna varijanta izgubila postojeći odgovor ili bi ijedna `AKTIVNA` pala u nacrt (npr. novo polje), odgovor je 409 `Izmena polja bi pogodila varijante: <id, ...>.` i ništa se ne upisuje. Promena tipa postojećeg polja dok grupa ima aktivnih varijanti je 409 `Tip polja 'x' se ne menja dok grupa ima aktivne varijante.` Tada napravi novu grupu ili reci Novici.
 
 ## Varijante
 - `napravi_varijantu`: `grupaId` (list sa `tezina`), `tekst`, `resenje`, `odgovori`, `nivo` (obavezan, 1-3: 1 lakša, 2 uobičajena, 3 teža unutar tipa; procenu obrazloži Novici kad nije očigledna), opciono `naziv` (izvor zadatka, do 120 znakova) i `prilozi`. Server renderuje odmah i vraća `radnja: "nova"`, varijantu sa `renderStatus`, `link` i `linkPregleda`.
 - Greška rendera nije neuspeh poziva: varijanta je upisana sa `renderStatus: "GRESKA"`, `renderGreska` (`linija` u tvom tekstu, `poruka`) i `renderDeo` (`tekst` ili `resenje`). Popravi je sa `izmeni_varijantu` (tvoj nacrt se menja na mestu). Novica ne može da odobri varijantu bez uspelog rendera.
 - Nesiguran LaTeX prvo probaj sa `proba_rendera` (`predmetId`, `tekst`, `resenje`, `prilozi`): isti render i ista pravila, ništa se ne upisuje, vraća `{ok, greska, deo}` i sliku sa rešenjem. Najviše 3 probe istovremeno po serveru (429 `Previše proba u isto vreme.`), zato probe šalji jednu po jednu.
-- `izmeni_varijantu` je delimična izmena: izostavljen ključ ostaje kakav jeste, `null` briše `naziv`, `resenje` ili `prilozi` (`tekst`, `odgovori` i `nivo` se ne brišu: `Polje 'tekst' se ne briše.`). Nad tuđom ili odobrenom varijantom pravi kopiju (`vodic pravila`). Izmena **samo** `nivo` menja tvoj neodobren nacrt na mestu; nad tuđom ili odobrenom varijantom je 409 `Nivo odobrene ili Novicine varijante menja Novica u banci.` (ne pravi kopiju): predloži Novici promenu rečima.
+- `izmeni_varijantu` je delimična izmena: izostavljen ključ ostaje kakav jeste, `null` briše `naziv`, `resenje` ili `prilozi` (`tekst`, `odgovori` i `nivo` se ne brišu: `Polje 'tekst' se ne briše.`). Nad tuđom ili odobrenom varijantom pravi kopiju (`vodic pravila`). Izmena **samo** `nivo` menja tvoj neodobren nacrt na mestu; nad tuđom ili odobrenom varijantom je 409 `Nivo odobrene ili Novicine varijante menja alat izmeni_nivo.` (ne pravi kopiju), pa tada koristi `izmeni_nivo`.
 - `pretraga_banke` filtrira i po `nivo`, a `grupa` i `varijanta` ga vraćaju za svaku varijantu. Kad praviš varijante grupe koja ide na čas, pazi da svaki nivo koji Novica koristi ima dovoljno varijanti (na času svi studenti dobijaju isti nivo).
 - `dupliraj_varijantu` pravi tvoj nacrt kao polaznu tačku za sličnu varijantu; `obrisi_varijantu` briše samo tvoj neodobren nacrt.
+- `izmeni_nivo` menja nivo svake varijante na mestu (i odobrene, bez rendera), `arhiviraj_varijante` je izbacuje iz izvlačenja na času, a `odobri_nacrte` i `povuci_odobrenje` odobravaju i poništavaju odobravanje; kad šta od toga sme: `vodic pravila`.
 
 ## Slike rendera
 - `napravi_varijantu`, `izmeni_varijantu` i `proba_rendera` vraćaju jednu PNG sliku (`slika`, podrazumevano true): zadatak gore, rešenje dole, tanka crta između, duža ivica najviše 1568 px. `varijanta` vraća sliku samo uz `slika: true`.

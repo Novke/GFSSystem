@@ -6,10 +6,17 @@ import tri.novica.gfssystem.entity.uzivo.TipSlajda;
 /**
  * Slajd (puna zamena); {@code pitanje} važi samo za tip PITANJE, {@code platno} (dokument platna kao sirovi JSON, strogo
  * ga čita {@code PlatnoJson}) samo za PLATNO, {@code zadatak} samo za ZADATAK; {@code prelaz} (faza 5) važi za svaki tip,
- * {@code null} = bez prelaza. Pravila: {@code validation/SlajdPP} i {@code validation/PlatnoPP}.
+ * {@code null} = bez prelaza. {@code verzija} šalje editor uz {@code PUT}: verzija slajda koju je učitao, {@code null} = bez
+ * provere (409 kad ju je Klod u međuvremenu povećao). Pravila: {@code validation/SlajdPP} i {@code validation/PlatnoPP}.
  */
 public record SlajdCmd(TipSlajda tip, String naslov, String sadrzaj, String slikaId, String beleske, boolean postepeno,
-                       PitanjeCmd pitanje, JsonNode platno, Prelaz prelaz, ZadatakSlajda zadatak) {
+                       PitanjeCmd pitanje, JsonNode platno, Prelaz prelaz, ZadatakSlajda zadatak, Integer verzija) {
+
+    /** Slajd bez provere verzije. */
+    public SlajdCmd(TipSlajda tip, String naslov, String sadrzaj, String slikaId, String beleske, boolean postepeno,
+                    PitanjeCmd pitanje, JsonNode platno, Prelaz prelaz, ZadatakSlajda zadatak) {
+        this(tip, naslov, sadrzaj, slikaId, beleske, postepeno, pitanje, platno, prelaz, zadatak, null);
+    }
 
     /** Slajd bez Zadatka (oblik pre slajda Zadatak). */
     public SlajdCmd(TipSlajda tip, String naslov, String sadrzaj, String slikaId, String beleske, boolean postepeno,

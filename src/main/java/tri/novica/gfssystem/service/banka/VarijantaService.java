@@ -40,6 +40,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -102,6 +103,12 @@ public class VarijantaService {
     static final String NIJE_PRONADJENA = "Varijanta nije pronađena.";
     static final String IMA_PODGRUPE = "Grupa sa podgrupama ne može imati varijante.";
     static final String RENDER_NIJE_USPEO = "Varijanta se odobrava tek kad je render uspeo.";
+    static final String NIJE_NACRT = "Varijanta nije nacrt.";
+    static final String VEC_NACRT = "Varijanta je već nacrt.";
+    static final String SISTEMSKA_GRESKA = "Sistemska greška.";
+    static final String NEISPRAVNE_VARIJANTE = "Pošalji od 1 do 200 varijanti.";
+    /** Najviše varijanti u jednoj masovnoj radnji. */
+    public static final int MAX_MASOVNO = 200;
     static final String PREVISE_PROBA = "Previše proba u isto vreme.";
     static final String ODGOVORI_PREVELIKI = "Odgovori su preveliki.";
     static final String PREVISE_PRILOGA = "Najviše 10 priloga.";
@@ -115,7 +122,7 @@ public class VarijantaService {
     static final String IZMENJENA_U_MEDJUVREMENU = "Varijanta ili preambula je u međuvremenu izmenjena; pokušaj ponovo.";
     static final String SAMO_SOPSTVENI_NACRT = "Klod briše samo svoje neodobrene nacrte.";
     /** MCP: patch samo nivoa nad tuđom ili ikad odobrenom varijantom (kopija samo zbog nivoa bi duplirala banku). */
-    static final String NIVO_ODOBRENE = "Nivo odobrene ili Novicine varijante menja Novica u banci.";
+    static final String NIVO_ODOBRENE = "Nivo odobrene ili Novicine varijante menja alat izmeni_nivo.";
 
     /** Kontejner prevodi najviše 4 dokumenta odjednom: probe dobijaju 3, jedno mesto ostaje za čuvanje varijante. */
     static final int MAX_PROBA = 3;
@@ -365,10 +372,7 @@ public class VarijantaService {
      */
     public VarijantaDetails odobri(Long id) {
         Varijanta v = zakljucaj(id);
-        if (v.getRenderStatus() != RenderStatus.OK) {
-            throw new SystemException(RENDER_NIJE_USPEO, HttpStatus.CONFLICT);
-        }
-        proveriOdgovore(v.getGrupa(), PoljaJson.odgovoriIzKolone(v.getOdgovori()));
+        proveriZaOdobrenje(v);
         boolean prelazi = v.getStatus() != StatusVarijante.AKTIVNA;
         promeniStatus(v, StatusVarijante.AKTIVNA);
         v.setIkadOdobrena(true);
@@ -378,6 +382,7 @@ public class VarijantaService {
                     .filter(o -> o.getStatus() != StatusVarijante.ARHIVIRANA)
                     .ifPresent(o -> {
                         promeniStatus(o, StatusVarijante.ARHIVIRANA);
+                        o.setZamenjenaKopijomId(id);
                         log.info("Varijanta {} odobrena umesto {}: original arhiviran", id, originalId);
                     });
         }
@@ -430,6 +435,92 @@ public class VarijantaService {
         Varijanta v = zakljucaj(id);
         promeniStatus(v, StatusVarijante.NACRT);
         return details(v);
+    }
+
+    /** {@link #odobri} za svaki nacrt ("Odobri sve" i MCP {@code odobri_nacrte}); ostalo i neuspele se preskaču sa razlogom. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IshodVarijanti odobriVise(List<Long> ids) {
+        return zaSvaku(ids, this::odobriNacrt);
+    }
+
+    /**
+     * Poništava odobravanje: aktivna ili arhivirana varijanta ide u nacrt, a original koji je arhiviralo baš odobrenje ove kopije
+     * ({@code zamenjenaKopijomId}) ponovo je aktivan, uz iste provere kao pri odobravanju (kad ih ne prođe, varijanta se preskače i
+     * ništa se ne menja). Ručno arhiviran original ostaje arhiviran. {@code ikadOdobrena} ostaje, kao i pri vraćanju u nacrt.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IshodVarijanti povuciOdobrenje(List<Long> ids) {
+        return zaSvaku(ids, this::povuci);
+    }
+
+    /** {@link #arhiviraj} za svaku varijantu (MCP {@code arhiviraj_varijante}). */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IshodVarijanti arhivirajVise(List<Long> ids) {
+        return zaSvaku(ids, this::arhiviraj);
+    }
+
+    /** {@link #promeniNivo} za svaku varijantu (MCP {@code izmeni_nivo}). */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public IshodVarijanti promeniNivoVise(List<Long> ids, Integer nivo) {
+        return zaSvaku(ids, id -> promeniNivo(id, nivo));
+    }
+
+    private void odobriNacrt(Long id) {
+        if (zakljucaj(id).getStatus() != StatusVarijante.NACRT) {
+            throw new SystemException(NIJE_NACRT, HttpStatus.CONFLICT);
+        }
+        odobri(id);
+    }
+
+    private void povuci(Long id) {
+        Varijanta v = zakljucaj(id);
+        if (v.getStatus() == StatusVarijante.NACRT) {
+            throw new SystemException(VEC_NACRT, HttpStatus.CONFLICT);
+        }
+        boolean bilaAktivna = v.getStatus() == StatusVarijante.AKTIVNA;
+        promeniStatus(v, StatusVarijante.NACRT);
+        Long originalId = bilaAktivna ? zamenjujeId(v) : null;
+        if (originalId != null && !originalId.equals(id)) {
+            varijantaRepository.findByIdForUpdate(originalId)
+                    .filter(o -> o.getStatus() == StatusVarijante.ARHIVIRANA && id.equals(o.getZamenjenaKopijomId()))
+                    .ifPresent(o -> {
+                        proveriZaOdobrenje(o);
+                        promeniStatus(o, StatusVarijante.AKTIVNA);
+                    });
+        }
+        log.info("Odobrenje povučeno: id={}, original={}", id, originalId);
+    }
+
+    private void proveriZaOdobrenje(Varijanta v) {
+        if (v.getRenderStatus() != RenderStatus.OK) {
+            throw new SystemException(RENDER_NIJE_USPEO, HttpStatus.CONFLICT);
+        }
+        proveriOdgovore(v.getGrupa(), PoljaJson.odgovoriIzKolone(v.getOdgovori()));
+    }
+
+    /** Svaka varijanta u svojoj transakciji: pravilo koje odbije jednu ostaje njen razlog, a ostale idu dalje. */
+    private IshodVarijanti zaSvaku(List<Long> ids, Consumer<Long> posao) {
+        if (ids == null || ids.isEmpty() || ids.size() > MAX_MASOVNO || ids.contains(null)) {
+            throw new SystemException(NEISPRAVNE_VARIJANTE, HttpStatus.BAD_REQUEST);
+        }
+        List<Long> uspele = new ArrayList<>();
+        List<PreskocenaVarijanta> preskocene = new ArrayList<>();
+        for (Long id : new LinkedHashSet<>(ids)) {
+            try {
+                pisi(() -> {
+                    posao.accept(id);
+                    return id;
+                });
+                uspele.add(id);
+            } catch (SystemException e) {
+                String naziv = citaj(() -> varijantaRepository.findById(id).map(Varijanta::getNaziv).orElse(null));
+                preskocene.add(new PreskocenaVarijanta(id, naziv, e.getMessage()));
+            } catch (RuntimeException e) {
+                log.error("Masovna radnja nad varijantom {} nije uspela", id, e);
+                preskocene.add(new PreskocenaVarijanta(id, null, SISTEMSKA_GRESKA));
+            }
+        }
+        return new IshodVarijanti(uspele, preskocene);
     }
 
     /** Render bez obzira na keš (npr. posle pada servisa ili izmene paketa u kontejneru), pre ključa kao upis. */
@@ -991,6 +1082,7 @@ public class VarijantaService {
     private void promeniStatus(Varijanta v, StatusVarijante status) {
         if (v.getStatus() != status) {
             v.setStatus(status);
+            v.setZamenjenaKopijomId(null);
             v.setIzmenjeno(sada());
         }
     }

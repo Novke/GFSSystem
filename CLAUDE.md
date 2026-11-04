@@ -533,8 +533,9 @@ variant with `ikadOdobrena` are never deleted, neither on a new render nor on de
 ## MCP za Claude-a
 
 Claude in Claude Code on novica-dev talks to an MCP server built into this backend: it fills the task bank with drafts (with
-a PNG of the render), reads presentations and adds INFO/PITANJE slides; Novica reviews the drafts one by one on the front's
-`/banka/pregled`. Spec and plan (project A1): `docs/superpowers/specs/2026-10-18-mcp-nastava-design.md` and
+a PNG of the render), reads and edits presentations and, when Novica clearly asks, approves drafts and re-grades answers of a finished
+run; Novica reviews the drafts on the front's `/banka/pregled` (one by one or "Odobri sve"). Levels of change and which tools need a person's
+confirmation: spec `2026-11-04-mcp-nivoi-potvrde-design.md`, `README.md` "Nivoi izmena" in the wrapper repo. Spec and plan (project A1): `docs/superpowers/specs/2026-10-18-mcp-nastava-design.md` and
 `.../plans/2026-10-18-mcp-banka.md` in the wrapper repo; projects B (slide "Zadatak") and A2 (editing slides) extend it
 through the plan's "Tačke proširenja za B i A2".
 
@@ -562,14 +563,23 @@ through the plan's "Tačke proširenja za B i A2".
   client). Startup check `McpKonfig.mcpProvera`: MCP on with a protocol other than STATELESS, or a `RouterFunction` route outside
   the filtered path, fails the start. Backend paths are only `/mcp`, `/mcp/prilozi`, `/mcp/slike` (nginx `/api/mcp...`),
   **never under `/public/**`**.
+- **Changing what exists (V24):** slide edits go through `PrezentacijaService.*IzSerije`, always under the presentation lock (`zakljucajZaKloda`, 409 while a run is active), and
+  `IstorijaSlajdova` writes the state before the change to `slajd_izmene` (50 per slide, BRISANJE rows are kept; `vrati_izmenu` restores, a deleted slide under a new id at the same `rb`).
+  `slajdovi.verzija` rises only on Claude's writes, never on the teacher's `PUT`, so the editor's `switchMap` autosave never conflicts with itself; a `PUT` with a different `verzija`
+  is 409 `Slajd je u međuvremenu izmenjen.`, a `PUT` without it passes (older front). `zameni_platno` guards with `otisak` (hash of the column) instead. A CRTEZ layer sent without `potezi` keeps the saved strokes when id and
+  size match (numbers compared by value: `300` equals `300.0`) (`saPotezima`), else it becomes an image with a warning. A slide with rounds or `prikazani_slajdovi` rows is 409 for `obrisi_slajd`: deleting it loses those
+  links (rank of an earlier class may change, students stop seeing it) and `vrati_izmenu` restores only the content, so it goes through the confirmed `obrisi_koriscen_slajd`. A ZADATAK snapshot whose group is gone is restored without a group (the `ON DELETE SET NULL` state).
+  Bulk bank actions (`VarijantaService.odobriVise` for NACRT only, `povuciOdobrenje`, `arhivirajVise`, `promeniNivoVise`, at most 200) are `NOT_SUPPORTED`: every variant is its own transaction and a refused one lands in `preskocene`, so
+  one bad variant never rolls back the rest. `odobri` marks the archived original with `zamenjena_kopijom_id` (any other status change clears it), and `povuci` reactivates only an original marked by that copy, after the same checks as approving.
+  `PreocenaOdgovoraService` is the only MCP path to student answers: finished runs only, under the run lock, updates `tacno`, `poeni` and the `polja` JSON and leaves a row in `preocene_odgovora` with all it needs for an exact undo
+  (`vrati_preocenu`). Rank reads those rows, and `RezultatBuilder` and `ZadatakRezultatBuilder` prefer the stored grade to the snapshot, so "Tačno X od Y" and the value chips follow a re-grade.
 - **With the login (Spring Security, `security/`):** MCP is its own access class (`PristupMatrica.mcp()`: exactly those three
   paths, any method, no prefix) with its own chain `SecurityConfig.mcpLanac` (`@Order(1)`: `permitAll`, no teacher session, no
   origin check, CORS and the anonymous filter explicitly disabled (so a later CORS bean never opens `/mcp` to browsers), no CSRF, stateless; the start fails unless the endpoint property is `/mcp`). `McpKljucFilter` (order
   `HIGHEST_PRECEDENCE + 10`) runs before the Spring Security filter (`-100`) and stays the only authority there; any other path
   under `/mcp` goes through the main chain as ADMIN, so the key opens nothing else and a teacher cookie alone never opens MCP
   (`security/McpLanacIT`, `McpLanacIskljucenIT`, real Tomcat).
-- **Package `mcp`:** `alati/` (`KontekstAlati`, `BankaAlati`, `VarijanteAlati`, `PrezentacijaAlati`; 28 `@McpTool` methods in
-  A1, Serbian snake_case ASCII names, object parameter types (`Long`, `Boolean`), never primitives, every write tool takes a
+- **Package `mcp`:** `alati/` (`KontekstAlati`, `BankaAlati`, `VarijanteAlati`, `PrezentacijaAlati`, `IzvodjenjaAlati`; 45 `@McpTool` methods, Serbian snake_case ASCII names, object parameter types (`Long`, `Boolean`), never primitives, every write tool takes a
   required `serija`), `servis/` (facades `McpKontekst`, `McpBanka`, `McpPrezentacije`, the MCP DTO records `Mcp*` and the helpers
   `McpSlika`, `PrezentacijaPregled`, `PlatnoPregled`, `VodicTema`, `ZahtevSlike`), `rest/McpUploadRest`, and the core
   `McpKonfig`, `McpKljucevi`, `McpKljucFilter`, `McpUkljucenje`, `McpOmotac`, `McpGreske`, `McpPoziv`, `McpZahtev`, `McpPatch`,
@@ -581,8 +591,8 @@ through the plan's "Tačke proširenja za B i A2".
   the rest of `mcp`, DTOs, exceptions, entity enums and the MCP/Spring AI API; nothing in `mcp` touches repositories,
   `EntityManager`, JDBC, the context or bean factory, non-enum entities or REST controllers; no field or setter injection; every
   call from `mcp` into `service..` is listed in `DOZVOLJENE_METODE` (`Vlasnik.metoda(Tip, Tip)`, service beans) or
-  `DOZVOLJENI_POMOCNICI` (static pure helpers), and none of the spec's forbidden methods (`VarijantaService.odobri/arhiviraj/
-  vratiUNacrt`, `PrezentacijaService.obrisi`, `MedijService.obrisi/sacuvajRender`, `LatexPreambulaService.postavi`, students,
+  `DOZVOLJENI_POMOCNICI` (static pure helpers), and none of the spec's forbidden methods (single `VarijantaService.odobri/arhiviraj/
+  vratiUNacrt`: MCP has only the bulk `odobriVise`, `povuciOdobrenje`, `arhivirajVise`; `PrezentacijaService.obrisi`, whose MCP form is `obrisiIzSerije`, `MedijService.obrisi/sacuvajRender`, `LatexPreambulaService.postavi`, students,
   grades, tests, ...) may be listed. `McpFasadeTest.METODE` pins the public methods of every facade. Plain data records a service
   returns to a facade live in `dto..` (`SlikeRendera`, `UpisVarijante`, `ProbaSaSlikom`), not in `service..`.
   **`McpAlatiTest.OCEKIVANO`** pins every tool with its annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
@@ -639,8 +649,7 @@ through the plan's "Tačke proširenja za B i A2".
   `serija` never change afterwards), `izmeniDelimicno(id, GrupaPatch)` (`null` deletes `opis`, `tezina`, `uputstvo`),
   `izmeniPolja` (tries the schema change first, `isprobaj`: if any variant, archived too, would lose an answer or an AKTIVNA would
   drop to NACRT, 409 `Izmena polja bi pogodila varijante: <ids ascending>.` and nothing is written), `premesti`, `obrisiPraznu`
-  (409 `Briše se samo prazna grupa.`). The facade lets Claude change, move and delete only CLAUDE groups (409 `Ovu grupu je
-  napravio Novica; izmenu radi on u UI-ju.`). Those methods start with an empty persistence context (`zaboraviProcitano`: with
+  (409 `Briše se samo prazna grupa.`). Since 2026-11-04 the facade lets Claude change, move and delete Novica's groups too, when he asks. Those methods start with an empty persistence context (`zaboraviProcitano`: with
   open-in-view the facade already read the group in the same request). Two traps for new callers: `kreiraj(cmd, izvor, serija)`
   and `VarijantaService.obrisiSopstveniNacrt` do **not** clear it, so a facade must not read those groups or that variant
   earlier in the same request (or the lock and checks run on stale entities); and no clearing method (`izmeniDelimicno`,

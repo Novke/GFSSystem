@@ -1,6 +1,10 @@
 # Slajdovi: INFO, PITANJE i ZADATAK (GFS MCP)
 
-`dodaj_slajd` (`serija`, `prezentacijaId`, `posle?`, `slajd`) dodaje jedan slajd: bez `posle` na kraj, sa `posle` (id slajda) odmah iza tog slajda. U ovoj verziji dodaješ samo `INFO`, `PITANJE` i `ZADATAK` (ostalo je 400 `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`), a postojeće slajdove ne menjaš. `slajd` se čita strogo: nepoznat ključ je `Nepoznato polje 'slajd.x'.`, a `null` za `postepeno` ili `tacna` je `Neispravan format podataka.` (izostavi ih ili pošalji true/false). Najviše 200 slajdova po prezentaciji; prezentacija koja se upravo izvodi se ne menja.
+`dodaj_slajd` (`serija`, `prezentacijaId`, `posle?`, `slajd`) dodaje jedan slajd: bez `posle` na kraj, sa `posle` (id slajda) odmah iza tog slajda. U ovoj verziji dodaješ samo `INFO`, `PITANJE` i `ZADATAK` (ostalo je 400 `Klod u ovoj verziji dodaje samo INFO, PITANJE i ZADATAK slajdove.`). `slajd` se čita strogo: nepoznat ključ je `Nepoznato polje 'slajd.x'.`, a `null` za `postepeno` ili `tacna` je `Neispravan format podataka.` (izostavi ih ili pošalji true/false). Najviše 200 slajdova po prezentaciji; prezentacija koja se upravo izvodi se ne menja.
+
+Postojeći slajd menjaš sa `izmeni_slajd` (`serija`, `slajdId`, `opis` i samo polja koja se menjaju): izostavljeno ostaje, `null` briše polje koje se sme obrisati. Važe `naslov`, `sadrzaj`, `slikaId` i `postepeno` za INFO, `pitanje` (ceo objekat) za PITANJE, `zadatak` (ceo objekat) za ZADATAK, a `beleske` i `prelaz` za sve. Polje drugog tipa je 400 `Polje 'x' ne važi za slajd tipa T.` Tip slajda se ne menja.
+
+PLATNO menjaš sa `zameni_platno`: pročitaj slajd alatom `slajd`, izmeni ceo dokument `platno` i pošalji ga sa `otisak` iz tog odgovora. Ako je slajd u međuvremenu menjan, dobiješ 409 `Slajd je u međuvremenu izmenjen; pročitaj ga ponovo.` i ništa nije upisano. Crtež bez `potezi` zadržava sačuvane poteze dok su id i veličina isti; inače se prikazuje kao slika i to dobiješ u `upozorenja`.
 
 Zajedničko za sve tipove:
 - `beleske` (do 20 000 znakova): beleške za Novicu na konzoli; studenti ih ne vide.
