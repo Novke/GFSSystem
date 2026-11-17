@@ -130,6 +130,15 @@ class PrezentacijaAlatiDbTest extends McpDbTestOsnova {
     }
 
     @Test
+    void napraviIIzmeniPrezentacijuPrimajuTemuFakultet() {
+        JsonNode r = uspeh("napravi_prezentaciju", mapa("serija", serija, "predmetId", predmet.getId(),
+                "naziv", "Vežbe 7", "tema", "FAKULTET"));
+        assertEquals("FAKULTET", r.path("prezentacija").path("tema").asString());
+        uspeh("izmeni_prezentaciju", mapa("serija", serija, "prezentacijaId", prezentacija, "tema", "FAKULTET"));
+        assertEquals("FAKULTET", jdbc.queryForObject("select tema from prezentacije where id = ?", String.class, prezentacija));
+    }
+
+    @Test
     void napraviPrezentacijuBezNazivaIPrekoBudzetaNeUpisujeNista() {
         Long pre = jdbc.queryForObject("select count(*) from prezentacije where predmet_id = ?", Long.class, predmet.getId());
         ocekujGresku("napravi_prezentaciju", mapa("serija", serija, "predmetId", predmet.getId(), "naziv", " "),

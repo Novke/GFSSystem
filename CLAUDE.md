@@ -171,7 +171,7 @@ code), students join from their phones and answer live. Code lives in `entity/uz
 - **Steps:** `TokIzvodjenja.brojKoraka` = gradual INFO list items, or for PLATNO the number of animations with trigger KLIK;
   `NastavnickoStanje.brojStavki` is that step count (name kept for the old frontend). If an edit during a run lowers the
   count, the step is clamped and the phase stays null (no 500).
-- **Theme:** `prezentacije.tema` (`Tema` NACRT|BELA|PAPIR|TAMNA|PONOC, default NACRT) is carried in the states (`tema`).
+- **Theme:** `prezentacije.tema` (`Tema` NACRT|BELA|PAPIR|TAMNA|PONOC|FAKULTET, default NACRT) is carried in the states (`tema`).
 - **Public entry points, exactly these three:** `/public/uzivo/**` (`PublicUzivoRest`: info, `ja`, join with the
   `gfs_uzivo` cookie, HttpOnly, 32-char token, only its SHA-256 in the DB), `/public/mediji/{uuid}` (slide images) and the
   student WebSocket `/public/ws`. Nothing else uzivo-related may go under `/public/**` (nginx exempts `/api/public/` from auth).
