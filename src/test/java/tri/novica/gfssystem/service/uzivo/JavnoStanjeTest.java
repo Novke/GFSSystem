@@ -116,7 +116,7 @@ class JavnoStanjeTest {
                 .filter(u -> u.getId().equals(i.getArgument(0))).findFirst());
 
         service = new StanjeService(izvodjenjeRepository, slajdRepository, rundaRepository, odgovorRepository,
-                ucesnikRepository, dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci,
+                ucesnikRepository, org.mockito.Mockito.mock(tri.novica.gfssystem.repository.uzivo.OznakaPonasanjaRepository.class), dodelaRepository, new PovezanostRegistar(), jsonMapper, new PlatnoJson(), zadaci,
                 org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
                 org.mockito.Mockito.mock(RangTacnostiService.class), new RangPrikazRegistar(), clock);
     }

@@ -56,6 +56,7 @@ public class UcesnikService {
     private final ApplicationEventPublisher publisher;
     private final CekiranjeRepository cekiranjeRepository;
     private final Clock clock;
+    private final OznakePonasanja oznake;
 
     /**
      * Prijavljen učesnik i token za kolačić (token se ne čuva i ne loguje); {@code student}: učesnik je prijavljen
@@ -114,6 +115,22 @@ public class UcesnikService {
      * ali objavljuje promenu: broj i imena učesnika.
      */
     public Prijavljen prijavi(String kod, String ime, Optional<Long> studentId) {
+        return prijavi(kod, ime, studentId, null);
+    }
+
+    /**
+     * {@link #prijavi(String, String, Optional)} sa tokenom iz postojećeg kolačića {@code gfs_uzivo} ({@code stariToken},
+     * može biti null): gost sa telefona čiji je token izbačen iz ovog izvođenja (ili iz izvođenja istog predavanja "do
+     * kraja predavanja") dobija 403 {@value #IZBACEN}, a prijavljen student sa oznakom {@code IZBACEN_PREDAVANJE} za
+     * predavanje ovog izvođenja isto. Uspešna prijava prenosi zabrane starog tokena na nov (kolačić se prepisuje).
+     */
+    public Prijavljen prijavi(String kod, String ime, Optional<Long> studentId, String stariToken) {
+        Prijavljen p = prijaviUnutra(kod, ime, studentId, stariToken);
+        oznake.prenesiZabrane(stariToken, TokenHash.od(p.token()));
+        return p;
+    }
+
+    private Prijavljen prijaviUnutra(String kod, String ime, Optional<Long> studentId, String stariToken) {
         // samo id pre zaključavanja: entitet učitan ranije ne bi video završetak do kog je došlo dok se čekalo
         Long id = (ispravanKod(kod) ? izvodjenjeRepository.findIdByAktivanKodAndStatus(kod, StatusIzvodjenja.AKTIVNO)
                 : Optional.<Long>empty()).orElseThrow(UcesnikService::nepoznatKod);
@@ -126,9 +143,14 @@ public class UcesnikService {
             if (iz.isBoduje()) {
                 throw new SystemException(POTREBNA_PRIJAVA, HttpStatus.FORBIDDEN);
             }
+            if (oznake.tokenZabranjen(stariToken, iz)) {
+                throw new SystemException(IZBACEN, HttpStatus.FORBIDDEN);
+            }
             return novi(iz, imenaUcesnika.validiraj(ime), null);
         }
-        if (ucesnikRepository.existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(iz.getId(), student.getId())) {
+        if (ucesnikRepository.existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(iz.getId(), student.getId())
+                || (iz.getPredavanje() != null
+                        && oznake.studentIzbacenSaPredavanja(student.getId(), iz.getPredavanje().getId()))) {
             throw new SystemException(IZBACEN, HttpStatus.FORBIDDEN);
         }
         // učesnik sa drugog telefona prolazi samo uz čekiranje, kao i nov (kod iz WhatsApp grupe ne vodi u bodovano od kuće)

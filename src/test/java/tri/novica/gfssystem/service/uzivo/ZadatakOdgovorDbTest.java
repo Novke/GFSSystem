@@ -20,6 +20,7 @@ import tri.novica.gfssystem.entity.Predmet;
 import tri.novica.gfssystem.entity.uzivo.VrstaMedija;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
+import tri.novica.gfssystem.entity.uzivo.Utisanje;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.service.banka.LatexPreambulaService;
@@ -234,6 +235,15 @@ class ZadatakOdgovorDbTest {
         assertEquals(Boolean.FALSE, b.get("tacno"), "ocena po varijanti B (a=13)");
 
         odbijen("Već si odgovorio.", () -> odgovori(naA, Map.of("a", "45")));
+    }
+
+    @Test
+    void utisanPitaliceSmeZadatakUtisanSveNe() {
+        izvodjenjeService.utisaj(izvodjenjeId, naA, Utisanje.PITALICE);
+        odgovori(naA, Map.of("a", "45"));
+        assertEquals(Boolean.TRUE, red(naA).get("tacno"));
+        izvodjenjeService.utisaj(izvodjenjeId, naB, Utisanje.SVE);
+        odbijen(OdgovorService.UTISAN, () -> odgovori(naB, Map.of("a", "13")));
     }
 
     @Test

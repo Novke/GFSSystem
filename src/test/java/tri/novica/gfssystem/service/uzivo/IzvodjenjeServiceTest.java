@@ -63,6 +63,8 @@ class IzvodjenjeServiceTest {
     @Mock TemeZaVezbanje temeZaVezbanje;
     @Mock ImenaUcesnika imenaUcesnika;
     @Mock IdentitetStudenta identitet;
+    @Mock OznakePonasanja oznake;
+    @Mock tri.novica.gfssystem.repository.uzivo.OznakaPonasanjaRepository oznakaPonasanjaRepository;
     @Mock ApplicationEventPublisher publisher;
 
     final MutableClock clock = new MutableClock(T0.atZone(ZONA).toInstant(), ZONA);
@@ -140,7 +142,7 @@ class IzvodjenjeServiceTest {
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
                 stanjeService, zadatakDodelaService, temeZaVezbanje, rangTacnosti,
-                rangPrikazi, imenaUcesnika, identitet, publisher, jsonMapper, clock);
+                rangPrikazi, imenaUcesnika, identitet, oznake, oznakaPonasanjaRepository, publisher, jsonMapper, clock);
     }
 
     final RangPrikazRegistar rangPrikazi = new RangPrikazRegistar();
@@ -1306,6 +1308,7 @@ class IzvodjenjeServiceTest {
         Odgovor o = new Odgovor();
         o.setRunda(r);
         o.setTekst(tekst);
+        o.setUcesnik(new Ucesnik());
         return o;
     }
 

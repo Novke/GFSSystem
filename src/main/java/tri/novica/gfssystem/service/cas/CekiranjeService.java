@@ -14,12 +14,14 @@ import tri.novica.gfssystem.entity.TipAktivnosti;
 import tri.novica.gfssystem.entity.cas.Cekiranje;
 import tri.novica.gfssystem.entity.cas.CekiranjeNaCekanju;
 import tri.novica.gfssystem.entity.uzivo.Izvodjenje;
+import tri.novica.gfssystem.entity.uzivo.VrstaOznake;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.StudentRepository;
 import tri.novica.gfssystem.repository.cas.CekiranjeNaCekanjuRepository;
 import tri.novica.gfssystem.repository.cas.CekiranjeRepository;
 import tri.novica.gfssystem.repository.uzivo.IzvodjenjeRepository;
+import tri.novica.gfssystem.repository.uzivo.OznakaPonasanjaRepository;
 import tri.novica.gfssystem.repository.uzivo.UcesnikRepository;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -62,6 +64,7 @@ public class CekiranjeService {
     private final CekiranjeNaCekanjuRepository naCekanjuRepository;
     private final IzvodjenjeRepository izvodjenjeRepository;
     private final UcesnikRepository ucesnikRepository;
+    private final OznakaPonasanjaRepository oznakaPonasanjaRepository;
     private final TokenGenerator tokenGenerator;
     private final Clock clock;
 
@@ -138,12 +141,14 @@ public class CekiranjeService {
                 .orElse(s);
     }
 
-    /** Najnovije aktivno izvođenje predavanja iz koga student nije izbačen. */
+    /** Najnovije aktivno izvođenje predavanja iz koga student nije izbačen (ni "do kraja predavanja"). */
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public Optional<CasIzvodjenje> aktivnoIzvodjenje(long predavanjeId, long studentId) {
         for (Izvodjenje iz : izvodjenjeRepository.findAktivnaZaPredavanje(predavanjeId)) {
             if (iz.getAktivanKod() != null
-                    && !ucesnikRepository.existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(iz.getId(), studentId)) {
+                    && !ucesnikRepository.existsByIzvodjenjeIdAndStudentIdAndIzbacenTrue(iz.getId(), studentId)
+                    && !oznakaPonasanjaRepository.existsByStudentIdAndPredavanjeIdAndVrsta(studentId, predavanjeId,
+                            VrstaOznake.IZBACEN_PREDAVANJE)) {
                 return Optional.of(new CasIzvodjenje(iz.getAktivanKod(), iz.getPrezentacija().getNaziv()));
             }
         }
