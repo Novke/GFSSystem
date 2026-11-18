@@ -46,6 +46,7 @@ public class StanjeService {
     private final PitanjeRundaRepository rundaRepository;
     private final OdgovorRepository odgovorRepository;
     private final UcesnikRepository ucesnikRepository;
+    private final OznakaPonasanjaRepository oznakaPonasanjaRepository;
     private final ZadatakDodelaRepository dodelaRepository;
     private final PovezanostRegistar povezanost;
     private final JsonMapper jsonMapper;
@@ -114,15 +115,18 @@ public class StanjeService {
         odgovoriRunde.forEach(o -> odgovorUcesnika.putIfAbsent(o.getUcesnik().getId(), o));
         SnimakRunde snimakRunde = runda == null ? null : snimak(runda);
         Set<Long> stariji = ucesnikRepository.findStariji(iz.getId());
+        Map<Long, long[]> oznake = oznakePoUcesniku(iz);
         List<UcesnikStanje> ucesnici = p.ucesnici().stream()
                 .map(u -> {
                     Odgovor o = odgovorUcesnika.get(u.getId());
                     Long varijantaId = zr == null ? null : p.dodeleRunde().get(u.getId());
+                    long[] oz = oznake.getOrDefault(u.getId(), BEZ_OZNAKA);
                     return new UcesnikStanje(u.getId(), u.getIme(), poeni.getOrDefault(u.getId(), 0),
                             povezanost.jePovezan(u.getId()), odgovorili.contains(u.getId()), varijantaId,
                             o == null ? null : o.getTacno(), o == null ? null : o.getVremeMs(),
                             kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven(),
-                            stariji.contains(u.getId()));
+                            stariji.contains(u.getId()), u.getUtisan(), oz[1] > 0, (int) oz[0],
+                            u.getStudent() != null);
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
@@ -149,6 +153,22 @@ public class StanjeService {
                 iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr),
                 brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size(), javniRangTacnosti, rangPrikaz,
                 rangTacnosti.imaRangPredavanja(iz), rangPrikazi.broj(iz.getId()));
+    }
+
+    private static final long[] BEZ_OZNAKA = {0, 0};
+
+    /**
+     * Oznake ponašanja studenata iza učesnika (moderacija, samo konzola): učesnik -> {@code [sve oznake na kartonu, oznake
+     * na ovom času]}; "ovaj čas" je predavanje izvođenja, a bez predavanja samo izvođenje. Jedan upit; gost nema red.
+     */
+    private Map<Long, long[]> oznakePoUcesniku(Izvodjenje iz) {
+        Long pred = iz.getPredavanje() == null ? null : iz.getPredavanje().getId();
+        Map<Long, long[]> m = new HashMap<>();
+        for (Object[] red : oznakaPonasanjaRepository.zbirPoUcesniku(iz.getId(), pred)) {
+            m.put(((Number) red[0]).longValue(), new long[]{((Number) red[1]).longValue(),
+                    red[2] == null ? 0 : ((Number) red[2]).longValue()});
+        }
+        return m;
     }
 
     /** Kratak prikaz odgovora u trenutnoj rundi ({@link KratakOdgovor}); {@code null} bez odgovora. */
@@ -183,6 +203,8 @@ public class StanjeService {
             if (u.getStudent() != null) jos.remove(u.getStudent().getId());
         });
         jos.removeAll(ucesnikRepository.findIzbaceniStudentIds(p.iz().getId()));
+        jos.removeAll(oznakaPonasanjaRepository.findStudentIds(p.iz().getPredavanje().getId(),
+                VrstaOznake.IZBACEN_PREDAVANJE));
         return broj + jos.size();
     }
 
@@ -545,7 +567,8 @@ public class StanjeService {
         RangTacnosti.Zbir tacnost = lp.tacnost().get(u.getId());
         return new LicnoStanje(iz.getVerzija(), u.getId(), u.getIme(), lp.poeni().getOrDefault(u.getId(), 0),
                 iz.isTakmicenje() ? lp.mesto().get(u.getId()) : null, brojUcesnika, false, odgovor,
-                licniZadatak(iz, u, lp), tacnost == null ? 0 : tacnost.tacnih(), tacnost == null ? 0 : tacnost.dugovanih());
+                licniZadatak(iz, u, lp), tacnost == null ? 0 : tacnost.tacnih(), tacnost == null ? 0 : tacnost.dugovanih(),
+                u.getUtisan());
     }
 
     // ---------------------------------------------------------------- lista i rezultati

@@ -57,6 +57,8 @@ public class IzvodjenjeService {
     static final String NIJE_POSTAVLJENO = "Pitanje još nije postavljeno.";
     static final String UCESNIK_NIJE_PRONADJEN = "Učesnik nije pronađen.";
     static final String RUNDA_NIJE_PRONADJENA = "Runda nije pronađena.";
+    static final String NIJE_SA_PREDAVANJA = "Izvođenje nije pokrenuto sa predavanja.";
+    static final String NEMA_TEKSTA = "Učesnik nema tekstualni odgovor u ovoj rundi.";
     static final String PREDAVANJE_DRUGI_PREDMET = "Predavanje nije iz predmeta ove prezentacije.";
     static final String VEC_U_TOKU = "Prezentacija već ima izvođenje u toku.";
     static final String BODOVANJE_BEZ_PREDAVANJA = "Bodovanje traži predavanje.";
@@ -95,6 +97,8 @@ public class IzvodjenjeService {
     private final RangPrikazRegistar rangPrikazi;
     private final ImenaUcesnika imenaUcesnika;
     private final IdentitetStudenta identitet;
+    private final OznakePonasanja oznake;
+    private final OznakaPonasanjaRepository oznakaRepository;
     private final ApplicationEventPublisher publisher;
     private final JsonMapper jsonMapper;
     private final Clock clock;
@@ -705,34 +709,92 @@ public class IzvodjenjeService {
         return objavi(iz);
     }
 
-    /** Izbačeni učesnik ne može više da odgovara; ponovo izbacivanje istog je bez izmene. */
+    /** {@link #izbaci(Long, Long, boolean)} samo iz ovog izvođenja. */
     public NastavnickoStanje izbaci(Long id, Long ucesnikId) {
+        return izbaci(id, ucesnikId, false);
+    }
+
+    /**
+     * Izbačeni učesnik ne može više da odgovara ni da uđe ponovo sa istog telefona (zabrana tokena, {@link OznakePonasanja});
+     * sa {@code predavanje} ni u jedno izvođenje predavanja ovog izvođenja (400 bez predavanja). Student dobija oznaku na
+     * kartonu ({@code IZBACEN} ili {@code IZBACEN_PREDAVANJE}). Ponovo izbacivanje istog je bez izmene, osim dopune "do
+     * kraja predavanja".
+     */
+    public NastavnickoStanje izbaci(Long id, Long ucesnikId, boolean predavanje) {
         Izvodjenje iz = nadjiZaIzmenu(id);
         proveriAktivno(iz);
+        if (predavanje && iz.getPredavanje() == null) {
+            throw new SystemException(NIJE_SA_PREDAVANJA, HttpStatus.BAD_REQUEST);
+        }
         Ucesnik u = ucesnikRepository.findByIdAndIzvodjenjeId(ucesnikId, iz.getId())
                 .orElseThrow(() -> new SystemException(UCESNIK_NIJE_PRONADJEN, HttpStatus.NOT_FOUND));
-        if (u.isIzbacen()) {
+        if (u.isIzbacen() && (!predavanje || oznake.izbacenSaPredavanja(iz, u))) {
             return stanjeService.nastavnicko(iz.getId());
         }
-        u.setIzbacen(true);
-        publisher.publishEvent(new UcesnikIzbacen(iz.getId(), u.getId()));
-        log.info("Učesnik izbačen: izvodjenje={}, ucesnik={}", iz.getId(), u.getId());
+        if (!u.isIzbacen()) {
+            u.setIzbacen(true);
+            publisher.publishEvent(new UcesnikIzbacen(iz.getId(), u.getId()));
+        }
+        oznake.zabraniToken(iz, u, predavanje);
+        oznake.zabelezi(iz, u, predavanje ? VrstaOznake.IZBACEN_PREDAVANJE : VrstaOznake.IZBACEN, null, null);
+        log.info("Učesnik izbačen: izvodjenje={}, ucesnik={}, predavanje={}", iz.getId(), u.getId(), predavanje);
         return objavi(iz);
     }
 
-    /** Sakriva (ili vraća) sve odgovore runde čiji je normalizovan tekst jednak {@code kljuc}. */
+    /**
+     * Utišava učesnika do kraja izvođenja ({@code PITALICE}: ne odgovara na pitanja; {@code SVE}: ni na zadatke) ili, sa
+     * {@code null}, skida utišavanje. Nova vrednost (ne {@code null}) daje studentu oznaku na kartonu; ista vrednost je bez
+     * izmene. 404 za izbačenog ili nepoznatog učesnika, 410 za završeno izvođenje.
+     */
+    public NastavnickoStanje utisaj(Long id, Long ucesnikId, Utisanje utisan) {
+        Izvodjenje iz = nadjiZaIzmenu(id);
+        proveriAktivno(iz);
+        Ucesnik u = ucesnik(iz, ucesnikId);
+        if (u.getUtisan() == utisan) {
+            return stanjeService.nastavnicko(iz.getId());
+        }
+        u.setUtisan(utisan);
+        if (utisan != null) {
+            oznake.zabelezi(iz, u, VrstaOznake.zaUtisanje(utisan), null, null);
+        }
+        log.info("Učesnik utišan: izvodjenje={}, ucesnik={}, utisan={}", iz.getId(), u.getId(), utisan);
+        return objavi(iz);
+    }
+
+    /**
+     * Sakriva (ili vraća) sve odgovore runde čiji je normalizovan tekst jednak {@code kljuc}, ili, sa {@code ucesnikId},
+     * tekstu odgovora tog učesnika (404 kad ga nema). Svaki student čiji odgovor tek sada postaje sakriven dobija oznaku
+     * {@code SAKRIVEN_ODGOVOR} sa tim tekstom; vraćanje briše te oznake runde za studente čiji odgovor ponovo postaje vidljiv.
+     */
     public NastavnickoStanje sakrij(Long id, Long rundaId, SakrijCmd cmd) {
-        if (cmd == null || cmd.kljuc() == null) {
+        if (cmd == null || (cmd.kljuc() == null && cmd.ucesnikId() == null)) {
             throw new SystemException("Ključ odgovora je obavezan.", HttpStatus.BAD_REQUEST);
         }
         Izvodjenje iz = nadjiZaIzmenu(id);
         rundaRepository.findByIdAndIzvodjenjeId(rundaId, iz.getId())
                 .orElseThrow(() -> new SystemException(RUNDA_NIJE_PRONADJENA, HttpStatus.NOT_FOUND));
-        String kljuc = Normalizacija.tekst(cmd.kljuc());
-        for (Odgovor o : odgovorRepository.findAllByRundaId(rundaId)) {
-            if (o.getTekst() != null && Normalizacija.tekst(o.getTekst()).equals(kljuc)) {
-                o.setSakriven(cmd.sakriven());
+        List<Odgovor> odgovori = odgovorRepository.findAllByRundaId(rundaId);
+        String kljuc = cmd.ucesnikId() == null ? Normalizacija.tekst(cmd.kljuc())
+                : odgovori.stream()
+                        .filter(o -> cmd.ucesnikId().equals(o.getUcesnik().getId()) && o.getTekst() != null)
+                        .map(o -> Normalizacija.tekst(o.getTekst()))
+                        .findFirst()
+                        .orElseThrow(() -> new SystemException(NEMA_TEKSTA, HttpStatus.NOT_FOUND));
+        Set<Long> vraceni = new HashSet<>();
+        for (Odgovor o : odgovori) {
+            if (o.getTekst() == null || !Normalizacija.tekst(o.getTekst()).equals(kljuc)
+                    || o.isSakriven() == cmd.sakriven()) {
+                continue;
             }
+            o.setSakriven(cmd.sakriven());
+            if (cmd.sakriven()) {
+                oznake.zabelezi(iz, o.getUcesnik(), VrstaOznake.SAKRIVEN_ODGOVOR, o.getTekst(), rundaId);
+            } else if (o.getUcesnik().getStudent() != null) {
+                vraceni.add(o.getUcesnik().getStudent().getId());
+            }
+        }
+        if (!vraceni.isEmpty()) {
+            oznakaRepository.obrisiZaRundu(rundaId, VrstaOznake.SAKRIVEN_ODGOVOR, vraceni);
         }
         return objavi(iz);
     }

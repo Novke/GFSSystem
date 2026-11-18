@@ -54,11 +54,19 @@ public class IzvodjenjeRest {
         return izvodjenjeService.preimenuj(id, ucesnikId, cmd.ime());
     }
 
-    /** Izbacivanje učesnika. */
+    /** Izbacivanje učesnika; {@code predavanje=true}: i iz svih izvođenja predavanja ovog izvođenja. */
     @DeleteMapping("/{id}/ucesnici/{ucesnikId}")
     @ResponseStatus(HttpStatus.OK)
-    public NastavnickoStanje izbaci(@PathVariable Long id, @PathVariable Long ucesnikId) {
-        return izvodjenjeService.izbaci(id, ucesnikId);
+    public NastavnickoStanje izbaci(@PathVariable Long id, @PathVariable Long ucesnikId,
+                                    @RequestParam(defaultValue = "false") boolean predavanje) {
+        return izvodjenjeService.izbaci(id, ucesnikId, predavanje);
+    }
+
+    /** Utišavanje učesnika do kraja izvođenja ({@code PITALICE}, {@code SVE}) ili skidanje ({@code null}). */
+    @PutMapping("/{id}/ucesnici/{ucesnikId}/utisan")
+    @ResponseStatus(HttpStatus.OK)
+    public NastavnickoStanje utisaj(@PathVariable Long id, @PathVariable Long ucesnikId, @RequestBody UtisajCmd cmd) {
+        return izvodjenjeService.utisaj(id, ucesnikId, cmd.getUtisan());
     }
 
     @PutMapping("/{id}/runde/{rundaId}/sakrij")

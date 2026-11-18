@@ -352,6 +352,39 @@ aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the p
 - Tests: `RangTacnostiTest` (pure rules, short names), `KratakOdgovorTest`, `RangTacnostiDbTest` (two runs of one lecture, guests, projector before/after
   `TACAN`, student card, group, 404/400), plus the command tests in `IzvodjenjeServiceTest`.
 
+### Moderacija uživo (sakrij, utišaj, izbaci, oznake na kartonu)
+
+Spec `docs/superpowers/specs/2026-11-18-moderacija-uzivo-design.md` (deploy repo). Migration `V25__moderacija_uzivo.sql` (idempotent, additive).
+- **Mute:** `ucesnici.utisan` (`Utisanje` `PITALICE` | `SVE`, null = may answer) lasts until the run ends (no expiry, no cleanup).
+  `PUT /izvodjenja/{id}/ucesnici/{ucesnikId}/utisan` `{"utisan": ...|null}` (ADMIN, run row lock, 410 finished, 404 unknown/expelled). `OdgovorService`
+  rejects every answer for `SVE` and only PITANJE rounds for `PITALICE` (`Nastavnik ti je isključio odgovaranje.` on `/user/queue/greske`); the
+  assignment of a ZADATAK variant is unchanged. `LicnoStanje.utisan` (last field) is the only new field a phone gets.
+- **Hide:** `PUT /izvodjenja/{id}/runde/{rundaId}/sakrij` takes an optional `SakrijCmd.ucesnikId` (key = that participant's normalized text, 404
+  `Učesnik nema tekstualni odgovor u ovoj rundi.`). Every student whose answer becomes hidden now gets `SAKRIVEN_ODGOVOR` with the text; un-hiding
+  deletes those flags of the round for students whose answer becomes visible again.
+- **Expel:** `DELETE /izvodjenja/{id}/ucesnici/{ucesnikId}?predavanje=true|false` (default false; true without a lecture is 400
+  `Izvođenje nije pokrenuto sa predavanja.`; expelling an already expelled participant again with `predavanje=true` adds the lecture ban).
+  Every expel writes a token ban `zabrane_gostiju` (SHA-256 of the `gfs_uzivo` token, run, and with `predavanje` the lecture), so the same phone
+  cannot rejoin as a guest; `PublicUzivoRest` passes the existing cookie to `UcesnikService.prijavi(kod, ime, studentId, stariToken)`, a banned
+  token is 403 `Izbačen si iz ovog izvođenja.`, and a successful join copies the old token's bans to the new token (the cookie is overwritten).
+  A logged-in student is banned by the flag `IZBACEN_PREDAVANJE` on his card (same 403 in every run of that lecture). `CekiranjeService.stanje`
+  never leads a phone into a run of a lecture the student was expelled from. Token bans survive "Ne čuvaj" and are deleted after 2 days by
+  `CiscenjePrijave` (the cookie lives 12 h) and with their run/lecture (CASCADE).
+- **Flags (`oznake_ponasanja`, `OznakePonasanja`):** only for a logged-in student (guests have no card): `SAKRIVEN_ODGOVOR`, `UTISAN_PITALICE`,
+  `UTISAN_SVE`, `IZBACEN`, `IZBACEN_PREDAVANJE`, with subject, lecture, run, round and the presentation name (kept when the run is deleted, FKs
+  `ON DELETE SET NULL`; the student FK cascades). Unmuting writes nothing and deletes nothing. `GET /studenti/{id}/oznake-ponasanja` (newest first,
+  `OznakaPonasanjaInfo`, 404 `Student ne postoji.`) and `DELETE /oznake-ponasanja/{id}` (204, 404 `Oznaka ne postoji.`), both ADMIN. Deleting
+  `IZBACEN_PREDAVANJE` lifts the ban for the other runs of the lecture (the run he was expelled from keeps his expelled row); deleting
+  `SAKRIVEN_ODGOVOR` does not unhide the answer.
+- **Console state:** `UcesnikStanje` ends with `utisan`, `oznacen` (the student has a flag on this lecture, or in this run when the run has no
+  lecture), `brojOznaka` (all his flags; guest 0) and `student` (logged in, has a card), from one aggregate query per snapshot. Students never
+  see flags or their count; `JavnoStanje`, the projector and the rank do not change (a muted participant's owed questions count as wrong).
+- **Known limits (accepted):** a guest expelled only from this run who rejoins without the cookie (private window, other browser) gets in;
+  a lecture expel does not remove a student who is already a participant of another active run of that lecture; a join racing the expel into a
+  sibling run can pass.
+- Tests: `ModeracijaUzivoDbTest` (mute, hide with flags, expel per run and per lecture, guest by cookie, "Ne čuvaj", card list/delete, states),
+  plus `IzvodjenjeRestTest`, `PublicUzivoRestTest`, `NastavnickoStanjeTest`, `UcesnikServiceTest` and the access snapshot.
+
 ## Banka zadataka (faza 1)
 
 Per-subject bank of tasks for lectures and tests: a tree of groups, variants of a task (LaTeX text and solution rendered to SVG
@@ -1165,7 +1198,9 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   int, filled from names that start with `Vežbe N` / `Vezbe N`; idempotent and additive (an older image does not map it).
   `V22` = app and push (see "Aplikacija i obaveštenja"). `V23` = manual "older student" flag (`V23__stariji_student.sql`, branch `feature/stariji-student`):
   `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
-  **Next free version: `V24`.**
+  `V24` = MCP changes (`V24__mcp_izmene.sql`, see "MCP za Claude-a"). `V25` = Uživo moderation (`V25__moderacija_uzivo.sql`: nullable
+  `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo").
+  **Next free version: `V26`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

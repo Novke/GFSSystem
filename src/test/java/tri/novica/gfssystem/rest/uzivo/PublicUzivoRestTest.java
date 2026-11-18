@@ -42,7 +42,7 @@ class PublicUzivoRestTest {
     @MockitoBean IdentitetStudenta identitet;
 
     void prijavaUspeva() {
-        when(service.prijavi(KOD, "Ana", Optional.empty()))
+        when(service.prijavi(KOD, "Ana", Optional.empty(), null))
                 .thenReturn(new UcesnikService.Prijavljen(new UcesnikInfo(31L, "Ana", 5L), TOKEN));
     }
 
@@ -86,6 +86,17 @@ class PublicUzivoRestTest {
         mvc.perform(get("/public/uzivo/999999"))
            .andExpect(status().isNotFound())
            .andExpect(jsonPath("$.reason").value(NEPOZNAT));
+    }
+
+    @Test
+    void prijavaPredajePostojeciKolacicServisu() throws Exception {
+        String stari = "zyxwvutsrqpnmkjhgfedcbaZYXWVUTS3";
+        when(service.prijavi(KOD, "Ana", Optional.empty(), stari))
+                .thenReturn(new UcesnikService.Prijavljen(new UcesnikInfo(31L, "Ana", 5L), TOKEN));
+        mvc.perform(post("/public/uzivo/" + KOD + "/prijava").cookie(new Cookie("gfs_uzivo", stari))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))
+           .andExpect(status().isCreated());
+        verify(service).prijavi(KOD, "Ana", Optional.empty(), stari);
     }
 
     @Test
@@ -135,7 +146,7 @@ class PublicUzivoRestTest {
 
     @Test
     void punoIzvodjenjeJe409() throws Exception {
-        when(service.prijavi(any(), any(), any())).thenThrow(new SystemException("Izvođenje je popunjeno.", HttpStatus.CONFLICT));
+        when(service.prijavi(any(), any(), any(), any())).thenThrow(new SystemException("Izvođenje je popunjeno.", HttpStatus.CONFLICT));
         mvc.perform(post("/public/uzivo/" + KOD + "/prijava")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))
            .andExpect(status().isConflict())
@@ -145,7 +156,7 @@ class PublicUzivoRestTest {
 
     @Test
     void prijavaNaNepoznatKodJe404() throws Exception {
-        when(service.prijavi(any(), any(), any())).thenThrow(new SystemException(NEPOZNAT, HttpStatus.NOT_FOUND));
+        when(service.prijavi(any(), any(), any(), any())).thenThrow(new SystemException(NEPOZNAT, HttpStatus.NOT_FOUND));
         mvc.perform(post("/public/uzivo/999999/prijava")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))
            .andExpect(status().isNotFound())
@@ -161,7 +172,7 @@ class PublicUzivoRestTest {
                .andExpect(status().isBadRequest())
                .andExpect(jsonPath("$.reason").value("Neispravan format podataka."));
         }
-        verify(service, never()).prijavi(any(), any(), any());
+        verify(service, never()).prijavi(any(), any(), any(), any());
     }
 
     @Test
@@ -208,7 +219,7 @@ class PublicUzivoRestTest {
     @ExtendWith(OutputCaptureExtension.class)
     void prijavaSaIdentitetomStudenta(CapturedOutput izlaz) throws Exception {
         when(identitet.studentId(any())).thenReturn(Optional.of(7L));
-        when(service.prijavi(KOD, "Ana", Optional.of(7L)))
+        when(service.prijavi(KOD, "Ana", Optional.of(7L), null))
                 .thenReturn(new UcesnikService.Prijavljen(new UcesnikInfo(31L, "Ana Petrović", 5L), TOKEN, true));
         MvcResult r = mvc.perform(post("/public/uzivo/" + KOD + "/prijava")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))
@@ -216,7 +227,7 @@ class PublicUzivoRestTest {
            .andExpect(jsonPath("$.ime").value("Ana Petrović"))
            .andReturn();
         assertTrue(setCookie(r).startsWith("gfs_uzivo=" + TOKEN + ";"));
-        verify(service).prijavi(KOD, "Ana", Optional.of(7L));
+        verify(service).prijavi(KOD, "Ana", Optional.of(7L), null);
         // u logu samo da/ne, nikad id studenta ni ime
         String linija = izlaz.getOut().lines().filter(l -> l.contains("Uživo prijava:")).findFirst().orElseThrow();
         assertTrue(linija.contains("student=da"), linija);
@@ -237,7 +248,7 @@ class PublicUzivoRestTest {
 
     @Test
     void bodovanBezPrijaveJe403() throws Exception {
-        when(service.prijavi(any(), any(), any()))
+        when(service.prijavi(any(), any(), any(), any()))
                 .thenThrow(new SystemException("Potrebna je prijava studenta.", HttpStatus.FORBIDDEN));
         mvc.perform(post("/public/uzivo/" + KOD + "/prijava")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana\"}"))

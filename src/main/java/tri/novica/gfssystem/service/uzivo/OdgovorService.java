@@ -52,6 +52,7 @@ public class OdgovorService {
     public static final String NIJE_PRIJAVLJEN = "Nisi prijavljen na ovo izvođenje.";
     public static final String ZAVRSENO = IzvodjenjeService.ZAVRSENO;
     public static final String NIJE_DODELJEN = "Zadatak ti nije dodeljen.";
+    public static final String UTISAN = "Nastavnik ti je isključio odgovaranje.";
 
     private final IzvodjenjeRepository izvodjenjeRepository;
     private final PitanjeRundaRepository rundaRepository;
@@ -89,6 +90,10 @@ public class OdgovorService {
         }
 
         SnimakRunde snimakRunde = jsonMapper.readValue(r.getSnimak(), SnimakRunde.class);
+        // utišan (moderacija): SVE ne odgovara ni na šta, PITALICE samo na pitanja (zadatak sme)
+        if (u.getUtisan() == Utisanje.SVE || (u.getUtisan() == Utisanje.PITALICE && snimakRunde instanceof PitanjeSnimak)) {
+            throw new OdgovorOdbijen(UTISAN);
+        }
         if (snimakRunde instanceof ZadatakSnimak zadatak) {
             upisiZadatak(iz, u, r, zadatak, cmd, sada);
             return;
