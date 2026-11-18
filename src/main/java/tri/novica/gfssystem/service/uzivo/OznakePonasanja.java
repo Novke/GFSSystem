@@ -72,12 +72,15 @@ public class OznakePonasanja {
         zabranaRepository.save(z);
     }
 
-    /** Da li je učesnik već izbačen do kraja predavanja izvođenja (student po oznaci, telefon po zabrani tokena). */
+    /**
+     * Da li je učesnik već izbačen do kraja predavanja izvođenja: student samo po oznaci (posle brisanja oznake ponovo
+     * izbacivanje mora da napiše novu), gost po zabrani tokena.
+     */
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public boolean izbacenSaPredavanja(Izvodjenje iz, Ucesnik u) {
         if (iz.getPredavanje() == null) return false;
         Long pred = iz.getPredavanje().getId();
-        if (u.getStudent() != null && studentIzbacenSaPredavanja(u.getStudent().getId(), pred)) return true;
+        if (u.getStudent() != null) return studentIzbacenSaPredavanja(u.getStudent().getId(), pred);
         return zabranaRepository.findAllByTokenHash(u.getTokenHash()).stream()
                 .anyMatch(z -> pred.equals(z.getPredavanjeId()));
     }
@@ -96,18 +99,20 @@ public class OznakePonasanja {
                 iz.getPredavanje() == null ? null : iz.getPredavanje().getId()).isEmpty();
     }
 
-    /** Nova prijava telefona sa zabranjenim starim tokenom: iste zabrane važe i za nov token (kolačić se prepisuje). */
+    /**
+     * Nova prijava telefona sa zabranjenim starim tokenom: iste zabrane važe i za nov token (kolačić se prepisuje). Kopija
+     * zadržava {@code kreirano} originala, pa je čišćenje posle 2 dana briše kao i original.
+     */
     public void prenesiZabrane(String stariToken, String noviHash) {
         if (stariToken == null || !TokenGenerator.FORMAT.matcher(stariToken).matches()) return;
         String stari = TokenHash.od(stariToken);
         if (stari.equals(noviHash)) return;
-        LocalDateTime sada = LocalDateTime.now(clock);
         for (ZabranaGosta z : zabranaRepository.findAllByTokenHash(stari)) {
             ZabranaGosta n = new ZabranaGosta();
             n.setTokenHash(noviHash);
             n.setIzvodjenjeId(z.getIzvodjenjeId());
             n.setPredavanjeId(z.getPredavanjeId());
-            n.setKreirano(sada);
+            n.setKreirano(z.getKreirano());
             zabranaRepository.save(n);
         }
     }

@@ -233,6 +233,18 @@ class ModeracijaUzivoDbTest {
     }
 
     @Test
+    void posleBrisanjaOznakePonovoIzbacivanjeDoKrajaPredavanjaPiseNovu() {
+        UcesnikService.Prijavljen a = ucesnikService.prijavi(iz.kod(), "x", Optional.of(ana));
+        izvodjenjeService.izbaci(iz.id(), a.info().ucesnikId(), true);
+        oznake.obrisi(oznake.zaStudenta(ana).getFirst().id());
+        // zabrana tokena ostaje, ali student se ravna po oznaci: ponovo izbacivanje je nova oznaka i nova zabrana
+        izvodjenjeService.izbaci(iz.id(), a.info().ucesnikId(), true);
+        assertEquals(1, oznakeStudenta(ana, VrstaOznake.IZBACEN_PREDAVANJE));
+        IzvodjenjeInfo drugo = pokreni(predavanje);
+        ocekuj(403, UcesnikService.IZBACEN, () -> ucesnikService.prijavi(drugo.kod(), "x", Optional.of(ana)));
+    }
+
+    @Test
     void izbaciDoKrajaPredavanjaBezPredavanja400() {
         IzvodjenjeInfo bez = pokreni(null);
         UcesnikService.Prijavljen g = ucesnikService.prijavi(bez.kod(), "Gost", Optional.empty());
