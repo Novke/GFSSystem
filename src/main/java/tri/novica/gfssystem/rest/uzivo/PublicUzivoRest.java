@@ -63,8 +63,10 @@ public class PublicUzivoRest {
     @PostMapping("{kod}/prijava")
     @ResponseStatus(HttpStatus.CREATED)
     public UcesnikInfo prijava(@PathVariable String kod, @RequestBody PrijavaUcesnikaCmd cmd,
+                               @CookieValue(name = KOLACIC, required = false) String stariToken,
                                HttpServletRequest request, HttpServletResponse response) {
-        UcesnikService.Prijavljen p = ucesnikService.prijavi(kod, cmd.ime(), identitet.studentId(request));
+        // stari kolačić: telefon izbačenog učesnika ne ulazi ponovo pod novim imenom (moderacija)
+        UcesnikService.Prijavljen p = ucesnikService.prijavi(kod, cmd.ime(), identitet.studentId(request), stariToken);
         ResponseCookie kolacic = ResponseCookie.from(KOLACIC, p.token())
                 .httpOnly(true)
                 .sameSite("Lax")

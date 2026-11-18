@@ -116,7 +116,7 @@ public class PrezentacijaAlati {
             @McpToolParam(description = "Id predmeta iz `kontekst`.") Long predmetId,
             @McpToolParam(description = "Naziv prezentacije, najviše 200 znakova.") String naziv,
             @McpToolParam(description = "Opis, najviše 1 000 znakova.", required = false) String opis,
-            @McpToolParam(description = "Tema izgleda: `NACRT` (podrazumevano), `BELA`, `PAPIR`, `TAMNA` ili `PONOC`.",
+            @McpToolParam(description = "Tema izgleda: `NACRT` (podrazumevano), `BELA`, `PAPIR`, `TAMNA`, `PONOC` ili `FAKULTET` (znak i plava boja fakulteta, za predavanja).",
                     required = false) Tema tema,
             @McpToolParam(description = "Redni broj vežbe 0-99 (redosled i predlog sledeće prezentacije).",
                     required = false) Integer vezba) {
@@ -159,7 +159,7 @@ public class PrezentacijaAlati {
     // ---------------------------------------------------------------- izmene postojećeg
 
     @McpTool(name = "izmeni_prezentaciju", description = "Delimična izmena prezentacije (i Novicine): `naziv`, `opis`, `tema` "
-            + "(`NACRT`, `BELA`, `PAPIR`, `TAMNA`, `PONOC`) i `vezba` (0-99); izostavljeno ostaje, `null` briše `opis` i `vezba`. "
+            + "(`NACRT`, `BELA`, `PAPIR`, `TAMNA`, `PONOC`, `FAKULTET`) i `vezba` (0-99); izostavljeno ostaje, `null` briše `opis` i `vezba`. "
             + "Podešavanja izvođenja menja Novica. Prezentacija koja se upravo izvodi se ne menja. Vraća `{prezentacija, link}`.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
                     openWorldHint = false))

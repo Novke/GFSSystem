@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.DynamicUpdate;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import tri.novica.gfssystem.entity.Student;
 
 import java.time.LocalDateTime;
@@ -28,6 +30,9 @@ public class Ucesnik {
     private String tokenHash;
     @Column(nullable = false)
     private boolean izbacen;
+    /** Utišan do kraja izvođenja ({@code null} = sme da odgovara). */
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(length = 20)
+    private Utisanje utisan;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     /** Brisanje studenta ostavlja učesnika bez njega (ON DELETE SET NULL). */

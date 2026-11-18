@@ -119,10 +119,27 @@ class IzvodjenjeRestTest {
         when(service.preimenuj(5L, 31L, "Ana B")).thenReturn(STANJE);
         mvc.perform(put("/izvodjenja/5/ucesnici/31").contentType(MediaType.APPLICATION_JSON).content("{\"ime\":\"Ana B\"}"))
            .andExpect(status().isOk());
-        when(service.izbaci(5L, 31L)).thenReturn(STANJE);
+        when(service.izbaci(5L, 31L, false)).thenReturn(STANJE);
         mvc.perform(delete("/izvodjenja/5/ucesnici/31"))
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.verzija").value(4));
+        when(service.izbaci(5L, 32L, true)).thenReturn(STANJE);
+        mvc.perform(delete("/izvodjenja/5/ucesnici/32").param("predavanje", "true"))
+           .andExpect(status().isOk());
+        // utišavanje: ključ obavezan, nepoznata vrednost i polje su 400
+        when(service.utisaj(5L, 31L, Utisanje.PITALICE)).thenReturn(STANJE);
+        mvc.perform(put("/izvodjenja/5/ucesnici/31/utisan").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"utisan\":\"PITALICE\"}"))
+           .andExpect(status().isOk());
+        when(service.utisaj(5L, 31L, null)).thenReturn(STANJE);
+        mvc.perform(put("/izvodjenja/5/ucesnici/31/utisan").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"utisan\":null}"))
+           .andExpect(status().isOk());
+        verify(service).utisaj(5L, 31L, null);
+        for (String telo : List.of("{}", "{\"utisan\":\"NESTO\"}", "{\"utisan\":null,\"x\":1}")) {
+            mvc.perform(put("/izvodjenja/5/ucesnici/31/utisan").contentType(MediaType.APPLICATION_JSON).content(telo))
+               .andExpect(status().isBadRequest());
+        }
         when(service.sakrij(eq(5L), eq(101L), any())).thenReturn(STANJE);
         mvc.perform(put("/izvodjenja/5/runde/101/sakrij").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"kljuc\":\"celik\",\"sakriven\":true}"))
