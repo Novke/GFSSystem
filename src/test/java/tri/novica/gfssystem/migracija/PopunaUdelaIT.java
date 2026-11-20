@@ -25,19 +25,19 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Popuna unazad iz V26 (delimično tačno) nad bazom sa podacima koja je stala na V25 (kao staging i prod pre izdanja):
+ * Popuna unazad iz V27 (delimično tačno) nad bazom sa podacima koja je stala na V26 (kao staging i prod pre izdanja):
  * odgovori na {@code VISE_TACNIH} čiji je {@code tacno} jednak oceni „tačno skup tačnih“ dobijaju udeo po formuli
  * ({@link Ocenjivac#udeoIzbora}) i, u takmičenju, poene po tom udelu ({@link Ocenjivac#poeni}); preocenjen odgovor, ostali
  * tipovi i zadatak dobijaju {@code IF(tacno, 1, 0)} bez promene poena; odgovor bez tačnog odgovora ostaje {@code NULL}. Trag
- * preocene dobija {@code staro_udeo} po istom pravilu iz {@code staro_tacno}. Ponovljena V26 (bez istorije, kao reset
- * staging baze) ništa ne menja. Radi u sopstvenoj bazi {@code <test baza>_v26}, kao {@code V13MigracijaDbTest}.
+ * preocene dobija {@code staro_udeo} po istom pravilu iz {@code staro_tacno}. Ponovljena V27 (bez istorije, kao reset
+ * staging baze) ništa ne menja. Radi u sopstvenoj bazi {@code <test baza>_v27}, kao {@code V13MigracijaDbTest}.
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PopunaUdelaIT {
 
-    /** Poslednja verzija pre delimično tačnog; menja se zajedno sa brojem {@code V26__delimicno_tacno.sql} pri merge-u. */
-    static final String PRE_UDELA = "25";
+    /** Poslednja verzija pre delimično tačnog; menja se zajedno sa brojem {@code V27__delimicno_tacno.sql} pri merge-u. */
+    static final String PRE_UDELA = "26";
     static final Pattern URL = Pattern.compile("^(jdbc:mysql://[^/]+/)([A-Za-z0-9_]+)(.*)$");
     static final long TRAJANJE_MS = 10_000L;
 
@@ -56,7 +56,7 @@ class PopunaUdelaIT {
     void napraviBazu() {
         Matcher m = URL.matcher(url);
         assertTrue(m.matches(), "spring.datasource.url nije jdbc:mysql://host/baza");
-        baza = m.group(2) + "_v26";
+        baza = m.group(2) + "_v27";
         urlBaze = m.group(1) + baza + m.group(3);
         jdbc.execute("DROP DATABASE IF EXISTS `" + baza + "`");
         jdbc.execute("CREATE DATABASE `" + baza + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
@@ -115,7 +115,7 @@ class PopunaUdelaIT {
         Long u1 = ucesnik(takmicenje), u2 = ucesnik(takmicenje), u3 = ucesnik(takmicenje), u4 = ucesnik(takmicenje),
                 u5 = ucesnik(takmicenje), u6 = ucesnik(bezTakmicenja);
 
-        // poeni kako ih je pisala slika pre V26: sve ili ništa
+        // poeni kako ih je pisala slika pre V27: sve ili ništa
         Long samoA = odgovor(rVise, u1, "101", false, 0, 3333);
         Long obe = odgovor(rVise, u2, "101,102", true, Ocenjivac.poeni(1.0, true, TRAJANJE_MS, 2000), 2000);
         Long aIC = odgovor(rVise, u3, "101,103", false, 0, 4000);
@@ -144,7 +144,7 @@ class PopunaUdelaIT {
                 vracenNaNetacan);
 
         var rezultat = flyway(null).migrate();
-        assertTrue(rezultat.migrationsExecuted >= 1, "V26 nije izvršena");
+        assertTrue(rezultat.migrationsExecuted >= 1, "V27 nije izvršena");
 
         assertEquals(0.5, udeo(samoA));
         assertEquals(Ocenjivac.udeoIzbora(dveTacne, List.of(101L)), udeo(samoA));
@@ -200,17 +200,17 @@ class PopunaUdelaIT {
         // drugi migrate: ništa novo
         List<Map<String, Object>> posle = stanje();
         assertEquals(0, flyway(null).migrate().migrationsExecuted);
-        // ponovljena V26 (istorija bez nje, kolone postoje, kao reset staging baze): ništa se ne menja
+        // ponovljena V27 (istorija bez nje, kolone postoje, kao reset staging baze): ništa se ne menja
         db.update("delete from flyway_schema_history where cast(version as unsigned) > " + PRE_UDELA);
         assertTrue(flyway(null).migrate().migrationsExecuted >= 1);
         assertEquals(posle, stanje());
     }
 
     Long izvodjenje(String kod, boolean takmicenje) {
-        db.update("insert into predmeti (naziv) values (?)", "Migracija V26 " + kod);
-        Long predmetId = db.queryForObject("select id from predmeti where naziv = ?", Long.class, "Migracija V26 " + kod);
+        db.update("insert into predmeti (naziv) values (?)", "Migracija V27 " + kod);
+        Long predmetId = db.queryForObject("select id from predmeti where naziv = ?", Long.class, "Migracija V27 " + kod);
         db.update("insert into prezentacije (predmet_id, naziv, takmicenje, telefon_prikaz, detalji_dozvoljeni, kreirano, "
-                + "izmenjeno) values (?, ?, ?, 'DUGMAD', 0, now(6), now(6))", predmetId, "Migracija V26 " + kod, takmicenje);
+                + "izmenjeno) values (?, ?, ?, 'DUGMAD', 0, now(6), now(6))", predmetId, "Migracija V27 " + kod, takmicenje);
         Long prezentacijaId = db.queryForObject("select id from prezentacije where predmet_id = ?", Long.class, predmetId);
         db.update("insert into izvodjenja (prezentacija_id, kod, aktivan_kod, cuvanje, status, pocetak, kraj, prikaz, korak, "
                 + "rezultati_prikazani, tacan_prikazan, rang_lista_prikazana, ekran, qr_prikazan, telefon_prikaz, "

@@ -47,7 +47,7 @@ public final class RangTacnosti {
     }
 
     /**
-     * Odgovor (učesnik je neizbačen); {@code varijantaId} samo za ZADATAK. {@code udeo} 0..1 (V26); {@code null} (red
+     * Odgovor (učesnik je neizbačen); {@code varijantaId} samo za ZADATAK. {@code udeo} 0..1 (V27); {@code null} (red
      * starijeg imidža) pada na {@code tacno} 1/0, kao {@code COALESCE(udeo, tacno)} u upitima.
      */
     public record Odg(Long rundaId, Long ucesnikId, Boolean tacno, Double udeo, long vremeMs, Long varijantaId) {

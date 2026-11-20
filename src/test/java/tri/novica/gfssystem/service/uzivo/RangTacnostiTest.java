@@ -30,7 +30,7 @@ class RangTacnostiTest {
         return new Odg(runda, ucesnik, tacno, null, ms, null);
     }
 
-    /** Odgovor sa sačuvanim udelom (V26); {@code tacno} je "potpuno tačno". */
+    /** Odgovor sa sačuvanim udelom (V27); {@code tacno} je "potpuno tačno". */
     static Odg udeo(long runda, long ucesnik, double udeo, long ms) {
         return new Odg(runda, ucesnik, udeo >= 1, udeo, ms, null);
     }

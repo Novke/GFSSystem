@@ -49,7 +49,7 @@ public final class RezultatBuilder {
     }
 
     /**
-     * Udeo odgovora: sačuvani {@code udeo}; bez njega (red stariji od V26) sačuvana ocena 1/0 (preocena posle časa menja nju);
+     * Udeo odgovora: sačuvani {@code udeo}; bez njega (red stariji od V27) sačuvana ocena 1/0 (preocena posle časa menja nju);
      * bez nje udeo po snimku ({@link Ocenjivac#udeoIzbora} za "više tačnih", ostali tipovi 1/0 po {@link #tacan}).
      */
     public static double udeoIli(PitanjeSnimak p, Odgovor o) {

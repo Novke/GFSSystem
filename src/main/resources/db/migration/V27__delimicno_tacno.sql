@@ -1,4 +1,4 @@
--- V26: delimično tačno (spec docs/superpowers/specs/2026-11-20-delimicno-tacno-design.md u wrapper repou).
+-- V27: delimično tačno (spec docs/superpowers/specs/2026-11-20-delimicno-tacno-design.md u wrapper repou).
 -- odgovori.udeo: udeo tačnosti odgovora od 0 do 1 (VISE_TACNIH: max(0, (tačni izabrani - pogrešni izabrani) / broj tačnih),
 -- ostali tipovi i zadatak 1 ili 0); NULL kad pitanje nema tačan odgovor, kao tacno. preocene_odgovora.staro_udeo: udeo pre
 -- preocene, da vrati_preocenu vrati tačno ono što je bilo. DOUBLE bez zaokruživanja (2/3 ostaje 2/3; prikaz zaokružuje).
@@ -15,11 +15,11 @@
 --     trajanju (NULL = osnovni 1000);
 --   * inače (preocenjen, drugi tip, zadatak) udeo = IF(tacno, 1, 0), poeni ostaju.
 -- Trag preocene po istom pravilu iz staro_tacno (izbor odgovora se preocenom ne menja), a stari_poeni po formuli u takmičenju,
--- da vraćanje preocene od pre V26 vrati udeo i poene kakve bi dao nov odgovor. Zbir poena se nigde ne čuva (ucesnici i
+-- da vraćanje preocene od pre V27 vrati udeo i poene kakve bi dao nov odgovor. Zbir poena se nigde ne čuva (ucesnici i
 -- izvodjenja nemaju takvu kolonu; rang i lista poena sabiraju odgovori.poeni pri čitanju), pa nema šta drugo da se preračuna.
--- Aditivno: dve nullable kolone. Rollback (stara slika, pre V26): ddl-auto=validate ne gleda višak i stara slika piše odgovore
+-- Aditivno: dve nullable kolone. Rollback (stara slika, pre V27): ddl-auto=validate ne gleda višak i stara slika piše odgovore
 -- bez udela (NULL); čitaoci nove slike zato uvek čitaju COALESCE(udeo, IF(tacno, 1, 0)).
--- Idempotentno kao V2-V25: kolone preko information_schema + PREPARE. Bez privremenih tabela i pogleda (CTE unutar UPDATE-a),
+-- Idempotentno kao V2-V26: kolone preko information_schema + PREPARE. Bez privremenih tabela i pogleda (CTE unutar UPDATE-a),
 -- pa traži samo prava koja su tražile i ranije migracije (ALTER, SELECT, UPDATE), ne CREATE TEMPORARY TABLES.
 
 -- ---------------------------------------------------------------- odgovori: udeo

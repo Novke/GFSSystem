@@ -451,7 +451,7 @@ class NastavnickoStanjeTest {
         IzvodjenjeRezultati rez = service.rezultati(IZ);
         assertEquals(50, rez.pitanja().get(1).procenatTacnih());
         assertEquals(50, rez.pitanja().get(0).procenatTacnih());
-        // red bez udela i bez ocene (nemoguće posle V26, ali čitač ne puca): udeo iz snimka i izbora
+        // red bez udela i bez ocene (nemoguće posle V27, ali čitač ne puca): udeo iz snimka i izbora
         bojanR2.setUdeo(null);
         bojanR2.setTacno(null);
         assertEquals(0.5, service.nastavnicko(IZ).ucesnici().get(1).udeo());
