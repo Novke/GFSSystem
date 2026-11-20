@@ -62,6 +62,9 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/uzivo/{kod}/ja"),
             new Pravilo(POST, "/public/uzivo/{kod}/prijava"),
             new Pravilo(GET, "/public/mediji/{uuid}"),
+            // fajlovi na času po kratkom kodu sa table (spec fajlova 5); kod i ograničenje pogrešnih su u servisu
+            new Pravilo(GET, "/public/fajlovi/{kod}"),
+            new Pravilo(GET, "/public/fajlovi/{kod}/{fajlId}"),
             // studentski WebSocket: rukovanje i dalje traži kolačić učesnika (UzivoHandshakeInterceptor)
             new Pravilo(null, "/public/ws"),
             // studentski nalog bez lozinke

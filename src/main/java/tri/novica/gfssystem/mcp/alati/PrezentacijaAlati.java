@@ -18,6 +18,7 @@ import tri.novica.gfssystem.mcp.McpGreske;
 import tri.novica.gfssystem.mcp.McpLinkovi;
 import tri.novica.gfssystem.mcp.McpOdgovor;
 import tri.novica.gfssystem.mcp.McpPatch;
+import tri.novica.gfssystem.mcp.servis.McpFajlovi;
 import tri.novica.gfssystem.mcp.servis.McpPrezentacije;
 import tri.novica.gfssystem.mcp.servis.McpSlajdSazetak;
 import tri.novica.gfssystem.utility.Promena;
@@ -39,8 +40,10 @@ public class PrezentacijaAlati {
     private final McpPrezentacije prezentacije;
     private final McpOdgovor odgovor;
     private final McpLinkovi linkovi;
+    private final McpFajlovi fajlovi;
 
-    public PrezentacijaAlati(McpPrezentacije prezentacije, McpOdgovor odgovor, McpLinkovi linkovi) {
+    public PrezentacijaAlati(McpPrezentacije prezentacije, McpOdgovor odgovor, McpLinkovi linkovi, McpFajlovi fajlovi) {
+        this.fajlovi = fajlovi;
         this.prezentacije = prezentacije;
         this.odgovor = odgovor;
         this.linkovi = linkovi;
@@ -291,6 +294,68 @@ public class PrezentacijaAlati {
         return McpGreske.izvrsi("obrisi_koriscen_slajd", serija, poziv -> {
             poziv.id("slajd", slajdId);
             return odgovor.json(Map.of("izmenaId", prezentacije.obrisiKoriscenSlajd(slajdId, serija)));
+        });
+    }
+
+    // ---------------------------------------------------------------- fajlovi za studente
+
+    @McpTool(name = "fajlovi_prezentacije", description = "Fajlovi za studente uz prezentaciju redom: `id`, `naziv`, `slajdId` "
+            + "(null = uz celu prezentaciju), `velicina`, `tip`. Fajl se studentima pokazuje na času pored slajda uz koji je vezan "
+            + "(ili uz sve slajdove), preko koda sa table.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult fajloviPrezentacije(
+            @McpToolParam(description = "Id prezentacije.") Long prezentacijaId) {
+        return McpGreske.izvrsi("fajlovi_prezentacije", poziv -> {
+            poziv.id("prezentacija", prezentacijaId);
+            return odgovor.json(fajlovi.fajloviPrezentacije(prezentacijaId));
+        });
+    }
+
+    @McpTool(name = "dodaj_fajl", description = "Veže otpremljen fajl (`POST /mcp/prilozi` sa `namena=fajl`, preko `gfs-mcp-upload`) "
+            + "za prezentaciju, na kraj spiska: DOCX, XLSX, PPTX, PDF ili ZIP, najviše 30 po prezentaciji. `medijId` mora biti vrste "
+            + "`FAJL_PREZENTACIJE` i još nevezan, inače 409. `slajdId` (iz iste prezentacije) ograničava fajl na taj slajd, bez njega "
+            + "je uz celu prezentaciju. Prezentacija koja se izvodi sme da se menja. Vraća fajl. " + McpAlati.NE_PONAVLJAJ,
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false,
+                    openWorldHint = false))
+    public CallToolResult dodajFajl(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id prezentacije.") Long prezentacijaId,
+            @McpToolParam(description = "Id otpremljenog medija vrste FAJL_PREZENTACIJE.") String medijId,
+            @McpToolParam(description = "Id slajda iz iste prezentacije; bez njega uz celu prezentaciju.", required = false) Long slajdId,
+            @McpToolParam(description = "Ime koje student vidi; bez njega ime otpremljenog fajla.", required = false) String naziv) {
+        return McpGreske.izvrsi("dodaj_fajl", serija, poziv -> {
+            poziv.id("prezentacija", prezentacijaId);
+            return odgovor.json(fajlovi.dodajFajl(prezentacijaId, medijId, slajdId, naziv, serija));
+        });
+    }
+
+    @McpTool(name = "izmeni_fajl", description = "Menja ime fajla i slajd uz koji se pokazuje; oba se uvek šalju (`slajdId` null = uz "
+            + "celu prezentaciju). Prezentacija koja se izvodi sme da se menja. Vraća fajl.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult izmeniFajl(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id fajla.") Long fajlId,
+            @McpToolParam(description = "Novo ime.") String naziv,
+            @McpToolParam(description = "Id slajda iz iste prezentacije ili null za celu prezentaciju.", required = false) Long slajdId) {
+        return McpGreske.izvrsi("izmeni_fajl", serija, poziv -> {
+            poziv.id("fajl", fajlId);
+            return odgovor.json(fajlovi.izmeniFajl(fajlId, naziv, slajdId, serija));
+        });
+    }
+
+    @McpTool(name = "obrisi_fajl", description = "Briše fajl uz prezentaciju i njegov medij; ne vraća se (otpremi ga ponovo). "
+            + "Prezentacija koja se izvodi sme da se menja. Vraća `{obrisan: fajlId}`.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true,
+                    openWorldHint = false))
+    public CallToolResult obrisiFajl(
+            @McpToolParam(description = "Serija ovog zahteva.") String serija,
+            @McpToolParam(description = "Id fajla.") Long fajlId) {
+        return McpGreske.izvrsi("obrisi_fajl", serija, poziv -> {
+            poziv.id("fajl", fajlId);
+            fajlovi.obrisiFajl(fajlId, serija);
+            return odgovor.json(Map.of("obrisan", fajlId));
         });
     }
 

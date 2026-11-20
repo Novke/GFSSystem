@@ -17,6 +17,8 @@ import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
+import tri.novica.gfssystem.repository.fajlovi.SlajdoviIzvodjenjaRepository;
+import tri.novica.gfssystem.service.fajlovi.KodoviFajlova;
 import tri.novica.gfssystem.repository.uzivo.*;
 import tri.novica.gfssystem.security.IdentitetStudenta;
 import tri.novica.gfssystem.utility.Nivo;
@@ -93,6 +95,8 @@ public class IzvodjenjeService {
     private final StanjeService stanjeService;
     private final ZadatakDodelaService zadatakDodelaService;
     private final TemeZaVezbanje temeZaVezbanje;
+    private final SlajdoviIzvodjenjaRepository slajdoviIzvodjenja;
+    private final KodoviFajlova kodoviFajlova;
     private final RangTacnostiService rangTacnosti;
     private final RangPrikazRegistar rangPrikazi;
     private final ImenaUcesnika imenaUcesnika;
@@ -180,6 +184,7 @@ public class IzvodjenjeService {
             log.error("Upis izvođenja nije uspeo: prezentacija={}", p.getId(), e);
             throw e;
         }
+        kodoviFajlova.obezbedi(iz);   // kratak kod za /f/<kod>; bez koda izvođenje kreće (projektor ne prikazuje link)
         log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}, boduje={}", iz.getId(), p.getId(), cuvanje,
                 c.boduje());
         return IzvodjenjeMapper.info(iz, 0, 0);
@@ -381,6 +386,7 @@ public class IzvodjenjeService {
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
         temeZaVezbanje.prikazan(iz, s.getId());   // studentski pregled: slajd vidljiv grupi posle kraja izvođenja
+        slajdoviIzvodjenja.upisiPrikaz(iz.getId(), s.getId(), sada());   // fajlovi na času: slajd je prikazan (svako izvođenje)
         if (!TokIzvodjenja.saRundama(s)) {
             iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
