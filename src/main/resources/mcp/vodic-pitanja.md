@@ -43,7 +43,7 @@ Zadatak slajd na času: svaki student na telefonu dobija svoju nasumičnu varija
 - Bez `naslov`, `sadrzaj`, `pitanje` i `slikaId`: tekst zadatka dolazi iz varijante.
 
 ## Fajlovi za studente uz prezentaciju
-- Fajl (DOCX, XLSX, PPTX, PDF ili ZIP, do 10 MB, najviše 30 po prezentaciji) student preuzima sa telefona na času: na tabli i konzoli stoji kratak kod (`gfs.trif.rs/f/<kod>`), a spisak nosi fajlove uz prikazane slajdove i one uz celu prezentaciju. Fajl uz slajd se pojavi tek kad se slajd prikaže.
+- Fajl (DOCX, XLSX, PPTX, PDF ili ZIP, do 10 MB, najviše 30 po prezentaciji) student preuzima sa telefona na času: kratak kod (`gfs.trif.rs/f/<kod>`) stoji u konzoli, a na tabli samo na slajdu koji ima svoj fajl i, za fajlove uz celu prezentaciju, na prijavi i prvom slajdu (nastavnik ga tasterom K pokaže bilo kad), a spisak nosi fajlove uz prikazane slajdove i one uz celu prezentaciju. Fajl uz slajd se pojavi tek kad se slajd prikaže.
 - Tok: otpremi fajl iz Bash-a sa `gfs-mcp-upload <gfs|gfs-staging> <fajl> --fajl --serija <serija>` (`POST /mcp/prilozi` sa `namena=fajl`, vrsta `FAJL_PREZENTACIJE`), pa `dodaj_fajl` (`serija`, `prezentacijaId`, `medijId`, `slajdId?`, `naziv?`). Bez `slajdId` fajl ide uz celu prezentaciju. Medij druge vrste ili već vezan je 409.
 - `fajlovi_prezentacije` (`prezentacijaId`) daje spisak, `izmeni_fajl` (`serija`, `fajlId`, `naziv`, `slajdId` ili null) menja ime i slajd, `obrisi_fajl` (`serija`, `fajlId`) briše fajl i medij. Za razliku od slajdova, fajlovi se smeju menjati i dok se prezentacija izvodi. `prezentacija` nosi `brojFajlova` po slajdu.
 
