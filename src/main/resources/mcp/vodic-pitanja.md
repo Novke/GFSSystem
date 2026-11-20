@@ -42,6 +42,11 @@ Zadatak slajd na času: svaki student na telefonu dobija svoju nasumičnu varija
 - Odgovor `dodaj_slajd` nosi `slajd.zadatak` sa `putanja`, `brojAktivnih`, `brojVarijanti` i `upozorenja`. **Pročitaj `upozorenja` i javi ih Novici** rečima: `Tema je isključena.`, `Grupa nema aktivnih varijanti; odobri nacrte u banci pre časa.`, `Isključene podgrupe se ne izvlače: …`. Upozorenje nije greška: slajd je dodat.
 - Bez `naslov`, `sadrzaj`, `pitanje` i `slikaId`: tekst zadatka dolazi iz varijante.
 
+## Fajlovi za studente uz prezentaciju
+- Fajl (DOCX, XLSX, PPTX, PDF ili ZIP, do 10 MB, najviše 30 po prezentaciji) student preuzima sa telefona na času: na tabli i konzoli stoji kratak kod (`gfs.trif.rs/f/<kod>`), a spisak nosi fajlove uz prikazane slajdove i one uz celu prezentaciju. Fajl uz slajd se pojavi tek kad se slajd prikaže.
+- Tok: otpremi fajl iz Bash-a sa `gfs-mcp-upload <gfs|gfs-staging> <fajl> --fajl --serija <serija>` (`POST /mcp/prilozi` sa `namena=fajl`, vrsta `FAJL_PREZENTACIJE`), pa `dodaj_fajl` (`serija`, `prezentacijaId`, `medijId`, `slajdId?`, `naziv?`). Bez `slajdId` fajl ide uz celu prezentaciju. Medij druge vrste ili već vezan je 409.
+- `fajlovi_prezentacije` (`prezentacijaId`) daje spisak, `izmeni_fajl` (`serija`, `fajlId`, `naziv`, `slajdId` ili null) menja ime i slajd, `obrisi_fajl` (`serija`, `fajlId`) briše fajl i medij. Za razliku od slajdova, fajlovi se smeju menjati i dok se prezentacija izvodi. `prezentacija` nosi `brojFajlova` po slajdu.
+
 ## Formule `$…$`
 - Važe u tekstu pitanja i u tekstu opcija (ne u INFO, beleškama, prihvatljivim odgovorima, jedinici ni oznakama skale) i crtaju se na projektoru i na telefonu. Unutra je LaTeX matematika: `\frac{a}{b}`, `x^2`, `\sqrt{2}`, `1011_{(2)}`.
 - Pravila: posle `$` koji otvara ne sme razmak; unutra nema novog reda ni drugog `$`; pre `$` koji zatvara nema razmaka ni `\`; odmah posle `$` koji zatvara ne sme cifra. `$` odmah posle cifre ne otvara formulu (`5$` je iznos, pa ni `2$x$` nije formula; piši `2 $x$`). `\$` je uvek znak dolara, a `$$...$$` ne postoji.

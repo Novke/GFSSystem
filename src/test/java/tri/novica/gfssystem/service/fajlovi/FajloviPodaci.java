@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Pomoć za testove fajlova: prezentacije, slajdovi i fajlovi (JDBC red + pravi medij), čišćenje medija. */
-final class FajloviPodaci {
+public final class FajloviPodaci {
 
     static final byte[] PK = {0x50, 0x4B, 0x03, 0x04, 0x14, 0, 6, 0, 8, 0};
 
@@ -23,24 +23,24 @@ final class FajloviPodaci {
     final List<String> mediji = new ArrayList<>();
     private int rb = 1;
 
-    FajloviPodaci(JdbcTemplate jdbc, MedijService medijService, PrezentacijaService prezentacijaService, Long predmetId) {
+    public FajloviPodaci(JdbcTemplate jdbc, MedijService medijService, PrezentacijaService prezentacijaService, Long predmetId) {
         this.jdbc = jdbc;
         this.medijService = medijService;
         this.prezentacijaService = prezentacijaService;
         this.predmetId = predmetId;
     }
 
-    Long prezentacija(String naziv) {
+    public Long prezentacija(String naziv) {
         return prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmetId, naziv, null, null)).id();
     }
 
-    Long slajd(Long prezentacijaId, String naslov) {
+    public Long slajd(Long prezentacijaId, String naslov) {
         return prezentacijaService.dodajSlajd(prezentacijaId, new SlajdCmd(TipSlajda.INFO, naslov, "x", null, null, false,
                 null, null, null, null), null).id();
     }
 
     /** Fajl uz prezentaciju ({@code slajdId} null = uz celu). */
-    Long fajl(Long prezentacijaId, Long slajdId, String naziv) {
+    public Long fajl(Long prezentacijaId, Long slajdId, String naziv) {
         String medij = medijService.sacuvajFajl(PK, naziv).id();
         mediji.add(medij);
         LocalDateTime sada = LocalDateTime.now();
@@ -49,13 +49,13 @@ final class FajloviPodaci {
         return jdbc.queryForObject("select id from fajlovi_prezentacije where medij_id = ?", Long.class, medij);
     }
 
-    void zavrsiIzvodjenje(Long izvodjenjeId) {
+    public void zavrsiIzvodjenje(Long izvodjenjeId) {
         jdbc.update("update izvodjenja set status = 'ZAVRSENO', aktivan_kod = null, kraj = ? where id = ?",
                 LocalDateTime.now(), izvodjenjeId);
     }
 
     /** Posle {@code CasPodaci.obrisi()} (redovi fajlova su otišli kaskadom): brišu se i mediji. */
-    void ocisti() {
+    public void ocisti() {
         for (String id : mediji) medijService.obrisi(id);
     }
 }

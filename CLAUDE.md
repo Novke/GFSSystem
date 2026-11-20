@@ -1124,6 +1124,31 @@ nullable `rasporedi.podsetnik_vreme` filled with 18:00 for existing periods). Pa
 - **Tests:** `PushTekstoviTest`, `WebPushSifraTest` (RFC vector), `PushDbTest` (subscriptions, ownership, limits, bell), `PushPortalDbTest`
   (grades, after class), `PushRasporedDbTest` (reminder rules, cancellation, teacher push), `CiscenjePrijaveIT`, `PristupMatricaTest` snapshot.
 
+## Fajlovi uz prezentaciju
+
+Files for students (DOCX, XLSX, PPTX, PDF, ZIP; medium kind `FAJL_PREZENTACIJE`) attached to a presentation, optionally to one slide. Tables `fajlovi_prezentacije`,
+`kodovi_fajlova`, `slajdovi_izvodjenja` (Flyway V26). Foundation: `KodoviFajlova` (codes), `PristupFajlovima` (who may see what), `FajlMapper`, `Preuzimanje`
+(download headers), `MedijService.sacuvajFajl`. Spec: `docs/superpowers/specs/` ("fajlovi uz prezentaciju").
+
+### Čas, kodovi i MCP
+- **Teacher service `service/fajlovi/FajloviPrezentacijeServis`** serves both REST (`rest/fajlovi/FajloviPrezentacijeRest`, ADMIN: `GET|POST /prezentacije/{id}/fajlovi`,
+  `PUT /prezentacije/{id}/fajlovi/redosled`, `PUT|DELETE /fajlovi-prezentacije/{id}`, `GET /fajlovi-prezentacije/{id}/sadrzaj`) and the MCP facade `McpFajlovi`.
+  At most 30 files per presentation (409/400 messages are constants there), the slide must belong to the same presentation (400), the order must list every id exactly once (400),
+  the presentation row is locked (`findByIdForUpdate`). **Unlike slides, files may be edited while the presentation is running** (deliberate deviation: a file is handed out, not
+  a part of the run). Deleting a presentation first deletes its files and media (`PrezentacijaService.obrisiZakljucanu`); deleting a slide relies on the FK `SET NULL`, so the file stays with the whole presentation.
+- **Run:** `IzvodjenjeService.pokreni` calls `KodoviFajlova.obezbedi(iz)` (one 4-digit code per lecture, a second run of the same lecture gets the same code; a run without a lecture gets its own,
+  valid while active) and every slide change writes `slajdovi_izvodjenja` through `upisiPrikaz` next to `temeZaVezbanje.prikazan`. A file attached to a slide reaches students only after that slide was shown.
+- **State:** `NastavnickoStanje.fajlovi` (`FajloviSlajda {kod, link, fajlovi[]}` or null) and `JavnoStanje.fajlovi` (`FajlKratko {id, naziv, vrsta, velicina}[]`, empty when none), both last fields,
+  built by `FajloviStanja` (current slide's files plus files without a slide, only while the code is valid and the run is `AKTIVNO`; one files query, the code query only when files exist; the state goes out up to 4 times per second).
+- **Public:** `GET /public/fajlovi/{kod}` (`FajloviCasa`, `Cache-Control: no-store`) and `GET /public/fajlovi/{kod}/{fajlId}` (bytes through `Preuzimanje`), class ANONIMNO in `PristupMatrica`, open-in-view off
+  (`OtvorenEntityManagerConfig`). A wrong or expired code is 404 `Kod ne važi. Proveri broj sa table.` and costs one attempt (`VrstaPokusaja.KOD_FAJLOVA`, key = IP); 40 wrong ones in 15 minutes
+  is 429 `Previše pogrešnih kodova. Pokušaj ponovo za 15 minuta.` for any code; a correct code costs nothing; a file off the list is the same 404 without an attempt (`FajloviCasaServis`).
+- **MCP (level "slobodno", no card):** `POST /mcp/prilozi` takes the optional `namena` (`prilog` default, `fajl` = `McpFajlovi.sacuvajFajl` -> `FAJL_PREZENTACIJE`, anything else 400; no new path, same daily upload budget).
+  Tools `fajlovi_prezentacije {prezentacijaId}`, `dodaj_fajl {serija, prezentacijaId, medijId, slajdId?, naziv?}` (medium must be unbound `FAJL_PREZENTACIJE`, else 409; not idempotent),
+  `izmeni_fajl {serija, fajlId, naziv, slajdId|null}`, `obrisi_fajl {serija, fajlId}`; the `prezentacija` overview carries `brojFajlova` per slide (and `fajloviUzCeluPrezentaciju`);
+  `vodic` topic `pitanja` describes the flow. The new service methods are listed in `McpOpsegTest.DOZVOLJENE_METODE`, the facade in `McpFasadeTest`, the tools in `McpAlatiTest`.
+- **Tests:** `FajloviPrezentacijeIT`, `PublicFajloviRestIT`, `FajloviAlatiDbTest` (helpers `FajloviPodaci`, `PomerljivSatConfig`); run only against the throwaway MySQL on 3307.
+
 ## Build & Run
 
 ```bash
