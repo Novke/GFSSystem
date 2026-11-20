@@ -181,24 +181,63 @@ class OcenjivacTest {
         assertFalse(p.imaTacanOdgovor());
     }
 
+    // --- udeo (delimično tačno) ---
+
+    private static void udeo(PitanjeSnimak p, double ocekivano, Long... izbor) {
+        assertEquals(ocekivano, Ocenjivac.udeo(p, op(izbor)), 1e-9);
+        assertEquals(ocekivano, Ocenjivac.udeoIzbora(p, List.of(izbor)), 1e-9);
+    }
+
+    @Test void udeoViseTacnih() {
+        PitanjeSnimak p = pitanje(TipPitanja.VISE_TACNIH, opcije(10, 11), null, null, null, null);
+        udeo(p, 0.5, 10L);
+        udeo(p, 1.0, 10L, 11L);
+        udeo(p, 0.0, 10L, 12L);
+        udeo(p, 0.5, 10L, 11L, 12L);
+        udeo(p, 0.0, 12L);
+        udeo(p, 0.0, 12L, 13L);
+        PitanjeSnimak tri = pitanje(TipPitanja.VISE_TACNIH, opcije(10, 11, 12), null, null, null, null);
+        udeo(tri, 2.0 / 3, 10L, 11L);
+        PitanjeSnimak jedna = pitanje(TipPitanja.VISE_TACNIH, opcije(10), null, null, null, null);
+        udeo(jedna, 1.0, 10L);
+        udeo(jedna, 0.0, 10L, 11L);
+    }
+
+    @Test void udeoOstaliTipovi() {
+        PitanjeSnimak p = pitanje(TipPitanja.JEDAN_TACAN, opcije(11), null, null, null, null);
+        assertEquals(1.0, Ocenjivac.udeo(p, op(11L)));
+        assertEquals(0.0, Ocenjivac.udeo(p, op(10L)));
+        PitanjeSnimak a = pitanje(TipPitanja.ANKETA, opcije(), null, null, null, null);
+        assertNull(Ocenjivac.udeo(a, op(10L)));
+        ocekujGresku("Izaberi bar jedan odgovor.",
+                () -> Ocenjivac.udeo(pitanje(TipPitanja.VISE_TACNIH, opcije(10), null, null, null, null), op()));
+    }
+
+    @Test void poeniPoUdelu() {
+        assertEquals(500, Ocenjivac.poeni(0.5, true, null, 0));
+        assertEquals(375, Ocenjivac.poeni(0.5, true, 10000L, 5000));
+        assertEquals(0, Ocenjivac.poeni(0.5, false, 10000L, 5000));
+        assertEquals(0, Ocenjivac.poeni((Double) null, true, 10000L, 5000));
+    }
+
     // --- poeni ---
 
     @Test void poeniSaTajmerom() {
-        assertEquals(1000, Ocenjivac.poeni(true, true, 20000L, 0));
-        assertEquals(750, Ocenjivac.poeni(true, true, 20000L, 10000));
-        assertEquals(500, Ocenjivac.poeni(true, true, 20000L, 20000));
-        assertEquals(500, Ocenjivac.poeni(true, true, 20000L, 30000));
+        assertEquals(1000, Ocenjivac.poeni(1.0, true, 20000L, 0));
+        assertEquals(750, Ocenjivac.poeni(1.0, true, 20000L, 10000));
+        assertEquals(500, Ocenjivac.poeni(1.0, true, 20000L, 20000));
+        assertEquals(500, Ocenjivac.poeni(1.0, true, 20000L, 30000));
     }
 
     @Test void poeniBezTajmera() {
-        assertEquals(1000, Ocenjivac.poeni(true, true, null, 5000));
-        assertEquals(1000, Ocenjivac.poeni(true, true, 0L, 5000));
+        assertEquals(1000, Ocenjivac.poeni(1.0, true, null, 5000));
+        assertEquals(1000, Ocenjivac.poeni(1.0, true, 0L, 5000));
     }
 
     @Test void poeniNula() {
-        assertEquals(0, Ocenjivac.poeni(false, true, 20000L, 1000));
+        assertEquals(0, Ocenjivac.poeni(0.0, true, 20000L, 1000));
         assertEquals(0, Ocenjivac.poeni(null, true, 20000L, 1000));
-        assertEquals(0, Ocenjivac.poeni(true, false, 20000L, 1000));
-        assertEquals(0, Ocenjivac.poeni(false, true, null, 1000));
+        assertEquals(0, Ocenjivac.poeni(1.0, false, 20000L, 1000));
+        assertEquals(0, Ocenjivac.poeni(0.0, true, null, 1000));
     }
 }

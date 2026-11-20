@@ -2,11 +2,13 @@ package tri.novica.gfssystem.service.uzivo;
 
 import tri.novica.gfssystem.exceptions.SystemException;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import tri.novica.gfssystem.entity.uzivo.OdstupanjeTip;
+import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 
 /** Provera oblika, tačnost i poeni odgovora. Čiste funkcije, bez baze. */
 public final class Ocenjivac {
@@ -21,17 +23,40 @@ public final class Ocenjivac {
      * kratak tekst bez prihvatljivih). Neispravan oblik odgovora baca {@link SystemException} 400.
      */
     public static Boolean tacno(PitanjeSnimak p, OdgovorVrednost v) {
+        Double udeo = udeo(p, v);
+        return udeo == null ? null : udeo >= 1.0 - EPS;
+    }
+
+    /**
+     * Udeo tačnosti odgovora od 0 do 1; {@code null} kad pitanje nema tačan odgovor. Samo {@code VISE_TACNIH} daje
+     * razlomak: {@code max(0, (tačni izabrani - pogrešni izabrani) / broj tačnih)}, ostali tipovi 1 ili 0.
+     * Neispravan oblik odgovora baca {@link SystemException} 400.
+     */
+    public static Double udeo(PitanjeSnimak p, OdgovorVrednost v) {
         proveri(p, v);
         if (!p.imaTacanOdgovor()) return null;
+        if (p.tip() == TipPitanja.VISE_TACNIH) return udeoIzbora(p, v.opcije());
+        Boolean t = tacnoBinarno(p, v);
+        return t == null ? null : (t ? 1.0 : 0.0);
+    }
+
+    /** Udeo izbora za {@code VISE_TACNIH} bez provere oblika; {@code null} kad nema tačnih opcija. */
+    public static Double udeoIzbora(PitanjeSnimak p, Collection<Long> izabrane) {
+        Set<Long> tacne = p.opcije().stream().filter(OpcijaSnimak::tacna).map(OpcijaSnimak::id)
+                .collect(Collectors.toSet());
+        if (tacne.isEmpty()) return null;
+        Set<Long> izbor = new HashSet<>(izabrane);
+        long pogodjene = izbor.stream().filter(tacne::contains).count();
+        long pogresne = izbor.size() - pogodjene;
+        return Math.max(0.0, (double) (pogodjene - pogresne) / tacne.size());
+    }
+
+    private static Boolean tacnoBinarno(PitanjeSnimak p, OdgovorVrednost v) {
         return switch (p.tip()) {
             case JEDAN_TACAN, TACNO_NETACNO -> p.opcije().stream()
                     .filter(o -> o.id().equals(v.opcije().get(0)))
                     .findFirst().orElseThrow().tacna();
-            case VISE_TACNIH -> {
-                Set<Long> tacne = p.opcije().stream().filter(OpcijaSnimak::tacna).map(OpcijaSnimak::id)
-                        .collect(Collectors.toSet());
-                yield tacne.equals(new HashSet<>(v.opcije()));
-            }
+            case VISE_TACNIH -> throw new IllegalStateException("VISE_TACNIH ide kroz udeo");
             case KRATAK_TEKST -> {
                 String kljuc = Normalizacija.tekst(v.tekst());
                 yield p.prihvatljiviOdgovori().stream().anyMatch(a -> Normalizacija.tekst(a).equals(kljuc));
@@ -83,14 +108,17 @@ public final class Ocenjivac {
     }
 
     /**
-     * Poeni za odgovor: samo tačan odgovor u takmičenju; 1000 bez tajmera, inače od 1000 (odmah) do 500 (na isteku)
-     * linearno po brzini.
+     * Poeni za odgovor: samo u takmičenju, srazmerno udelu tačnosti; osnovni 1000 bez tajmera, inače od 1000 (odmah)
+     * do 500 (na isteku) linearno po brzini, pa {@code round(osnovni * udeo)}. Udeo {@code null} ili 0 daje 0.
      */
-    public static int poeni(Boolean tacno, boolean takmicenje, Long trajanjeMs, long vremeMs) {
-        if (!takmicenje || !Boolean.TRUE.equals(tacno)) return 0;
-        if (trajanjeMs == null || trajanjeMs <= 0) return OSNOVA_POENA;
-        double udeo = Math.min(Math.max((double) vremeMs, 0.0) / trajanjeMs, 1.0);
-        return (int) Math.round(OSNOVA_POENA * (1 - udeo / 2));
+    public static int poeni(Double udeo, boolean takmicenje, Long trajanjeMs, long vremeMs) {
+        if (!takmicenje || udeo == null || udeo <= 0) return 0;
+        double osnovni = OSNOVA_POENA;
+        if (trajanjeMs != null && trajanjeMs > 0) {
+            double protekli = Math.min(Math.max((double) vremeMs, 0.0) / trajanjeMs, 1.0);
+            osnovni = OSNOVA_POENA * (1 - protekli / 2);
+        }
+        return (int) Math.round(osnovni * udeo);
     }
 
     private static void proveriOpcije(PitanjeSnimak p, List<Long> ids) {

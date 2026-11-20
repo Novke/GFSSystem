@@ -202,7 +202,7 @@ public class PreocenaOdgovoraService {
         if (Objects.equals(o.getTacno(), novo) && Objects.equals(o.getPolja(), polja)) {
             return false;
         }
-        zapisi(o, novo, polja, Ocenjivac.poeni(novo, iz.isTakmicenje(), runda.getTrajanjeMs(), o.getVremeMs()), razlog, serija);
+        zapisi(o, novo, polja, Ocenjivac.poeni(novo ? 1.0 : 0.0, iz.isTakmicenje(), runda.getTrajanjeMs(), o.getVremeMs()), razlog, serija);
         return true;
     }
 
