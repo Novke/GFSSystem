@@ -409,7 +409,8 @@ public class StanjeService {
         List<RezultatOpcija> opcije = r.opcije().stream()
                 .map(o -> new RezultatOpcija(o.id(), null, o.broj(), o.tacna()))
                 .toList();
-        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala(), r.tacnih());
+        return new Rezultat(r.tip(), r.ukupno(), opcije, r.brojevi(), r.tekstovi(), r.skala(), r.tacnih(),
+                r.delimicnih(), r.zbirUdela());
     }
 
     /**

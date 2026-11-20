@@ -27,21 +27,39 @@ public final class RezultatBuilder {
                 .filter(o -> p.tip() != TipPitanja.KRATAK_TEKST || !sakriveniKljucevi.contains(kljuc(o.getTekst())))
                 .toList();
         int ukupno = koristi.size();
-        Integer tacnih = tacanPrikazan && p.imaTacanOdgovor()
-                ? (int) koristi.stream().filter(o -> ocenjenTacno(p, o)).count() : null;
+        boolean prikaziTacnost = tacanPrikazan && p.imaTacanOdgovor();
+        Integer tacnih = prikaziTacnost
+                ? (int) koristi.stream().filter(o -> Boolean.TRUE.equals(Ocenjivac.tacnoIzUdela(udeoIli(p, o)))).count()
+                : null;
+        Integer delimicnih = prikaziTacnost
+                ? (int) koristi.stream().map(o -> udeoIli(p, o))
+                        .filter(u -> u > 0 && !Boolean.TRUE.equals(Ocenjivac.tacnoIzUdela(u))).count()
+                : null;
+        Double zbirUdela = prikaziTacnost
+                ? Math.round(100.0 * koristi.stream().mapToDouble(o -> udeoIli(p, o)).sum()) / 100.0 : null;
         return switch (p.tip()) {
             case JEDAN_TACAN, VISE_TACNIH, ANKETA, TACNO_NETACNO ->
-                    new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null, tacnih);
-            case BROJ -> new Rezultat(p.tip(), ukupno, null, brojevi(p, koristi, tacanPrikazan), null, null, tacnih);
+                    new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null, tacnih, delimicnih, zbirUdela);
+            case BROJ -> new Rezultat(p.tip(), ukupno, null, brojevi(p, koristi, tacanPrikazan), null, null, tacnih,
+                    delimicnih, zbirUdela);
             case KRATAK_TEKST -> new Rezultat(p.tip(), ukupno, null, null,
-                    tekstovi(p, koristi, sakriveniKljucevi, tacanPrikazan), null, tacnih);
-            case SKALA -> new Rezultat(p.tip(), ukupno, null, null, null, skala(koristi), null);
+                    tekstovi(p, koristi, sakriveniKljucevi, tacanPrikazan), null, tacnih, delimicnih, zbirUdela);
+            case SKALA -> new Rezultat(p.tip(), ukupno, null, null, null, skala(koristi), null, null, null);
         };
     }
 
-    /** Sačuvana ocena odgovora (preocena posle časa menja nju), a bez nje ocena po snimku. */
-    private static boolean ocenjenTacno(PitanjeSnimak p, Odgovor o) {
-        return o.getTacno() != null ? o.getTacno() : tacan(p, o);
+    /**
+     * Udeo odgovora: sačuvani {@code udeo}; bez njega (red stariji od V26) sačuvana ocena 1/0 (preocena posle časa menja nju);
+     * bez nje udeo po snimku ({@link Ocenjivac#udeoIzbora} za "više tačnih", ostali tipovi 1/0 po {@link #tacan}).
+     */
+    public static double udeoIli(PitanjeSnimak p, Odgovor o) {
+        if (o.getUdeo() != null) return o.getUdeo();
+        if (o.getTacno() != null) return o.getTacno() ? 1.0 : 0.0;
+        if (p.tip() == TipPitanja.VISE_TACNIH) {
+            Double u = Ocenjivac.udeoIzbora(p, izabrane(o.getOpcije()));
+            return u == null ? 0.0 : u;
+        }
+        return tacan(p, o) ? 1.0 : 0.0;
     }
 
     /**

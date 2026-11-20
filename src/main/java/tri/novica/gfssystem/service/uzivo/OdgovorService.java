@@ -106,7 +106,7 @@ public class OdgovorService {
         } catch (SystemException e) {
             throw new OdgovorOdbijen(e.getMessage());
         }
-        Boolean tacno = udeo == null ? null : udeo >= 1.0 - 1e-9;
+        Boolean tacno = Ocenjivac.tacnoIzUdela(udeo);
         long vremeMs = vremeMs(r, sada);
 
         Odgovor o = new Odgovor();
@@ -118,6 +118,7 @@ public class OdgovorService {
         o.setTekst(v.tekst());
         o.setSkala(v.skala());
         o.setTacno(tacno);
+        o.setUdeo(udeo);
         o.setPoeni(Ocenjivac.poeni(udeo, iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
         o.setVremeMs(vremeMs);
         o.setSakriven(false);
@@ -146,6 +147,7 @@ public class OdgovorService {
         o.setPolja(jsonMapper.writeValueAsString(ishod.polja()));
         o.setVarijantaId(varijantaId);
         o.setTacno(ishod.tacno());
+        o.setUdeo(ishod.tacno() ? 1.0 : 0.0);
         o.setPoeni(Ocenjivac.poeni(ishod.tacno() ? 1.0 : 0.0, iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
         o.setVremeMs(vremeMs);
         o.setSakriven(false);

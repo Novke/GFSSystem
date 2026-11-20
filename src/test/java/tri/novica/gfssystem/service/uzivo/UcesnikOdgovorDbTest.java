@@ -80,6 +80,29 @@ class UcesnikOdgovorDbTest {
     }
 
     @Test
+    void viseTacnihUpisujeUdeo() {
+        PrezentacijaDetails p = prezentacijaService.kreiraj(new CreatePrezentacijaCmd(predmet.getId(), "Više tačnih", null, null));
+        prezentacije.add(p.id());
+        prezentacijaService.dodajSlajd(p.id(), new SlajdCmd(TipSlajda.PITANJE, null, null, null, null, false,
+                new PitanjeCmd(TipPitanja.VISE_TACNIH, "Koje sile?", null, null,
+                        List.of(new OpcijaCmd("A", true), new OpcijaCmd("B", true), new OpcijaCmd("C", false)),
+                        null, null, null, null, null, null, null, null), null, null), null);
+        PrezentacijaDetails d = prezentacijaService.detalji(p.id());
+        Long a = d.slajdovi().get(0).pitanje().opcije().get(0).id();
+        IzvodjenjeInfo info = izvodjenjeService.pokreni(p.id(), new PokreniCmd(false, null, null));
+        Long id = info.id();
+        Long ana = ucesnikService.prijavi(info.kod(), "Ana").info().ucesnikId();
+        k(id, TipKomande.SLEDECI);
+        k(id, TipKomande.OTVORI_ZATVORI);
+        Long rundaId = stanjeService.javno(id).pitanje().rundaId();
+        odgovorService.odgovori(id, ana, new OdgovorCmd(rundaId, List.of(a), null, null, null));
+        assertEquals(0.5, jdbc.queryForObject("select udeo from odgovori where runda_id = ? and ucesnik_id = ?",
+                Double.class, rundaId, ana));
+        assertEquals(Boolean.FALSE, jdbc.queryForObject("select tacno from odgovori where runda_id = ? and ucesnik_id = ?",
+                Boolean.class, rundaId, ana));
+    }
+
+    @Test
     void prijavaOdgovorIJavnoStanje() throws Exception {
         PrezentacijaDetails p = prezentacija();
         Long tacna = p.slajdovi().get(0).pitanje().opcije().get(0).id();

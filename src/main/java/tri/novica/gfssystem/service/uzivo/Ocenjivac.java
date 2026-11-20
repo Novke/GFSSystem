@@ -24,6 +24,11 @@ public final class Ocenjivac {
      */
     public static Boolean tacno(PitanjeSnimak p, OdgovorVrednost v) {
         Double udeo = udeo(p, v);
+        return tacnoIzUdela(udeo);
+    }
+
+    /** Potpuno tačan odgovor (udeo 1, sa tolerancijom); {@code null} kad udela nema. */
+    public static Boolean tacnoIzUdela(Double udeo) {
         return udeo == null ? null : udeo >= 1.0 - EPS;
     }
 

@@ -211,7 +211,7 @@ class ZadatakOdgovorDbTest {
     }
 
     Map<String, Object> red(Long ucesnik) {
-        return jdbc.queryForMap("select varijanta_id, tacno, polja, broj, opcije, tekst from odgovori "
+        return jdbc.queryForMap("select varijanta_id, tacno, udeo, polja, broj, opcije, tekst from odgovori "
                 + "where runda_id = ? and ucesnik_id = ?", rundaK, ucesnik);
     }
 
@@ -223,6 +223,7 @@ class ZadatakOdgovorDbTest {
         Map<String, Object> a = red(naA);
         assertEquals(varA, ((Number) a.get("varijanta_id")).longValue());
         assertEquals(Boolean.TRUE, a.get("tacno"));
+        assertEquals(1.0, ((Number) a.get("udeo")).doubleValue());
         assertEquals(jsonMapper.readTree("{\"a\":{\"vrednost\":\"45\",\"tacno\":true}}"),
                 jsonMapper.readTree((String) a.get("polja")));
         assertNull(a.get("broj"));
@@ -233,6 +234,7 @@ class ZadatakOdgovorDbTest {
         Map<String, Object> b = red(naB);
         assertEquals(varB, ((Number) b.get("varijanta_id")).longValue());
         assertEquals(Boolean.FALSE, b.get("tacno"), "ocena po varijanti B (a=13)");
+        assertEquals(0.0, ((Number) b.get("udeo")).doubleValue());
 
         odbijen("Već si odgovorio.", () -> odgovori(naA, Map.of("a", "45")));
     }

@@ -294,4 +294,32 @@ class RezultatBuilderTest {
         assertEquals(1, RezultatBuilder.izgradi(p, l, true, false).ukupno());
         assertEquals(2, RezultatBuilder.izgradi(p, l, false, false).ukupno());
     }
+
+    @Test void delimicniIZbirUdela() {
+        List<OpcijaSnimak> op = List.of(new OpcijaSnimak(10L, 1, "A", true), new OpcijaSnimak(11L, 2, "B", true),
+                new OpcijaSnimak(12L, 3, "C", false));
+        PitanjeSnimak p = snimak(TipPitanja.VISE_TACNIH, op, null, null, null, null);
+        List<Odgovor> l = new ArrayList<>();
+        for (int i = 0; i < 2; i++) l.add(opc("10,11"));
+        for (int i = 0; i < 4; i++) l.add(opc("10"));
+        for (int i = 0; i < 3; i++) l.add(opc("11"));
+        Rezultat r = RezultatBuilder.izgradi(p, l, false, true);
+        assertEquals(2, r.tacnih());
+        assertEquals(7, r.delimicnih());
+        assertEquals(5.5, r.zbirUdela());
+        Rezultat skriven = RezultatBuilder.izgradi(p, l, false, false);
+        assertNull(skriven.tacnih());
+        assertNull(skriven.delimicnih());
+        assertNull(skriven.zbirUdela());
+    }
+
+    @Test void udeoIliCitaUdeoPaTacnoPaSnimak() {
+        List<OpcijaSnimak> op = List.of(new OpcijaSnimak(10L, 1, "A", true), new OpcijaSnimak(11L, 2, "B", true));
+        PitanjeSnimak p = snimak(TipPitanja.VISE_TACNIH, op, null, null, null, null);
+        Odgovor a = opc("10"); a.setUdeo(0.25); a.setTacno(true);
+        assertEquals(0.25, RezultatBuilder.udeoIli(p, a));
+        Odgovor b = opc("10"); b.setTacno(true);
+        assertEquals(1.0, RezultatBuilder.udeoIli(p, b));
+        assertEquals(0.5, RezultatBuilder.udeoIli(p, opc("10")));
+    }
 }
