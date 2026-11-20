@@ -1,12 +1,15 @@
 package tri.novica.gfssystem.service.mejl;
 
+import jakarta.activation.DataHandler;
 import jakarta.mail.MessagingException;
+import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.util.ByteArrayDataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailPreparationException;
@@ -80,17 +83,40 @@ public class SmtpMejlServis implements MejlServis {
             m.setRecipient(MimeMessage.RecipientType.TO, new InternetAddress(poruka.za(), true));
             m.setSubject(poruka.naslov(), StandardCharsets.UTF_8.name());
             m.setSentDate(Date.from(clock.instant()));
-            if (poruka.html() == null) {
-                m.setText(poruka.telo(), StandardCharsets.UTF_8.name());
-            } else {
-                MimeMultipart alternativa = new MimeMultipart("alternative");
+            MimeMultipart alternativa = null;
+            if (poruka.html() != null) {
+                alternativa = new MimeMultipart("alternative");
                 MimeBodyPart tekst = new MimeBodyPart();
                 tekst.setText(poruka.telo(), StandardCharsets.UTF_8.name());
                 MimeBodyPart html = new MimeBodyPart();
                 html.setText(poruka.html(), StandardCharsets.UTF_8.name(), "html");
                 alternativa.addBodyPart(tekst);
                 alternativa.addBodyPart(html);
-                m.setContent(alternativa);
+            }
+            if (poruka.prilozi().isEmpty()) {
+                if (alternativa == null) {
+                    m.setText(poruka.telo(), StandardCharsets.UTF_8.name());
+                } else {
+                    m.setContent(alternativa);
+                }
+            } else {
+                MimeBodyPart telo = new MimeBodyPart();
+                if (alternativa == null) {
+                    telo.setText(poruka.telo(), StandardCharsets.UTF_8.name());
+                } else {
+                    telo.setContent(alternativa);
+                }
+                MimeMultipart mesovito = new MimeMultipart("mixed");
+                mesovito.addBodyPart(telo);
+                for (MejlPoruka.Prilog p : poruka.prilozi()) {
+                    MimeBodyPart deo = new MimeBodyPart();
+                    deo.setDataHandler(new DataHandler(new ByteArrayDataSource(p.sadrzaj(), p.mime())));
+                    deo.setDisposition(Part.ATTACHMENT);
+                    // ne-ASCII ime ide kao RFC 2231 ("filename*=UTF-8''..."), JavaMail podrazumevano (mail.mime.encodeparameters)
+                    deo.setFileName(p.naziv());
+                    mesovito.addBodyPart(deo);
+                }
+                m.setContent(mesovito);
             }
         } catch (MessagingException e) {
             // bez poruke izuzetka: može da nosi adresu

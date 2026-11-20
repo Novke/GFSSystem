@@ -986,7 +986,7 @@ public class VarijantaService {
         boolean zaLatex = switch (m.getVrsta()) {
             case PRILOG_SLIKA -> "image/png".equals(m.getMime()) || "image/jpeg".equals(m.getMime());
             case PRILOG_PDF -> "application/pdf".equals(m.getMime());
-            case SLIKA, RENDER_SVG -> throw new SystemException(NIJE_PRILOG, HttpStatus.BAD_REQUEST);
+            case SLIKA, RENDER_SVG, FAJL_PREZENTACIJE -> throw new SystemException(NIJE_PRILOG, HttpStatus.BAD_REQUEST);
         };
         if (!zaLatex) {
             throw new SystemException(RenderVarijante.NEDOZVOLJEN_PRILOG, HttpStatus.BAD_REQUEST);

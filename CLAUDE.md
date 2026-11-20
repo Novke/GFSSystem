@@ -1150,6 +1150,39 @@ nullable `rasporedi.podsetnik_vreme` filled with 18:00 for existing periods). Pa
 - **Tests:** `PushTekstoviTest`, `WebPushSifraTest` (RFC vector), `PushDbTest` (subscriptions, ownership, limits, bell), `PushPortalDbTest`
   (grades, after class), `PushRasporedDbTest` (reminder rules, cancellation, teacher push), `CiscenjePrijaveIT`, `PristupMatricaTest` snapshot.
 
+## Fajlovi uz prezentaciju
+
+Files for students (DOCX, XLSX, PPTX, PDF, ZIP; medium kind `FAJL_PREZENTACIJE`) attached to a presentation, optionally to one slide. Tables `fajlovi_prezentacije`,
+`kodovi_fajlova`, `slajdovi_izvodjenja` (Flyway V26). Foundation: `KodoviFajlova` (codes), `PristupFajlovima` (who may see what), `FajlMapper`, `Preuzimanje`
+(download headers), `MedijService.sacuvajFajl`. Spec: `docs/superpowers/specs/` ("fajlovi uz prezentaciju"). Pravilo "ko sme da preuzme" je samo u `service/fajlovi/PristupFajlovima` (kod, nalog, mejl).
+
+### Čas, kodovi i MCP
+- **Teacher service `service/fajlovi/FajloviPrezentacijeServis`** serves both REST (`rest/fajlovi/FajloviPrezentacijeRest`, ADMIN: `GET|POST /prezentacije/{id}/fajlovi`,
+  `PUT /prezentacije/{id}/fajlovi/redosled`, `PUT|DELETE /fajlovi-prezentacije/{id}`, `GET /fajlovi-prezentacije/{id}/sadrzaj`) and the MCP facade `McpFajlovi`.
+  At most 30 files per presentation (409/400 messages are constants there), the slide must belong to the same presentation (400), the order must list every id exactly once (400),
+  the presentation row is locked (`findByIdForUpdate`). **Unlike slides, files may be edited while the presentation is running** (deliberate deviation: a file is handed out, not
+  a part of the run). Deleting a presentation first deletes its files and media (`PrezentacijaService.obrisiZakljucanu`); deleting a slide relies on the FK `SET NULL`, so the file stays with the whole presentation.
+- **Run:** `IzvodjenjeService.pokreni` calls `KodoviFajlova.obezbedi(iz)` (one 4-digit code per lecture, a second run of the same lecture gets the same code; a run without a lecture gets its own,
+  valid while active) and every slide change writes `slajdovi_izvodjenja` through `upisiPrikaz` next to `temeZaVezbanje.prikazan`. A file attached to a slide reaches students only after that slide was shown.
+- **State:** `NastavnickoStanje.fajlovi` (`FajloviSlajda {kod, link, fajlovi[]}` or null) and `JavnoStanje.fajlovi` (`FajlKratko {id, naziv, vrsta, velicina}[]`, empty when none), both last fields,
+  built by `FajloviStanja` (current slide's files plus files without a slide, only while the code is valid and the run is `AKTIVNO`; one files query, the code query only when files exist; the state goes out up to 4 times per second).
+- **Public:** `GET /public/fajlovi/{kod}` (`FajloviCasa`, `Cache-Control: no-store`) and `GET /public/fajlovi/{kod}/{fajlId}` (bytes through `Preuzimanje`), class ANONIMNO in `PristupMatrica`, open-in-view off
+  (`OtvorenEntityManagerConfig`). A wrong or expired code is 404 `Kod ne važi. Proveri broj sa table.` and costs one attempt (`VrstaPokusaja.KOD_FAJLOVA`, key = IP); 40 wrong ones in 15 minutes
+  is 429 `Previše pogrešnih kodova. Pokušaj ponovo za 15 minuta.` for any code; a correct code costs nothing; a file off the list is the same 404 without an attempt (`FajloviCasaServis`). A number issued in the last 12 h (`kodovi_fajlova.kod`, `vazi_do` after now - 12 h) that has expired or whose lecture ended is 404 without an attempt as well. `FajloviCasaServis` has **no** class-level transaction: it reads in a short readOnly `TransactionTemplate` and records the attempt (`PokusajiServis.zabelezi`, `REQUIRES_NEW`) only after that transaction is closed, so wrong codes never hold two pool connections at once. File changes during a run (add, edit, reorder, delete in `FajloviPrezentacijeServis`) call `PrezentacijaPromene.slajdoviPromenjeni`, so active runs republish (version +1); the run rows are locked only after the bytes are on disk, presentation first. Names: `normalizujNaziv` (manual rename, 400 over 200 code points) and `nazivIzUploada` (file name from disk or MCP: truncated to 200 with the extension kept); both replace path and Windows characters, C0/C1 controls, `\p{Cf}` (bidi such as RLO, ZWJ), `\p{Zl}` and `\p{Zp}` with `_`.
+- **MCP (level "slobodno", no card):** `POST /mcp/prilozi` takes the optional `namena` (`prilog` default, `fajl` = `McpFajlovi.sacuvajFajl` -> `FAJL_PREZENTACIJE`, anything else 400; no new path, same daily upload budget).
+  Tools `fajlovi_prezentacije {prezentacijaId}`, `dodaj_fajl {serija, prezentacijaId, medijId, slajdId?, naziv?}` (medium must be unbound `FAJL_PREZENTACIJE`, else 409; not idempotent),
+  `izmeni_fajl {serija, fajlId, naziv, slajdId|null}`, `obrisi_fajl {serija, fajlId}`; the `prezentacija` overview carries `brojFajlova` per slide (and `fajloviUzCeluPrezentaciju`);
+  `vodic` topic `pitanja` describes the flow. The new service methods are listed in `McpOpsegTest.DOZVOLJENE_METODE`, the facade in `McpFasadeTest`, the tools in `McpAlatiTest`.
+- **Tests:** `FajloviPrezentacijeIT`, `PublicFajloviRestIT`, `FajloviAlatiDbTest` (helpers `FajloviPodaci`, `PomerljivSatConfig`); run only against the throwaway MySQL on 3307.
+
+### Nalog i mejl
+- **Nalog (STUDENT, `rest/fajlovi/NalogFajloviRest`, servis `NalogFajlovi`):** `GET /public/nalog/predmeti/{id}/fajlovi` -> `List<FajloviPrezentacije>` (prezentacije koje nalog otvara i imaju fajl, od najnovije održane; predmet koji student ne sluša je 404 `Nije pronađeno.`),
+  `GET /public/nalog/fajlovi/{id}` -> preuzimanje kroz `Preuzimanje` (zaglavlja iz spec-a 5.1), `POST /public/nalog/fajlovi/{id}/mejl` -> 202 `{"poslatoNa":"a***@gmail.com"}`. Pravilo naloga: završeno izvođenje prezentacije sa nekom od studentovih grupa za predmet; tada su **svi** fajlovi prezentacije vidljivi, i oni uz slajd koji nikad nije prikazan (pravilo slajdova u `pregled` se ne menja). Strano, nepostojeće ili izvođenje u toku je isti 404.
+- `PregledPrezentacije.fajlovi` (poslednje polje, `List<FajlKratko>`): `PristupFajlovima.zaNalogPrezentacije`, prazno kad pravilo naloga ne važi.
+- **Mejl (`MejlFajlova`):** dozvoljen kad važi pravilo naloga **ili** je fajl na važećem kodu (`naVazecemKodu`, uživo na času), inače 404. Redom: 404, 409 `U GFS-u nemaš upisan mejl. Javi se nastavniku.`, 503 `Slanje mejla trenutno ne radi.` (nema SMTP-a), 429 `Već si poslao dosta fajlova. Pokušaj ponovo za sat.` (10 na sat ili 20 dnevno po studentu, `VrstaPokusaja.MEJL_FAJLA`, ključ `s<id>`), 429 `Danas je poslato previše fajlova mejlom. Preuzmi fajl na računaru.` (150 dnevno ukupno, ključ `*`). Dva pokušaja (student i ukupno) se upisuju u istoj kratkoj transakciji pre slanja (neuspeh slanja ne vraća kvotu); greške 409/503 ništa ne troše. Posle commit-a zadatak ide na `mejlStudentimaIzvrsilac` (ne `mejlIzvrsilac`); pun red je 503. **Bajtovi se čitaju tek u izvršiocu** (`MedijService.bajtovi`), da red od 500 poruka ne drži do 5 GB u memoriji; obrisan fajl je samo zapis u logu. Mejl ide samo na `studenti.email` tog studenta; ništa što je student ukucao ne ulazi u tekst.
+- **Mejl sa prilogom:** `MejlPoruka(za, naslov, telo, html, prilozi)` (`MejlPoruka.Prilog(naziv, mime, sadrzaj)`; stari konstruktori ostaju, `toString` ne ispisuje adresu, telo ni priloge). `SmtpMejlServis` sa prilozima pravi `multipart/mixed` (telo = tekst ili `multipart/alternative`, pa prilozi sa `Content-Disposition: attachment` i imenom po RFC 2231); bez priloga je poruka nepromenjena. Tekst: `MejlPoruke.fajl` (naslov konstantan "Fajl sa časa", u telu ime fajla, predmet i prezentacija).
+- Testovi: `NalogFajloviIT` (MockMvc, `LazniMejlServis`, `PomerljivSatConfig`), `SmtpMejlServisTest` (MIME), `PristupMatricaTest`.
+
 ## Build & Run
 
 ```bash
@@ -1226,6 +1259,8 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
   `V24` = MCP changes (`V24__mcp_izmene.sql`, see "MCP za Claude-a"). `V25` = Uživo moderation (`V25__moderacija_uzivo.sql`: nullable
   `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo").
+  `V26` = files with a presentation (`V26__fajlovi_prezentacije.sql`: tables `fajlovi_prezentacije`, `kodovi_fajlova`, `slajdovi_izvodjenja`;
+  new tables only, a rollback needs no DB work, see "Fajlovi uz prezentaciju").
   `V27` = partial credit (`V27__delimicno_tacno.sql`: nullable `odgovori.udeo` and `preocene_odgovora.staro_udeo`, both DOUBLE; backfill, see
   "Partial credit (udeo)"; additive, an older image ignores the columns).
   **Next free version: `V28`.**

@@ -58,6 +58,25 @@ public class MejlPoruke {
         return new MejlPoruka(za, naslov, MejlSablon.tekst(s), MejlSablon.html(s));
     }
 
+    /** Naslov mejla sa fajlom (konstantan: ne nosi ime fajla ni predmet). */
+    public static final String NASLOV_FAJLA = "Fajl sa časa";
+
+    /**
+     * "Pošalji mi na mejl" (fajlovi uz prezentaciju): konstantan naslov, u telu ime fajla, predmet i prezentacija iz baze,
+     * potpis; nikad tekst koji je student ukucao. Fajl je u prilogu ({@code prilog}), sadržaj ne ulazi ni u log.
+     */
+    public MejlPoruka fajl(String za, String ime, String nazivFajla, String predmet, String prezentacija,
+                           MejlPoruka.Prilog prilog) {
+        String i = ime(ime);
+        MejlSablon.Sadrzaj s = new MejlSablon.Sadrzaj(
+                i == null ? "Zdravo!" : "Zdravo, " + i + "!",
+                List.of("U prilogu je fajl „" + nazivFajla + "“ uz prezentaciju „" + prezentacija + "“ (predmet " + predmet + ")."),
+                null,
+                List.of("Ovaj mejl je stigao jer si u aplikaciji GFS izabrao/la „Pošalji mi na mejl“."),
+                logoUrl);
+        return new MejlPoruka(za, NASLOV_FAJLA, MejlSablon.tekst(s), MejlSablon.html(s), List.of(prilog));
+    }
+
     /**
      * Kod za prijavu studenta. {@code ime} je ime studenta iz baze (samo za pozdrav, nikad u naslovu ni logu);
      * {@code odNastavnika} menja rečenicu o tome zašto je mejl stigao ("Pošalji kod" sa kartice studenta).

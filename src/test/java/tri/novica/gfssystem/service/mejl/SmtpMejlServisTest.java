@@ -128,4 +128,52 @@ class SmtpMejlServisTest {
         assertFalse(s.contains("Ana"));
         assertTrue(s.contains("Naslov"));
     }
+
+    @Test
+    void saPrilogomJeMultipartMixedSaNepromenjenimTelomIImenomPriloga() throws Exception {
+        byte[] sadrzaj = {0x50, 0x4B, 3, 4, 1, 2, 3};
+        MejlPoruka.Prilog prilog = new MejlPoruka.Prilog("Vežba č.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", sadrzaj);
+        servis("").posalji(new MejlPoruka("student@example.test", "Fajl sa časa", "tekst 1", "<p>html 1</p>", java.util.List.of(prilog)));
+
+        MimeMessage m = poslata();
+        ByteArrayOutputStream izlaz = new ByteArrayOutputStream();
+        m.writeTo(izlaz);   // saveChanges + serijalizacija kao pri slanju
+        MimeMessage procitana = new MimeMessage(Session.getInstance(new Properties()),
+                new java.io.ByteArrayInputStream(izlaz.toByteArray()));
+        assertTrue(procitana.getContentType().startsWith("multipart/mixed"), procitana.getContentType());
+        MimeMultipart mixed = (MimeMultipart) procitana.getContent();
+        assertEquals(2, mixed.getCount());
+
+        MimeMultipart telo = (MimeMultipart) mixed.getBodyPart(0).getContent();
+        assertTrue(telo.getContentType().startsWith("multipart/alternative"), telo.getContentType());
+        assertEquals("tekst 1", ((String) telo.getBodyPart(0).getContent()).strip());
+        assertEquals("<p>html 1</p>", ((String) telo.getBodyPart(1).getContent()).strip());
+
+        jakarta.mail.BodyPart deo = mixed.getBodyPart(1);
+        assertEquals(jakarta.mail.Part.ATTACHMENT, deo.getDisposition());
+        assertEquals("Vežba č.docx", deo.getFileName());
+        assertTrue(new String(izlaz.toByteArray(), StandardCharsets.ISO_8859_1).contains("filename*="), "RFC 2231 ime");
+        assertArrayEquals(sadrzaj, deo.getInputStream().readAllBytes());
+    }
+
+    @Test
+    void saPrilogomIBezHtmlaTeloJeCistTekst() throws Exception {
+        servis("").posalji(new MejlPoruka("student@example.test", "N", "samo tekst", null,
+                java.util.List.of(new MejlPoruka.Prilog("a.pdf", "application/pdf", new byte[]{'%', 'P'}))));
+        MimeMessage m = poslata();
+        m.saveChanges();
+        MimeMultipart mixed = (MimeMultipart) m.getContent();
+        assertTrue(mixed.getBodyPart(0).isMimeType("text/plain"));
+        assertEquals("samo tekst", mixed.getBodyPart(0).getContent());
+        assertEquals("a.pdf", mixed.getBodyPart(1).getFileName());
+    }
+
+    @Test
+    void toStringNeIspisujeSadrzajNiImePriloga() {
+        MejlPoruka.Prilog prilog = new MejlPoruka.Prilog("tajno-ime.docx", "application/pdf", "TAJNO".getBytes(StandardCharsets.UTF_8));
+        String s = new MejlPoruka("a@example.test", "Naslov", "telo", null, java.util.List.of(prilog)).toString();
+        assertFalse(s.contains("a@example.test") || s.contains("telo") || s.contains("tajno") || s.contains("TAJNO"), s);
+        assertFalse(prilog.toString().contains("tajno") || prilog.toString().contains("TAJNO"), prilog.toString());
+    }
 }

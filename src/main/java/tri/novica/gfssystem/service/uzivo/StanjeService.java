@@ -3,6 +3,8 @@ package tri.novica.gfssystem.service.uzivo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import tri.novica.gfssystem.dto.fajlovi.FajloviSlajda;
+import tri.novica.gfssystem.service.fajlovi.FajloviStanja;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
@@ -55,6 +57,7 @@ public class StanjeService {
     private final CekiranjeRepository cekiranjeRepository;
     private final RangTacnostiService rangTacnosti;
     private final RangPrikazRegistar rangPrikazi;
+    private final FajloviStanja fajloviStanja;
     private final Clock clock;
 
     /**
@@ -92,10 +95,20 @@ public class StanjeService {
 
     public Snimci snimci(Long izvodjenjeId) {
         Podaci p = ucitaj(izvodjenjeId);
-        return new Snimci(javno(p), licnaZaSve(p), nastavnicko(p));
+        Optional<FajloviSlajda> fajlovi = fajlovi(p);   // jednom za oba snimka
+        return new Snimci(javno(p, fajlovi), licnaZaSve(p), nastavnicko(p, fajlovi));
+    }
+
+    /** Fajlovi trenutnog slajda uz važeći kod ({@link FajloviStanja}), jedan jeftin upit. */
+    private Optional<FajloviSlajda> fajlovi(Podaci p) {
+        return fajloviStanja.zaSlajd(p.iz(), TokIzvodjenja.trenutni(p.iz(), p.slajdovi()));
     }
 
     NastavnickoStanje nastavnicko(Podaci p) {
+        return nastavnicko(p, fajlovi(p));
+    }
+
+    private NastavnickoStanje nastavnicko(Podaci p, Optional<FajloviSlajda> fajlovi) {
         Izvodjenje iz = p.iz();
         List<Slajd> sl = p.slajdovi();
         int indeks = TokIzvodjenja.indeks(iz, sl);
@@ -152,7 +165,7 @@ public class StanjeService {
                 javniRezultat(p), javnaRangLista(p), iz.getPrezentacija().getTema(),
                 iz.getPocetak().atZone(clock.getZone()).toInstant().toEpochMilli(), nastavnickiZadatak(p, trenutni, zr),
                 brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size(), javniRangTacnosti, rangPrikaz,
-                rangTacnosti.imaRangPredavanja(iz), rangPrikazi.broj(iz.getId()));
+                rangTacnosti.imaRangPredavanja(iz), rangPrikazi.broj(iz.getId()), fajlovi.orElse(null));
     }
 
     private static final long[] BEZ_OZNAKA = {0, 0};
@@ -372,6 +385,10 @@ public class StanjeService {
     }
 
     JavnoStanje javno(Podaci p) {
+        return javno(p, fajlovi(p));
+    }
+
+    private JavnoStanje javno(Podaci p, Optional<FajloviSlajda> fajlovi) {
         Izvodjenje iz = p.iz();
         Slajd trenutni = TokIzvodjenja.trenutni(iz, p.slajdovi());
         JavnoPitanje pitanje = null;
@@ -391,7 +408,8 @@ public class StanjeService {
                 iz.getPrezentacija().getNaziv(), iz.getKod(), iz.getPrikaz(),
                 trenutni == null ? null : trenutni.getTip(), iz.getEkran(), iz.isTakmicenje(), iz.getTelefonPrikaz(),
                 iz.isDetaljiDozvoljeni(), p.ucesnici().size(), pitanje, rezultatZaTelefon(iz, javniRezultat(p)),
-                javnaRangLista(p), javniZadatak(p, trenutni));
+                javnaRangLista(p), javniZadatak(p, trenutni),
+                fajlovi.map(FajloviSlajda::fajlovi).orElse(List.of()));
     }
 
     /**
