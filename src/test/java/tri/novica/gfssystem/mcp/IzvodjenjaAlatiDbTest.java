@@ -240,4 +240,64 @@ class IzvodjenjaAlatiDbTest extends McpDbTestOsnova {
         ocekujGresku("preoceni_odgovore", preoceni(runda, List.of(), true), "Pošalji bar jedan odgovor.");
         ocekujGresku("preoceni_odgovore", preoceni(runda, List.of(o), true, "razlog", " "), "Razlog je obavezan (1 do 300 znakova).");
     }
+
+    static final String VISE = "{\"tip\":\"VISE_TACNIH\",\"tekst\":\"x\",\"vremeSekunde\":30,\"opcije\":["
+            + "{\"id\":11,\"rb\":1,\"tekst\":\"A\",\"tacna\":true},{\"id\":12,\"rb\":2,\"tekst\":\"B\",\"tacna\":true},"
+            + "{\"id\":13,\"rb\":3,\"tekst\":\"C\",\"tacna\":false}]}";
+
+    /** Odgovor sa sačuvanim udelom i poenima (kao da ga je upisao OdgovorService). */
+    Long odgovorUdeo(Long rundaId, Long izvodjenjeId, String ime, boolean tacno, double udeo, int poeni) {
+        Long o = odgovor(rundaId, izvodjenjeId, ime, tacno, null, null);
+        jdbc.update("update odgovori set udeo = ?, poeni = ?, opcije = '11' where id = ?", udeo, poeni, o);
+        return o;
+    }
+
+    Double udeo(Long odgovorId) {
+        return jdbc.queryForObject("select udeo from odgovori where id = ?", Double.class, odgovorId);
+    }
+
+    Double zbirUdelaUPregledu() {
+        return stanjeService.rezultati(izvodjenje).pitanja().getFirst().rezultat().zbirUdela();
+    }
+
+    @Test
+    void preocenaNetacnogUTacnoDajeUdeoJedanIBrojiSeUPregledu() {
+        jdbc.update("update pitanje_runde set snimak = ? where id = ?", VISE, runda);
+        jdbc.update("update izvodjenja set tacan_prikazan = 1 where id = ?", izvodjenje);
+        Long nula = odgovorUdeo(runda, izvodjenje, "Ana", false, 0.0, 0);
+        Long pola = odgovorUdeo(runda, izvodjenje, "Pera", false, 0.5, 0);
+        assertEquals(0, tacnihUPregledu());
+        assertEquals(0.5, zbirUdelaUPregledu(), 1e-9);
+
+        uspeh("preoceni_odgovore", preoceni(runda, List.of(nula, pola), true));
+
+        assertEquals(1.0, udeo(nula), 1e-9);
+        assertEquals(1.0, udeo(pola), 1e-9);
+        assertEquals(2, tacnihUPregledu());
+        assertEquals(2.0, zbirUdelaUPregledu(), 1e-9);
+        JsonNode r = uspeh("izvodjenja_prezentacije", mapa("prezentacijaId", prezentacija)).get(0).path("runde").get(0);
+        assertEquals(2.0, r.path("zbirUdela").asDouble(), 1e-9);
+        JsonNode o = uspeh("odgovori_runde", mapa("rundaId", runda)).get(0);
+        assertEquals(1.0, o.path("udeo").asDouble(), 1e-9);
+    }
+
+    @Test
+    void preocenaDelimicnogNaNetacno() {
+        jdbc.update("update izvodjenja set takmicenje = 1 where id = ?", izvodjenje);
+        Long o = odgovorUdeo(runda, izvodjenje, "Ana", false, 0.5, 400);
+
+        JsonNode r = uspeh("preoceni_odgovore", preoceni(runda, List.of(o), false));
+        assertEquals(1, r.path("izmenjeni").size(), r.toString());
+        assertEquals(0.0, udeo(o), 1e-9);
+        assertEquals(0, jdbc.queryForObject("select poeni from odgovori where id = ?", Integer.class, o));
+        assertEquals(0.5, jdbc.queryForObject("select staro_udeo from preocene_odgovora where odgovor_id = ?", Double.class, o), 1e-9);
+
+        String vrati = serija + "-v";
+        assertEquals(1, uspeh("vrati_preocenu", mapa("serija", vrati, "rundaId", runda, "ciljSerija", serija))
+                .path("izmenjeni").size());
+        assertEquals(0.5, udeo(o), 1e-9);
+        assertEquals(400, jdbc.queryForObject("select poeni from odgovori where id = ?", Integer.class, o));
+        assertEquals(0, uspeh("vrati_preocenu", mapa("serija", serija + "-w", "rundaId", runda, "ciljSerija", serija))
+                .path("izmenjeni").size());
+    }
 }

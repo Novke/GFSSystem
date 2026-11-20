@@ -35,10 +35,10 @@ import java.util.Objects;
 
 /**
  * Preocena odgovora posle časa, kad je ocena bila pogrešna ne krivicom studenta (npr. telefon nije imao minus). Menja samo
- * {@code odgovori} završenog izvođenja: tačnost, ocenu po poljima i poene; rang i pregledi se računaju iz tih redova. Svaka
+ * {@code odgovori} završenog izvođenja: tačnost, udeo, ocenu po poljima i poene; rang i pregledi se računaju iz tih redova. Svaka
  * promena ostavlja trag u {@code preocene_odgovora}. Dok izvođenje traje ocena
  * se ne dira, jer stanje već ide telefonima. Upisuje uvek pod ključem izvođenja, kao i odgovori. {@link #vrati} tačno vraća
- * tačnost, polja i poene iz traga, a suprotna ocena to ne bi: spisak može da sadrži i odgovore koji se nisu menjali.
+ * tačnost, udeo, polja i poene iz traga, a suprotna ocena to ne bi: spisak može da sadrži i odgovore koji se nisu menjali.
  */
 @Service
 @RequiredArgsConstructor
@@ -73,7 +73,8 @@ public class PreocenaOdgovoraService {
     private List<RundaZaPreocenu> runde(Long izvodjenjeId) {
         return rundaRepository.findAllByIzvodjenjeIdOrderByOtvorenoAscIdAsc(izvodjenjeId).stream().map(r -> {
             List<Odgovor> odgovori = odgovorRepository.findAllByRundaId(r.getId());
-            return new RundaZaPreocenu(r.getId(), r.getSlajdId(), r.getRedniBroj(), odgovori.size(), brojTacnih(odgovori));
+            return new RundaZaPreocenu(r.getId(), r.getSlajdId(), r.getRedniBroj(), odgovori.size(), brojTacnih(odgovori),
+                    zbirUdela(odgovori));
         }).toList();
     }
 
@@ -85,7 +86,7 @@ public class PreocenaOdgovoraService {
         }
         return odgovorRepository.findAllByRundaId(rundaId).stream()
                 .map(o -> new OdgovorZaPreocenu(o.getId(), o.getUcesnik().getId(), o.getUcesnik().getIme(), o.getVarijantaId(),
-                        vrednost(o), o.getTacno()))
+                        vrednost(o), o.getTacno(), o.getUdeo()))
                 .toList();
     }
 
@@ -152,11 +153,13 @@ public class PreocenaOdgovoraService {
         List<Long> izmenjeni = new ArrayList<>();
         prvi.forEach((id, t) -> {
             Odgovor o = uRundi.get(id);
+            Double staroUdeo = t.getStaroUdeo() != null ? t.getStaroUdeo()
+                    : t.getStaroTacno() == null ? null : Boolean.TRUE.equals(t.getStaroTacno()) ? 1.0 : 0.0;
             if (Objects.equals(o.getTacno(), t.getStaroTacno()) && Objects.equals(o.getPolja(), t.getStaraPolja())
-                    && o.getPoeni() == t.getStariPoeni()) {
+                    && o.getPoeni() == t.getStariPoeni() && istiUdeo(udeoOdgovora(o), staroUdeo)) {
                 return;
             }
-            zapisi(o, t.getStaroTacno(), t.getStaraPolja(), t.getStariPoeni(), "Vraćena preocena iz serije " + ciljSerija, serija);
+            zapisi(o, t.getStaroTacno(), staroUdeo, t.getStaraPolja(), t.getStariPoeni(), "Vraćena preocena iz serije " + ciljSerija, serija);
             izmenjeni.add(id);
         });
         odgovorRepository.flush();
@@ -199,18 +202,20 @@ public class PreocenaOdgovoraService {
         } else if (polje != null) {
             throw new SystemException("Polje važi samo za zadatak.", HttpStatus.BAD_REQUEST);
         }
-        if (Objects.equals(o.getTacno(), novo) && Objects.equals(o.getPolja(), polja)) {
+        double novoUdeo = novo ? 1.0 : 0.0;
+        if (Objects.equals(o.getTacno(), novo) && Objects.equals(o.getPolja(), polja) && istiUdeo(udeoOdgovora(o), novoUdeo)) {
             return false;
         }
-        zapisi(o, novo, polja, Ocenjivac.poeni(novo ? 1.0 : 0.0, iz.isTakmicenje(), runda.getTrajanjeMs(), o.getVremeMs()), razlog, serija);
+        zapisi(o, novo, novoUdeo, polja, Ocenjivac.poeni(novoUdeo, iz.isTakmicenje(), runda.getTrajanjeMs(), o.getVremeMs()), razlog, serija);
         return true;
     }
 
-    private void zapisi(Odgovor o, Boolean tacno, String polja, int poeni, String razlog, String serija) {
+    private void zapisi(Odgovor o, Boolean tacno, Double udeo, String polja, int poeni, String razlog, String serija) {
         PreocenaOdgovora trag = new PreocenaOdgovora();
         trag.setOdgovorId(o.getId());
         trag.setStaroTacno(o.getTacno());
         trag.setNovoTacno(Boolean.TRUE.equals(tacno));
+        trag.setStaroUdeo(udeoOdgovora(o));
         trag.setStaraPolja(o.getPolja());
         trag.setStariPoeni(o.getPoeni());
         trag.setRazlog(razlog);
@@ -218,8 +223,25 @@ public class PreocenaOdgovoraService {
         trag.setKreirano(LocalDateTime.now(clock));
         preocenaRepository.save(trag);
         o.setTacno(tacno);
+        o.setUdeo(udeo);
         o.setPolja(polja);
         o.setPoeni(poeni);
+    }
+
+    /** Udeo odgovora; red bez njega (upisan starijom slikom) važi kao tačnost 1/0. */
+    private static Double udeoOdgovora(Odgovor o) {
+        return o.getUdeo() != null ? o.getUdeo() : o.getTacno() == null ? null : o.getTacno() ? 1.0 : 0.0;
+    }
+
+    private static boolean istiUdeo(Double a, Double b) {
+        return a == null || b == null ? a == b : Math.abs(a - b) < 1e-9;
+    }
+
+    /** Zbir udela odgovora na 0,01: sačuvani udeo, bez njega tačnost 1/0, bez nje 0 (anketa). */
+    private static Double zbirUdela(List<Odgovor> odgovori) {
+        double zbir = odgovori.stream().mapToDouble(o -> o.getUdeo() != null ? o.getUdeo()
+                : Boolean.TRUE.equals(o.getTacno()) ? 1.0 : 0.0).sum();
+        return Math.round(100.0 * zbir) / 100.0;
     }
 
     private static long brojTacnih(List<Odgovor> odgovori) {

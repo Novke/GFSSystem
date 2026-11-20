@@ -311,6 +311,20 @@ group's schema, the console and projector show results per variant and, on `Shif
   grading, SVG survival, overview), `OcenaZadatkaTest`, `UnetoZadatkaTest`, `ZadatakRezultatBuilderTest`, `ZadatakStanjeTest` (JSON of every phone
   projection per phase has no secret), `KandidatiZadatkaDbTest`, `PrezentacijaZadatakDbTest`, `ZadatakDodelaDbTest`.
 
+### Partial credit (udeo, V26)
+
+Only `VISE_TACNIH` is partial: `udeo = max(0, (correct chosen - wrong chosen) / number of correct)`; every other type 1 or 0 (`Ocenjivac.udeo`,
+`udeoIzbora`, `tacnoIzUdela`); a ZADATAK stays all-or-nothing. `tacno` = `udeo >= 1`. Competition points = `round(base x udeo)`
+(`Ocenjivac.poeni(Double udeo, ...)`). Columns `odgovori.udeo` (nullable DOUBLE, written by `OdgovorService`) and `preocene_odgovora.staro_udeo`.
+- **V26 backfill:** `udeo` = 1/0 from `tacno` for existing rows, recomputed from the round snapshot for `VISE_TACNIH`; points only for rows that had 0 points
+  (a formerly wrong competition answer now earning something), never lowered or changed for the others.
+- **Readers:** a row from an older image has `udeo` NULL, so every reader falls back (`RezultatBuilder.udeoIli`; SQL `COALESCE(udeo, IF(tacno, 1, 0))`):
+  stored `udeo`, else `tacno` 1/0, else the snapshot. Readers prefer `udeo`, so a re-grade must write it.
+- **Re-grade (`PreocenaOdgovoraService`):** `preoceni` sets `udeo = tacno ? 1 : 0` (ZADATAK: by fields as before, then `udeo` from the overall result), points
+  from `Ocenjivac.poeni(udeo, ...)`, and the trail keeps `staro_udeo` (the effective old udeo). The "nothing to change" check compares `udeo` too, so
+  `{A}` (0.5) re-graded to `tacno=false` is a real change; `vrati` restores `udeo = staro_udeo` (NULL falls back to `staroTacno ? 1 : 0`). MCP
+  `izvodjenja_prezentacije` rounds carry `zbirUdela`, `odgovori_runde` items `udeo` (additive); `vodic` `pitanja` describes the scoring of `VISE_TACNIH`.
+
 ### Rang tačnosti (leaderboard)
 
 Spec `docs/superpowers/specs/2026-10-28-rang-tacnosti-design.md` (deploy repo). No migration, no new table: everything is computed from rounds,
@@ -320,7 +334,8 @@ aggregation, read-only), `RangPrikazRegistar` (in-memory: which rank is on the p
 - **Measure:** the last round of every slide counts (same rule as `StanjeService.bodovniOdgovori`); a PITANJE with a correct answer, or a ZADATAK
   for a participant whose assigned variant has fields (paper work never counts). A participant **owes** a round they answered, or one closed after
   they joined (an open round is owed only once answered). **An unanswered owed round is wrong.** ★: a correct PITANJE 1, a correct ZADATAK the
-  level of the assigned variant (snapshot without `nivo` = 2). **Order (revision 2026-10-29, Novica): ★ desc, then average answer time (`vremeMs`
+  level of the assigned variant (snapshot without `nivo` = 2); **since V26 ★ are decimals (partial credit, `udeo` of the answer times that value,
+  rounded to 0.01), not whole numbers**. **Order (revision 2026-10-29, Novica): ★ desc, then average answer time (`vremeMs`
   of answered rounds) asc with no answer last, then name; accuracy is shown, never ranked.** The same place for equal ★ and average rounded to
   100 ms. Rows that owe nothing are left out. Every row carries `indeks` (student, canonical `GD5`; `null` for a guest and on the projector).
 - **Identity across runs:** `s:<studentId>` for logged-in students, `g:<normalized name>` for guests (lower case, no diacritics, `đ`->`d`, one
@@ -1200,7 +1215,9 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
   `V24` = MCP changes (`V24__mcp_izmene.sql`, see "MCP za Claude-a"). `V25` = Uživo moderation (`V25__moderacija_uzivo.sql`: nullable
   `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo").
-  **Next free version: `V26`.**
+  `V26` = partial credit (`V26__delimicno_tacno.sql`: nullable `odgovori.udeo` and `preocene_odgovora.staro_udeo`, both DOUBLE; backfill, see
+  "Partial credit (udeo)"; additive, an older image ignores the columns).
+  **Next free version: `V27`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

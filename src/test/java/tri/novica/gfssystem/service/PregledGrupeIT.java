@@ -359,7 +359,7 @@ class PregledGrupeIT {
         assertEquals(3, ka.prisutan());
         assertEquals(4, ka.predavanja());                 // pA0-pA3
         assertEquals(1, ka.zadaci());
-        assertEquals(1.0, ka.zvezdice());
+        assertEquals(1, ka.zvezdice());
         assertEquals(2, ka.domaciUradjeno());
         assertEquals(2, ka.domaciUkupno());
         assertEquals(8.5, ka.domaciProsek(), D);
