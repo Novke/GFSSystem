@@ -24,7 +24,8 @@ import java.util.*;
  * <li><b>Nalog:</b> student sme sve fajlove prezentacije P (predmet X) kad postoji završeno izvođenje P sa grupom iz
  * {@link Kontekst#grupe(Long)} (sopstvena + dodatne po predmetu, kao portal) i X je među {@code predmeti(k)}.
  * Strano ili nepostojeće se ovde vidi kao "ne sme" / prazan spisak; 404 baca pozivalac.</li>
- * <li><b>Mejl:</b> pravilo naloga ili {@link #naVazecemKodu}.</li>
+ * <li><b>Mejl:</b> pravilo naloga ili {@link #naVazecemKoduZaStudenta}: fajl je na spisku važećeg koda predavanja (odnosno
+ * izvođenja) čija je grupa među grupama studenta za predmet; student druge grupe ne dobija fajl tuđeg časa mejlom.</li>
  * </ul>
  * Vraćeni entiteti imaju inicijalizovane veze (prezentacija, slajd, medij), pa ih {@code FajlMapper} čita i bez sesije.
  */
@@ -53,6 +54,21 @@ public class PristupFajlovima {
     public boolean naVazecemKodu(long fajlId) {
         LocalDateTime sada = LocalDateTime.now(clock);
         return fajlovi.naKoduPredavanja(fajlId, sada) > 0 || fajlovi.naKoduIzvodjenja(fajlId, sada) > 0;
+    }
+
+    /**
+     * Mejl uživo: fajl je na spisku važećeg koda predavanja ili izvođenja čija je grupa među grupama studenta za predmet
+     * prezentacije (sopstvena + dodatne, kao nalog). Izvođenje bez grupe ovim putem ne daje ništa.
+     */
+    public boolean naVazecemKoduZaStudenta(long studentId, FajlPrezentacije f) {
+        // prezentacija se čita ovde (u transakciji): pozivalac može držati lenji proxy bez sesije
+        Optional<Prezentacija> p = prezentacijaRepository.findById(f.getPrezentacija().getId());
+        if (p.isEmpty()) return false;
+        Set<Long> grupe = grupeZaPredmet(studentId, p.get().getPredmet().getId());
+        if (grupe.isEmpty()) return false;
+        LocalDateTime sada = LocalDateTime.now(clock);
+        return fajlovi.naKoduPredavanjaZaGrupe(f.getId(), sada, grupe) > 0
+                || fajlovi.naKoduIzvodjenjaZaGrupe(f.getId(), sada, grupe) > 0;
     }
 
     /** Pravilo naloga za jedan fajl. */

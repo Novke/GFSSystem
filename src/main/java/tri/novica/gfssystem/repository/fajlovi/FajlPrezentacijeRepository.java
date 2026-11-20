@@ -78,6 +78,32 @@ public interface FajlPrezentacijeRepository extends JpaRepository<FajlPrezentaci
             nativeQuery = true)
     long naKoduIzvodjenja(@Param("fajlId") Long fajlId, @Param("sada") LocalDateTime sada);
 
+    /** Kao {@link #naKoduPredavanja}, ali samo kod predavanja čija je grupa među {@code grupe} (mejl uživo: studenti te grupe). */
+    @Query(value = """
+            SELECT COUNT(*) FROM fajlovi_prezentacije f
+            JOIN kodovi_fajlova k ON k.aktivan_kod IS NOT NULL AND k.vazi_do > :sada AND k.predavanje_id IS NOT NULL
+            JOIN predavanja p ON p.id = k.predavanje_id AND COALESCE(p.zavrseno, 0) = 0 AND p.grupa_id IN (:grupe)
+            WHERE f.id = :fajlId
+              AND EXISTS (SELECT 1 FROM izvodjenja i WHERE i.predavanje_id = k.predavanje_id AND i.prezentacija_id = f.prezentacija_id)
+              AND (f.slajd_id IS NULL
+                   OR EXISTS (SELECT 1 FROM slajdovi_izvodjenja si JOIN izvodjenja i2 ON i2.id = si.izvodjenje_id
+                              WHERE si.slajd_id = f.slajd_id AND i2.predavanje_id = k.predavanje_id))""", nativeQuery = true)
+    long naKoduPredavanjaZaGrupe(@Param("fajlId") Long fajlId, @Param("sada") LocalDateTime sada,
+                                 @Param("grupe") Collection<Long> grupe);
+
+    /** Kao {@link #naKoduIzvodjenja}, ali samo izvođenje čija je grupa među {@code grupe} (izvođenje bez grupe nikad). */
+    @Query(value = """
+            SELECT COUNT(*) FROM fajlovi_prezentacije f
+            JOIN kodovi_fajlova k ON k.aktivan_kod IS NOT NULL AND k.vazi_do > :sada AND k.izvodjenje_id IS NOT NULL
+            JOIN izvodjenja i ON i.id = k.izvodjenje_id AND i.status = 'AKTIVNO' AND i.prezentacija_id = f.prezentacija_id
+                             AND i.grupa_id IN (:grupe)
+            WHERE f.id = :fajlId
+              AND (f.slajd_id IS NULL
+                   OR EXISTS (SELECT 1 FROM slajdovi_izvodjenja si WHERE si.slajd_id = f.slajd_id AND si.izvodjenje_id = i.id))""",
+            nativeQuery = true)
+    long naKoduIzvodjenjaZaGrupe(@Param("fajlId") Long fajlId, @Param("sada") LocalDateTime sada,
+                                 @Param("grupe") Collection<Long> grupe);
+
     /** Da li prezentacija ima završeno izvođenje sa nekom od grupa (pravilo naloga). */
     @Query(value = """
             SELECT COUNT(*) FROM izvodjenja i

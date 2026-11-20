@@ -107,7 +107,7 @@ public class MejlFajlova {
 
     private Priprema pripremi(long studentId, Long fajlId) {
         FajlPrezentacije f = fajlId == null ? null : fajlovi.findById(fajlId).orElse(null);
-        if (f == null || !(pristup.smeNalog(studentId, f) || pristup.naVazecemKodu(f.getId()))) {
+        if (f == null || !(pristup.smeNalog(studentId, f) || pristup.naVazecemKoduZaStudenta(studentId, f))) {
             throw KontekstStudenta.nema();
         }
         Student s = studenti.findById(studentId).orElseThrow(KontekstStudenta::nema);
