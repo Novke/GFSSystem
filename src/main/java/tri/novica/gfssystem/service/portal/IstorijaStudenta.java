@@ -23,6 +23,7 @@ import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.Opis;
 import tri.novica.gfssystem.service.banka.KandidatiZadatka.StabloPredavanja;
+import tri.novica.gfssystem.service.fajlovi.FajlMapper;
 import tri.novica.gfssystem.service.portal.KontekstStudenta.Kontekst;
 import tri.novica.gfssystem.service.uzivo.*;
 import tri.novica.gfssystem.dto.uzivo.SlajdDetails;
@@ -53,6 +54,7 @@ public class IstorijaStudenta {
     private static final TypeReference<LinkedHashMap<String, PoljeOdgovora>> POLJA = new TypeReference<>() {};
 
     private final KontekstStudenta kontekstStudenta;
+    private final tri.novica.gfssystem.service.fajlovi.PristupFajlovima pristupFajlovima;
     private final VezbanjeStudenta vezbanje;
     private final KandidatiZadatka kandidati;
     private final PrezentacijaRepository prezentacijaRepository;
@@ -206,7 +208,8 @@ public class IstorijaStudenta {
             rez.add(new SlajdPregleda(d.id(), d.rb(), d.tip(), d.naslov(), d.sadrzaj(), d.slika(), pitanje,
                     s.getTip() == TipSlajda.PLATNO ? platno : null, zadatak, odgovori.get(s.getId()), tacanPoznat));
         }
-        return new PregledPrezentacije(prez.getId(), prez.getNaziv(), prez.getTema(), predmetId, List.copyOf(rez));
+        return new PregledPrezentacije(prez.getId(), prez.getNaziv(), prez.getTema(), predmetId, List.copyOf(rez),
+                pristupFajlovima.zaNalogPrezentacije(studentId, prezentacijaId).stream().map(FajlMapper::kratko).toList());
     }
 
     /**

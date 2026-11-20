@@ -1,5 +1,6 @@
 package tri.novica.gfssystem.dto.uzivo;
 
+import tri.novica.gfssystem.dto.fajlovi.FajlKratko;
 import tri.novica.gfssystem.entity.uzivo.*;
 
 import java.util.List;
@@ -7,12 +8,21 @@ import java.util.List;
 /**
  * Stanje izvođenja za telefone i javni topik (spec 4.4). {@code rezultat} samo kad su rezultati prikazani (bez
  * sakrivenih tekstova, tačnost tek posle TACAN, tekstovi opcija samo kad je tekst dozvoljen); {@code rangLista} (top 5, bez id-jeva) samo kad je prikazana ili na
- * kraju takmičenja. {@code zadatak}: Zadatak slajd bez sadržaja varijanti ({@link JavniZadatak}), {@code null} van njega.
+ * kraju takmičenja. {@code fajlovi}: fajlovi trenutnog slajda dok kod važi (telefon nudi "Pošalji mi na mejl"), inače prazno. {@code zadatak}: Zadatak slajd bez sadržaja varijanti ({@link JavniZadatak}), {@code null} van njega.
  */
 public record JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,
                           String kod, Prikaz prikaz, TipSlajda slajdTip, Ekran ekran, boolean takmicenje,
                           TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, int brojUcesnika,
-                          JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista, JavniZadatak zadatak) {
+                          JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista, JavniZadatak zadatak, List<FajlKratko> fajlovi) {
+
+    /** Oblik pre fajlova uz prezentaciju: {@code fajlovi} je prazna lista. */
+    public JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,
+                       String kod, Prikaz prikaz, TipSlajda slajdTip, Ekran ekran, boolean takmicenje,
+                       TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, int brojUcesnika,
+                       JavnoPitanje pitanje, Rezultat rezultat, List<RangStavka> rangLista, JavniZadatak zadatak) {
+        this(izvodjenjeId, verzija, serverVremeMs, status, naziv, kod, prikaz, slajdTip, ekran, takmicenje, telefonPrikaz,
+                detaljiDozvoljeni, brojUcesnika, pitanje, rezultat, rangLista, zadatak, List.of());
+    }
 
     public JavnoStanje(Long izvodjenjeId, long verzija, long serverVremeMs, StatusIzvodjenja status, String naziv,
                        String kod, Prikaz prikaz, TipSlajda slajdTip, Ekran ekran, boolean takmicenje,

@@ -17,6 +17,7 @@ import tri.novica.gfssystem.entity.banka.GrupaZadataka;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.service.fajlovi.FajloviPrezentacijeServis;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
@@ -101,6 +102,7 @@ public class PrezentacijaService {
     private final PredavanjeRepository predavanjeRepository;
     private final MedijService medijService;
     private final MedijRepository medijRepository;
+    private final FajloviPrezentacijeServis fajloviPrezentacije;
     private final GrupaZadatakaRepository grupaZadatakaRepository;
     private final ZadaciSlajdova zadaci;
     private final PlatnoJson platnoJson;
@@ -237,6 +239,8 @@ public class PrezentacijaService {
     /** Briše zaključanu prezentaciju sa slajdovima (pitanja i opcije kroz JPA) i izvođenjima (kaskada u bazi). */
     private void obrisiZakljucanu(Prezentacija p) {
         Long id = p.getId();
+        // fajlovi za studente (redovi i mediji) prvo: kaskada u bazi bi obrisala redove, a medije i bajtove ostavila
+        fajloviPrezentacije.obrisiSve(id);
         // kroz JPA, ne kaskadom u bazi: FK slajdovi -> pitanja nema ON DELETE CASCADE
         slajdRepository.deleteAll(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(id));
         slajdRepository.flush();

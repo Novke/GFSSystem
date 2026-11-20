@@ -124,7 +124,14 @@ class McpOpsegTest {
             // McpBanka i McpPrezentacije: upload priloga i slika (/mcp/prilozi, /mcp/slike), tip po prvim bajtovima
             "MedijService.sacuvaj(byte[], String)",
             "MedijService.sacuvajPrilog(byte[], String)",
-            "MedijService.vrsta(String)");
+            "MedijService.vrsta(String)",
+            // McpFajlovi i McpPrezentacije: fajlovi za studente uz prezentaciju (spec fajlova 7), upload sa namena=fajl
+            "MedijService.sacuvajFajl(byte[], String)",
+            "FajloviPrezentacijeServis.lista(Long)",
+            "FajloviPrezentacijeServis.brojPoSlajdu(Long)",
+            "FajloviPrezentacijeServis.dodajIzMedija(Long, String, Long, String, String)",
+            "FajloviPrezentacijeServis.izmeni(Long, FajlPrezentacijeCmd)",
+            "FajloviPrezentacijeServis.obrisi(Long)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(
