@@ -8,7 +8,11 @@
 --   * snimak runde je pitanje VISE_TACNIH i sačuvani tacno je jednak oceni "tačno skup tačnih" iz snimka (odgovor nikad
 --     nije preocenjen na drugu vrednost) -> udeo po formuli, i u takmičenju poeni po istom pravilu kao Ocenjivac.poeni:
 --     osnovni 1000 bez trajanja, inače 1000 * (1 - min(max(vreme_ms, 0) / trajanje_ms, 1) / 2), pa FLOOR(osnovni * udeo + 0.5)
---     (= Java Math.round; ROUND nad DOUBLE ide na parno);
+--     (= Java Math.round; ROUND nad DOUBLE ide na parno). Poeni se preračunavaju samo kad je stara ocena 0 (delimičan ili
+--     netačan izbor); potpuno tačan odgovor (udeo 1) zadržava sačuvane poene, jer je bodovan trajanjem runde u tom trenutku,
+--     a trajanje_ms se kasnije menja (+-10 s menja trajanje posle ranijih odgovora, ponovno otvaranje runde ga briše na NULL).
+--     Trajanje u trenutku odgovora nikad nije sačuvano, pa delimični odgovori u takvim rundama dobijaju poene po konačnom
+--     trajanju (NULL = osnovni 1000);
 --   * inače (preocenjen, drugi tip, zadatak) udeo = IF(tacno, 1, 0), poeni ostaju.
 -- Trag preocene po istom pravilu iz staro_tacno (izbor odgovora se preocenom ne menja), a stari_poeni po formuli u takmičenju,
 -- da vraćanje preocene od pre V26 vrati udeo i poene kakve bi dao nov odgovor. Zbir poena se nigde ne čuva (ucesnici i
@@ -95,17 +99,18 @@ FROM (
   WHERE a.`tacnih` > 0
 ) b;
 
--- odgovori: formula gde je tacno jednak oceni skupa (poeni samo u takmičenju) ...
+-- odgovori: formula gde je tacno jednak oceni skupa; poeni samo u takmičenju i samo za netačan skup (potpuno tačan zadržava
+-- svoje poene: trajanje runde je možda menjano posle bodovanja) ...
 UPDATE `odgovori` o
 JOIN `v26_izbor` z ON z.`odgovor_id` = o.`id`
-SET o.`poeni` = IF(z.`takmicenje` = 1, z.`poeni`, o.`poeni`),
+SET o.`poeni` = IF(z.`takmicenje` = 1 AND z.`ocena_skupa` = 0, z.`poeni`, o.`poeni`),
     o.`udeo` = z.`udeo`
 WHERE o.`udeo` IS NULL AND o.`tacno` IS NOT NULL AND IF(o.`tacno`, 1, 0) = z.`ocena_skupa`;
 
 -- ... trag preocene po istom pravilu iz staro_tacno (pre popune ostatka odgovora; čita samo izbor) ...
 UPDATE `preocene_odgovora` t
 JOIN `v26_izbor` z ON z.`odgovor_id` = t.`odgovor_id`
-SET t.`stari_poeni` = IF(z.`takmicenje` = 1, z.`poeni`, t.`stari_poeni`),
+SET t.`stari_poeni` = IF(z.`takmicenje` = 1 AND z.`ocena_skupa` = 0, z.`poeni`, t.`stari_poeni`),
     t.`staro_udeo` = z.`udeo`
 WHERE t.`staro_udeo` IS NULL AND t.`staro_tacno` IS NOT NULL AND IF(t.`staro_tacno`, 1, 0) = z.`ocena_skupa`;
 

@@ -107,6 +107,8 @@ class PopunaUdelaIT {
         Long rAnketa = runda(takmicenje, 5, jsonMapper.writeValueAsString((SnimakRunde) anketa));
         Long bezTakmicenja = izvodjenje("BEZ234", false);
         Long rViseBez = runda(bezTakmicenja, 1, snimakDveTacne);
+        // runda ponovo otvorena (trajanje_ms = NULL) posle bodovanja: potpuno tačni zadržavaju sačuvane poene
+        Long rBezTrajanja = runda(takmicenje, 6, snimakDveTacne, null);
 
         Long u1 = ucesnik(takmicenje), u2 = ucesnik(takmicenje), u3 = ucesnik(takmicenje), u4 = ucesnik(takmicenje),
                 u5 = ucesnik(takmicenje), u6 = ucesnik(bezTakmicenja);
@@ -124,11 +126,19 @@ class PopunaUdelaIT {
         Long zadatak = db.queryForObject("select id from odgovori where runda_id = ?", Long.class, rZadatak);
         Long anketaOdg = odgovor(rAnketa, u1, "401", null, 0, 800);
         Long bezTak = odgovor(rViseBez, u6, "101", false, 0, 3000);
+        Long tacanBezTrajanja = odgovor(rBezTrajanja, u1, "101,102", true, 900, 2000);
+        Long delimicanBezTrajanja = odgovor(rBezTrajanja, u2, "101", false, 0, 4000);
+        Long vracenNaNetacan = odgovor(rBezTrajanja, u3, "101,102", false, 0, 2500);
 
         // trag preocene: {A} je bio netačan (0 poena), nastavnik ga je proglasio tačnim
         db.update("insert into preocene_odgovora (odgovor_id, staro_tacno, novo_tacno, stara_polja, stari_poeni, razlog, "
                 + "serija, kreirano) values (?, 0, 1, null, 0, 'Prihvatam', 'preocena-test', now(6))", preocenjen);
         Long trag = db.queryForObject("select id from preocene_odgovora where odgovor_id = ?", Long.class, preocenjen);
+        // trag potpuno tačnog odgovora koji je nastavnik proglasio netačnim: stari poeni su bodovani trajanjem pre izmene
+        db.update("insert into preocene_odgovora (odgovor_id, staro_tacno, novo_tacno, stara_polja, stari_poeni, razlog, "
+                + "serija, kreirano) values (?, 1, 0, null, 900, 'Odbijam', 'preocena-test', now(6))", vracenNaNetacan);
+        Long tragTacnog = db.queryForObject("select id from preocene_odgovora where odgovor_id = ?", Long.class,
+                vracenNaNetacan);
 
         var rezultat = flyway(null).migrate();
         assertTrue(rezultat.migrationsExecuted >= 1, "V26 nije izvršena");
@@ -161,6 +171,21 @@ class PopunaUdelaIT {
         assertEquals(0.5, udeo(bezTak));
         assertEquals(0, poeni(bezTak));
 
+        // potpuno tačan odgovor zadržava poene (trajanje runde se menjalo posle bodovanja); delimičan u istoj rundi bez
+        // trajanja dobija poene po osnovnih 1000
+        assertEquals(1.0, udeo(tacanBezTrajanja));
+        assertEquals(900, poeni(tacanBezTrajanja));
+        assertEquals(0.5, udeo(delimicanBezTrajanja));
+        assertEquals(Ocenjivac.poeni(0.5, true, null, 4000), poeni(delimicanBezTrajanja));
+        assertEquals(500, poeni(delimicanBezTrajanja));
+        // preocenjen na netačno: tacno=0 nije ocena skupa {A,B}, pa udeo 0 i poeni ostaju
+        assertEquals(0.0, udeo(vracenNaNetacan));
+        assertEquals(0, poeni(vracenNaNetacan));
+        Map<String, Object> tt = db.queryForMap("select staro_udeo, stari_poeni from preocene_odgovora where id = ?",
+                tragTacnog);
+        assertEquals(1.0, tt.get("staro_udeo"));
+        assertEquals(900, ((Number) tt.get("stari_poeni")).intValue());
+
         // trag: staro_tacno=0 je ocena skupa {A}, pa staro_udeo po formuli i stari poeni po njemu (vrati_preocenu vraća
         // stanje kakvo bi dao nov odgovor)
         Map<String, Object> t = db.queryForMap("select staro_udeo, stari_poeni from preocene_odgovora where id = ?", trag);
@@ -191,8 +216,12 @@ class PopunaUdelaIT {
     }
 
     Long runda(Long izvodjenjeId, int rb, String snimak) {
+        return runda(izvodjenjeId, rb, snimak, TRAJANJE_MS);
+    }
+
+    Long runda(Long izvodjenjeId, int rb, String snimak, Long trajanjeMs) {
         db.update("insert into pitanje_runde (izvodjenje_id, slajd_id, redni_broj, snimak, otvoreno, zatvoreno, trajanje_ms) "
-                + "values (?, null, ?, ?, now(6), now(6), ?)", izvodjenjeId, rb, snimak, TRAJANJE_MS);
+                + "values (?, null, ?, ?, now(6), now(6), ?)", izvodjenjeId, rb, snimak, trajanjeMs);
         return db.queryForObject("select id from pitanje_runde where izvodjenje_id = ? and redni_broj = ?", Long.class,
                 izvodjenjeId, rb);
     }
