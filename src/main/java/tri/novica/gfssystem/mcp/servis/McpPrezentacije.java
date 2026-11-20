@@ -22,6 +22,7 @@ import tri.novica.gfssystem.mcp.McpBudzet;
 import tri.novica.gfssystem.mcp.McpGreske;
 import tri.novica.gfssystem.mcp.McpLinkovi;
 import tri.novica.gfssystem.mcp.McpZahtev;
+import tri.novica.gfssystem.service.fajlovi.FajloviPrezentacijeServis;
 import tri.novica.gfssystem.service.uzivo.MedijService;
 import tri.novica.gfssystem.service.uzivo.PrezentacijaService;
 import tri.novica.gfssystem.utility.Serija;
@@ -59,13 +60,15 @@ public class McpPrezentacije {
     private final McpBudzet budzet;
     private final PrezentacijaService prezentacijaService;
     private final MedijService medijService;
+    private final FajloviPrezentacijeServis fajlovi;
 
     public McpPrezentacije(McpLinkovi linkovi, McpBudzet budzet, PrezentacijaService prezentacijaService,
-                           MedijService medijService) {
+                           MedijService medijService, FajloviPrezentacijeServis fajlovi) {
         this.linkovi = linkovi;
         this.budzet = budzet;
         this.prezentacijaService = prezentacijaService;
         this.medijService = medijService;
+        this.fajlovi = fajlovi;
     }
 
     // ---------------------------------------------------------------- čitanje
@@ -82,7 +85,7 @@ public class McpPrezentacije {
     public McpPrezentacijaPregled prezentacija(Long id, int strana) {
         Long prezentacijaId = obavezan(id, "prezentacijaId");
         return PrezentacijaPregled.pregled(prezentacijaService.detalji(prezentacijaId), strana,
-                linkovi.prezentacija(prezentacijaId));
+                linkovi.prezentacija(prezentacijaId), fajlovi.brojPoSlajdu(prezentacijaId));
     }
 
     /** Ceo slajd, PLATNO bez poteza i sa brojem tačaka po crtežu, i link njegove prezentacije; nepostojeći je 404. */

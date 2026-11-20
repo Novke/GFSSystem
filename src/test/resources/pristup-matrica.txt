@@ -59,6 +59,9 @@ GET /error ADMIN
 PATCH /error ADMIN
 POST /error ADMIN
 PUT /error ADMIN
+DELETE /fajlovi-prezentacije/{id} ADMIN
+PUT /fajlovi-prezentacije/{id} ADMIN
+GET /fajlovi-prezentacije/{id}/sadrzaj ADMIN
 GET /grupe ADMIN
 POST /grupe ADMIN
 GET /grupe/{grupaId}/onboarding ADMIN
@@ -146,12 +149,17 @@ DELETE /prezentacije/{id} ADMIN
 GET /prezentacije/{id} ADMIN
 PUT /prezentacije/{id} ADMIN
 POST /prezentacije/{id}/dupliraj ADMIN
+GET /prezentacije/{id}/fajlovi ADMIN
+POST /prezentacije/{id}/fajlovi ADMIN
+PUT /prezentacije/{id}/fajlovi/redosled ADMIN
 POST /prezentacije/{id}/izvodjenja ADMIN
 GET /prezentacije/{id}/predavanja ADMIN
 PUT /prezentacije/{id}/redosled ADMIN
 POST /prezentacije/{id}/slajdovi ADMIN
 POST /prezentacije/{id}/slajdovi/uvoz ADMIN
 PATCH /prezentacije/{id}/vezba ADMIN
+GET /public/fajlovi/{kod} ANONIMNO
+GET /public/fajlovi/{kod}/{fajlId} ANONIMNO
 GET /public/lti/jwks ANONIMNO
 POST /public/lti/povezi STUDENT
 GET /public/lti/povezivanje ANONIMNO
