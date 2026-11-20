@@ -2,6 +2,7 @@ package tri.novica.gfssystem.service.fajlovi;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ import tri.novica.gfssystem.repository.uzivo.MedijRepository;
 import tri.novica.gfssystem.repository.uzivo.PrezentacijaRepository;
 import tri.novica.gfssystem.repository.uzivo.SlajdRepository;
 import tri.novica.gfssystem.service.uzivo.MedijService;
+import tri.novica.gfssystem.service.uzivo.PrezentacijaPromene;
 import tri.novica.gfssystem.utility.Serija;
 
 import java.time.Clock;
@@ -34,7 +36,10 @@ import java.util.*;
  * <b>Odstupanje od slajdova:</b> prezentacija koja se upravo izvodi SME da menja fajlove (Novica kači fajl usred časa, pa
  * ga studenti odmah vide na spisku koda), za razliku od slajdova koje {@code PrezentacijaService} u tom slučaju ne menja
  * (409). Zato se ovde zaključava samo red prezentacije (redosled i najviše {@link #NAJVISE} fajlova ne mogu da se
- * pregaze), a ne i njena aktivna izvođenja.
+ * pregaze), a ne i njena aktivna izvođenja. Posle svake izmene se aktivna izvođenja prezentacije objave iznova
+ * ({@link PrezentacijaPromene#slajdoviPromenjeni}, isti put kao izmena slajda: verzija +1, snimci posle commit-a), pa
+ * projektor, konzola i telefoni odmah vide novi spisak; izvođenja se zaključavaju tek tada (posle upisa bajtova na disk),
+ * redom prezentacija -> izvođenje kao u svim putanjama.
  * <p>
  * Brisanje fajla briše red i medij ({@link MedijService#obrisi}: fajl sa diska tek posle commit-a). Brisanje cele
  * prezentacije zove {@link #obrisiSve} pre brisanja prezentacije, jer kaskada u bazi ne bi obrisala medije.
@@ -64,6 +69,7 @@ public class FajloviPrezentacijeServis {
     private final MedijRepository mediji;
     private final MedijService medijService;
     private final Clock clock;
+    private final ObjectProvider<PrezentacijaPromene> promene;
 
     // ---------------------------------------------------------------- čitanje
 
@@ -137,7 +143,9 @@ public class FajloviPrezentacijeServis {
         f.setNaziv(MedijService.normalizujNaziv(cmd.naziv(), f.getNaziv()));
         f.setSlajd(slajdIz(p, cmd.slajdId()));
         f.setIzmenjeno(LocalDateTime.now(clock));
-        return FajlMapper.info(fajlovi.saveAndFlush(f));
+        FajlPrezentacijeInfo info = FajlMapper.info(fajlovi.saveAndFlush(f));
+        javiIzvodjenjima(p.getId());
+        return info;
     }
 
     /** Novi redosled: {@code ids} su svi fajlovi prezentacije, tačno jednom, inače 400. */
@@ -163,6 +171,7 @@ public class FajloviPrezentacijeServis {
             rb++;
         }
         fajlovi.flush();
+        javiIzvodjenjima(prezentacijaId);
         return svi.stream().sorted(Comparator.comparingInt(FajlPrezentacije::getRb)).map(FajlMapper::info).toList();
     }
 
@@ -175,6 +184,7 @@ public class FajloviPrezentacijeServis {
         fajlovi.flush();   // prvo red (RESTRICT na medij), pa medij
         medijService.obrisi(medijId);
         log.info("Fajl prezentacije obrisan: id={}, prezentacija={}", fajlId, f.getPrezentacija().getId());
+        javiIzvodjenjima(f.getPrezentacija().getId());
     }
 
     /**
@@ -199,7 +209,7 @@ public class FajloviPrezentacijeServis {
         f.setPrezentacija(p);
         f.setSlajd(slajd);
         f.setMedij(mediji.getReferenceById(medijId));
-        f.setNaziv(MedijService.normalizujNaziv(naziv, naziv));
+        f.setNaziv(MedijService.nazivIzUploada(naziv));   // ime sa diska se skraćuje, ne odbija
         f.setRb(fajlovi.najveciRb(p.getId()) + 1);
         f.setSerija(serija);
         f.setKreirano(sada);
@@ -207,7 +217,13 @@ public class FajloviPrezentacijeServis {
         f = fajlovi.saveAndFlush(f);
         log.info("Fajl prezentacije dodat: id={}, prezentacija={}, slajd={}, serija={}", f.getId(), p.getId(),
                 slajd == null ? null : slajd.getId(), serija);
+        javiIzvodjenjima(p.getId());
         return FajlMapper.info(f);
+    }
+
+    /** Aktivna izvođenja prezentacije objavljuju nov snimak (spisak fajlova na projektoru i telefonima). */
+    private void javiIzvodjenjima(Long prezentacijaId) {
+        promene.ifAvailable(pr -> pr.slajdoviPromenjeni(prezentacijaId));
     }
 
     private void proveriBroj(Long prezentacijaId) {

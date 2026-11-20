@@ -62,6 +62,7 @@ public class KodoviFajlova {
         }
         kodovi.oslobodiIstekle(sada);
         Duration trajanje = predavanje != null ? KOD_PREDAVANJA : KOD_IZVODJENJA;
+        int odbijenoBezSudara = 0;
         for (int pokusaj = 0; pokusaj < POKUSAJA; pokusaj++) {
             // red se čita iznova: drugi zahtev ga je mogao upisati, a native upis ne osvežava već učitane entitete
             Optional<KodFajlova> red = predavanje != null ? kodovi.findByPredavanjeId(predavanje.getId())
@@ -86,6 +87,16 @@ public class KodoviFajlova {
                 KodFajlova k = kodovi.findByAktivanKod(broj).orElseThrow();
                 em.refresh(k);
                 return Optional.of(k);
+            }
+            // Paralelno pokretanje druge prezentacije istog predavanja: red predavanja je upisala druga transakcija
+            // (UNIQUE predavanje_id), a snimak ove ga ne vidi, pa bi svaki sledeći broj takođe bio odbijen. Kad je broj
+            // po snimku slobodan, a upis ipak odbijen, sudar je na predavanju: posle 3 takva pokušaja odustaje bez
+            // greške; izvođenje koristi kod tog reda (stanje ga čita u svakoj sledećoj transakciji).
+            if (predavanje != null && red.isEmpty() && kodovi.findByAktivanKod(broj).isEmpty()
+                    && ++odbijenoBezSudara >= 3) {
+                log.info("Kod fajlova za predavanje {} je upravo izdat u paralelnom pokretanju (izvođenje {})",
+                        predavanje.getId(), iz.getId());
+                return Optional.empty();
             }
         }
         log.error("Kod fajlova nije izdat: {} pokušaja bez slobodnog broja (izvođenje {})", POKUSAJA, iz.getId());

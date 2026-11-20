@@ -15,6 +15,9 @@ public interface KodFajlovaRepository extends JpaRepository<KodFajlova, Long> {
 
     Optional<KodFajlova> findByAktivanKod(String aktivanKod);
 
+    /** Da li je broj skoro izdat (red sa tim brojem važi ili je istekao posle {@code granica}): istekao pravi kod nije pogađanje. */
+    boolean existsByKodAndVaziDoAfter(String kod, java.time.LocalDateTime granica);
+
     Optional<KodFajlova> findByPredavanjeId(Long predavanjeId);
 
     Optional<KodFajlova> findByIzvodjenjeId(Long izvodjenjeId);

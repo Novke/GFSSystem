@@ -57,7 +57,9 @@ public class MedijService {
     private static final int MAX_NAZIV = 255;
     /** Najduže ime fajla uz prezentaciju koje korisnik unosi (ekstenzija originala se dodaje povrh). */
     private static final int MAX_NAZIV_FAJLA = 200;
-    private static final Pattern ZABRANJENI_ZNAKOVI = Pattern.compile("[/\\\\:*?\"<>|\\p{Cntrl}]");
+    /** Zabranjeno u imenu za preuzimanje: separatori putanje, Windows znakovi, kontrolni (C0 i C1), nevidljivi formatni
+     *  ({@code \p{Cf}}: bidi kao RLO koji obrće prikaz ekstenzije, ZWJ, meki crtica) i separatori reda i pasusa. */
+    private static final Pattern ZABRANJENI_ZNAKOVI = Pattern.compile("[/\\\\:*?\"<>|\\p{Cntrl}\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]");
     private static final String MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     private static final String MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -183,6 +185,24 @@ public class MedijService {
             throw new SystemException(PRAZAN_NAZIV, HttpStatus.BAD_REQUEST);
         }
         return ime;
+    }
+
+    /**
+     * Ime iz upload-a (originalno ime fajla, ili ime medija pri vezivanju): isto čišćenje znakova kao {@link #normalizujNaziv},
+     * ali predugo ime se <b>skraćuje</b> na {@value #MAX_NAZIV_FAJLA} znakova uz zadržanu ekstenziju (nastavnik ne bira ime
+     * fajla sa diska, pa 400 tu ne bi imao smisla); prazno ime postaje {@code fajl}. 400 za predugo ostaje samo pri ručnom
+     * preimenovanju.
+     */
+    public static String nazivIzUploada(String original) {
+        String ime = original == null ? "" : ZABRANJENI_ZNAKOVI.matcher(original.strip()).replaceAll("_").strip();
+        int tacka = ime.lastIndexOf('.');
+        String ext = tacka < 0 ? "" : ime.substring(tacka);
+        String osnova = tacka < 0 ? ime : ime.substring(0, tacka);
+        int najvise = Math.max(1, MAX_NAZIV_FAJLA - ext.codePointCount(0, ext.length()));
+        if (osnova.codePointCount(0, osnova.length()) > najvise) {
+            osnova = osnova.substring(0, osnova.offsetByCodePoints(0, najvise)).strip();
+        }
+        return (osnova.isEmpty() ? "fajl" : osnova) + ext;
     }
 
     private static String ekstenzija(String naziv) {

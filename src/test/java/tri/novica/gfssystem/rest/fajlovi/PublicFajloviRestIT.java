@@ -151,5 +151,7 @@ class PublicFajloviRestIT {
         mvc.perform(get("/public/fajlovi/" + kod).with(sa())).andExpect(status().isOk());
         d.zavrsi(predavanje);
         mvc.perform(get("/public/fajlovi/" + kod).with(sa())).andExpect(status().isNotFound());
+        // istekao ili završen pravi kod (stari tab koji se osvežava) nije pogađanje: ne troši pokušaj
+        assertEquals(0, jdbc.queryForObject("select count(*) from pokusaji where kljuc = ?", Integer.class, ip));
     }
 }

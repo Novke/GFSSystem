@@ -202,7 +202,24 @@ class FajloviPrezentacijeIT {
         NastavnickoStanje n = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 0));
         assertNull(n.fajlovi());
         assertTrue(stanjeService.javno(iz.id()).fajlovi().isEmpty());
-        otpremi(prez, "kasnije.docx", s1);   // prezentacija koja se izvodi sme da se menja fajlovima
+        long pre = stanjeService.nastavnicko(iz.id()).verzija();
+        FajlPrezentacijeInfo k = otpremi(prez, "kasnije.docx", s1);   // prezentacija koja se izvodi sme da se menja fajlovima
         assertEquals(1, stanjeService.nastavnicko(iz.id()).fajlovi().fajlovi().size());
+        // svaka izmena fajlova objavi nov snimak aktivnog izvođenja (projektor i telefoni odmah vide spisak)
+        long posleDodavanja = stanjeService.nastavnicko(iz.id()).verzija();
+        assertTrue(posleDodavanja > pre, "verzija posle dodavanja");
+        servis.izmeni(k.id(), new FajlPrezentacijeCmd("preimenovan", s1));
+        long posleIzmene = stanjeService.nastavnicko(iz.id()).verzija();
+        assertTrue(posleIzmene > posleDodavanja, "verzija posle izmene");
+        servis.obrisi(k.id());
+        assertTrue(stanjeService.nastavnicko(iz.id()).verzija() > posleIzmene, "verzija posle brisanja");
+        assertNull(stanjeService.nastavnicko(iz.id()).fajlovi());
+    }
+
+    @Test
+    void dugoImeSaDiskaSeSkracuje() {
+        FajlPrezentacijeInfo i = otpremi(prez, "x".repeat(240) + ".docx", null);
+        assertEquals(200, i.naziv().length());
+        assertTrue(i.naziv().endsWith(".docx"));
     }
 }

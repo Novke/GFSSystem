@@ -146,4 +146,23 @@ class MedijServiceFajlTest {
                 () -> MedijService.normalizujNaziv("a".repeat(201), "x.docx"));
         assertEquals(400, ex.getCode());
     }
+
+    @Test
+    void normalizacijaMenjaNevidljiveIBidiZnakove() {
+        // RLO (U+202E) bi u prikazu obrnuo "exe.docx"; ZWJ, LS, PS i C1 kontrolni takođe ne ulaze u ime
+        assertEquals("a_b.docx", MedijService.normalizujNaziv("a\u202Eb", "x.docx"));
+        assertEquals("a_b_c_d.docx", MedijService.normalizujNaziv("a\u200Db\u2028c\u2029d", "x.docx"));
+        assertEquals("a_b.docx", MedijService.normalizujNaziv("a\u0085b", "x.docx"));
+    }
+
+    @Test
+    void imeIzUploadaSeSkracujeUzEkstenziju() {
+        String dugo = "a".repeat(250) + ".docx";
+        String ime = MedijService.nazivIzUploada(dugo);
+        assertEquals(200, ime.length());
+        assertTrue(ime.endsWith(".docx"));
+        assertEquals("Vežbe 7.docx", MedijService.nazivIzUploada("Vežbe 7.docx"));
+        assertEquals("a_b.pdf", MedijService.nazivIzUploada("a\u202Eb.pdf"));
+        assertEquals("fajl.zip", MedijService.nazivIzUploada(".zip"));
+    }
 }
