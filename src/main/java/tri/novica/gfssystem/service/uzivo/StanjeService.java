@@ -126,7 +126,7 @@ public class StanjeService {
                             o == null ? null : o.getTacno(), o == null ? null : o.getVremeMs(),
                             kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven(),
                             stariji.contains(u.getId()), u.getUtisan(), oz[1] > 0, (int) oz[0],
-                            u.getStudent() != null, udeoOdgovora(snimakRunde, o));
+                            u.getStudent() != null, Ocenjivac.zaokruzi(udeoOdgovora(snimakRunde, o)));
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
@@ -569,7 +569,7 @@ public class StanjeService {
             // sopstveni izbor nije tajna učesniku (sam ga je poslao), a udeo ide tek uz tačnost (posle TACAN)
             odgovor = new LicniOdgovor(lp.rundaId(), o != null, prikazi ? o.getTacno() : null,
                     prikazi ? o.getPoeni() : null, o == null ? null : izabrane(o),
-                    prikazi ? udeoOdgovora(lp.snimakRunde(), o) : null);
+                    prikazi ? Ocenjivac.zaokruzi(udeoOdgovora(lp.snimakRunde(), o)) : null);
         }
         RangTacnosti.Zbir tacnost = lp.tacnost().get(u.getId());
         return new LicnoStanje(iz.getVerzija(), u.getId(), u.getIme(), lp.poeni().getOrDefault(u.getId(), 0),

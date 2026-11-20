@@ -300,4 +300,18 @@ class IzvodjenjaAlatiDbTest extends McpDbTestOsnova {
         assertEquals(0, uspeh("vrati_preocenu", mapa("serija", serija + "-w", "rundaId", runda, "ciljSerija", serija))
                 .path("izmenjeni").size());
     }
+
+    @Test
+    void odgovoriRundeDajuUdeoKaoCitaociZaokruzen() {
+        Long dveTrecine = odgovorUdeo(runda, izvodjenje, "Ana", false, 2.0 / 3, 0);
+        // red starije slike (bez udela): udeo po tacno, kao COALESCE(udeo, IF(tacno, 1, 0)) u čitaocima
+        Long staraSlika = odgovor(runda, izvodjenje, "Pera", true, "-5", null);
+        jdbc.update("update odgovori set udeo = null where id = ?", staraSlika);
+
+        JsonNode odgovori = uspeh("odgovori_runde", mapa("rundaId", runda));
+        assertEquals(dveTrecine, odgovori.get(0).path("id").asLong());
+        assertEquals(0.67, odgovori.get(0).path("udeo").asDouble(), 1e-12);
+        assertEquals(staraSlika, odgovori.get(1).path("id").asLong());
+        assertEquals(1.0, odgovori.get(1).path("udeo").asDouble(), 1e-12);
+    }
 }

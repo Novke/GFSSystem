@@ -2,6 +2,8 @@ package tri.novica.gfssystem.service.uzivo;
 
 import tri.novica.gfssystem.exceptions.SystemException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +27,19 @@ public final class Ocenjivac {
     public static Boolean tacno(PitanjeSnimak p, OdgovorVrednost v) {
         Double udeo = udeo(p, v);
         return tacnoIzUdela(udeo);
+    }
+
+    /**
+     * Zaokruženo na 0,01, pola nagore: jedino zaokruživanje udela i zbira udela u svemu što server šalje (★ i "Tačno x od
+     * y" u rangu, zbir udela runde, udeo odgovora na telefonu, u konzoli, pregledu i MCP-u).
+     */
+    public static double zaokruzi(double x) {
+        return BigDecimal.valueOf(x).setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /** {@link #zaokruzi(double)} koji propušta {@code null} (pitanje bez tačnog odgovora). */
+    public static Double zaokruzi(Double x) {
+        return x == null ? null : zaokruzi(x.doubleValue());
     }
 
     /** Potpuno tačan odgovor (udeo 1, sa tolerancijom); {@code null} kad udela nema. */

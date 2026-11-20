@@ -109,6 +109,8 @@ class PopunaUdelaIT {
         Long rViseBez = runda(bezTakmicenja, 1, snimakDveTacne);
         // runda ponovo otvorena (trajanje_ms = NULL) posle bodovanja: potpuno tačni zadržavaju sačuvane poene
         Long rBezTrajanja = runda(takmicenje, 6, snimakDveTacne, null);
+        // neispravan JSON u snimku (mediumtext ga dozvoljava): JSON_TABLE ga nikad ne vidi, odgovor dobija IF(tacno, 1, 0)
+        Long rNeispravan = runda(takmicenje, 7, "{\"tip\":\"VISE_TACNIH\",\"opcije\":[{\"id\":101,");
 
         Long u1 = ucesnik(takmicenje), u2 = ucesnik(takmicenje), u3 = ucesnik(takmicenje), u4 = ucesnik(takmicenje),
                 u5 = ucesnik(takmicenje), u6 = ucesnik(bezTakmicenja);
@@ -129,6 +131,7 @@ class PopunaUdelaIT {
         Long tacanBezTrajanja = odgovor(rBezTrajanja, u1, "101,102", true, 900, 2000);
         Long delimicanBezTrajanja = odgovor(rBezTrajanja, u2, "101", false, 0, 4000);
         Long vracenNaNetacan = odgovor(rBezTrajanja, u3, "101,102", false, 0, 2500);
+        Long neispravan = odgovor(rNeispravan, u1, "101", true, 654, 1000);
 
         // trag preocene: {A} je bio netačan (0 poena), nastavnik ga je proglasio tačnim
         db.update("insert into preocene_odgovora (odgovor_id, staro_tacno, novo_tacno, stara_polja, stari_poeni, razlog, "
@@ -185,6 +188,8 @@ class PopunaUdelaIT {
                 tragTacnog);
         assertEquals(1.0, tt.get("staro_udeo"));
         assertEquals(900, ((Number) tt.get("stari_poeni")).intValue());
+        assertEquals(1.0, udeo(neispravan));
+        assertEquals(654, poeni(neispravan));
 
         // trag: staro_tacno=0 je ocena skupa {A}, pa staro_udeo po formuli i stari poeni po njemu (vrati_preocenu vraća
         // stanje kakvo bi dao nov odgovor)

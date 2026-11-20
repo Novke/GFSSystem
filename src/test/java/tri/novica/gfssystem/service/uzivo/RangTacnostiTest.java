@@ -186,10 +186,12 @@ class RangTacnostiTest {
 
     @Test
     void zaokruzivanjeNaPolaNagore() {
-        assertEquals(0.13, RangTacnosti.zaokruzi(0.125));
-        assertEquals(1.01, RangTacnosti.zaokruzi(1.005));
-        assertEquals(3.5, RangTacnosti.zaokruzi(3.5));
-        assertEquals(0.0, RangTacnosti.zaokruzi(0.0));
+        assertEquals(0.13, Ocenjivac.zaokruzi(0.125));
+        assertEquals(1.01, Ocenjivac.zaokruzi(1.005));
+        assertEquals(3.5, Ocenjivac.zaokruzi(3.5));
+        assertEquals(0.0, Ocenjivac.zaokruzi(0.0));
+        assertEquals(0.67, Ocenjivac.zaokruzi((Double) (2.0 / 3)));
+        assertNull(Ocenjivac.zaokruzi((Double) null));
     }
 
     @Test

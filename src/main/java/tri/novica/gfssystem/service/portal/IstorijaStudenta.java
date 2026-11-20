@@ -278,7 +278,7 @@ public class IstorijaStudenta {
             String tekst = tekstOdgovora(ps, r);
             if (tekst == null || tekst.isBlank()) continue;
             Boolean tacno = ps.tip() == TipPitanja.ANKETA ? null : bool(r.get("tacno"));
-            rez.put(slajdId, new OdgovorPregleda(tekst, tacno, udeo(ps, r)));
+            rez.put(slajdId, new OdgovorPregleda(tekst, tacno, Ocenjivac.zaokruzi(udeo(ps, r))));
         }
         return rez;
     }

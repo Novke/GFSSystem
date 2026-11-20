@@ -36,7 +36,7 @@ public final class RezultatBuilder {
                         .filter(u -> u > 0 && !Boolean.TRUE.equals(Ocenjivac.tacnoIzUdela(u))).count()
                 : null;
         Double zbirUdela = prikaziTacnost
-                ? Math.round(100.0 * koristi.stream().mapToDouble(o -> udeoIli(p, o)).sum()) / 100.0 : null;
+                ? Ocenjivac.zaokruzi(koristi.stream().mapToDouble(o -> udeoIli(p, o)).sum()) : null;
         return switch (p.tip()) {
             case JEDAN_TACAN, VISE_TACNIH, ANKETA, TACNO_NETACNO ->
                     new Rezultat(p.tip(), ukupno, opcije(p, koristi, tacanPrikazan), null, null, null, tacnih, delimicnih, zbirUdela);

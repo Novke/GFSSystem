@@ -86,7 +86,7 @@ public class PreocenaOdgovoraService {
         }
         return odgovorRepository.findAllByRundaId(rundaId).stream()
                 .map(o -> new OdgovorZaPreocenu(o.getId(), o.getUcesnik().getId(), o.getUcesnik().getIme(), o.getVarijantaId(),
-                        vrednost(o), o.getTacno(), o.getUdeo()))
+                        vrednost(o), o.getTacno(), Ocenjivac.zaokruzi(udeoOdgovora(o))))
                 .toList();
     }
 
@@ -241,7 +241,7 @@ public class PreocenaOdgovoraService {
     private static Double zbirUdela(List<Odgovor> odgovori) {
         double zbir = odgovori.stream().mapToDouble(o -> o.getUdeo() != null ? o.getUdeo()
                 : Boolean.TRUE.equals(o.getTacno()) ? 1.0 : 0.0).sum();
-        return Math.round(100.0 * zbir) / 100.0;
+        return Ocenjivac.zaokruzi(zbir);
     }
 
     private static long brojTacnih(List<Odgovor> odgovori) {

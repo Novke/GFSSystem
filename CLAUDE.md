@@ -316,14 +316,25 @@ group's schema, the console and projector show results per variant and, on `Shif
 Only `VISE_TACNIH` is partial: `udeo = max(0, (correct chosen - wrong chosen) / number of correct)`; every other type 1 or 0 (`Ocenjivac.udeo`,
 `udeoIzbora`, `tacnoIzUdela`); a ZADATAK stays all-or-nothing. `tacno` = `udeo >= 1`. Competition points = `round(base x udeo)`
 (`Ocenjivac.poeni(Double udeo, ...)`). Columns `odgovori.udeo` (nullable DOUBLE, written by `OdgovorService`) and `preocene_odgovora.staro_udeo`.
-- **V26 backfill:** `udeo` = 1/0 from `tacno` for existing rows, recomputed from the round snapshot for `VISE_TACNIH`; points only for rows that had 0 points
-  (a formerly wrong competition answer now earning something), never lowered or changed for the others.
+- **V26 backfill:** for a `VISE_TACNIH` round (valid JSON snapshot, `vrsta` PITANJE or none) `udeo` is recomputed by the formula **only where the stored
+  `tacno` equals the snapshot's exact-set grade** (the answer was never re-graded to the other value); a re-graded answer, every other type and a
+  ZADATAK get `IF(tacno, 1, 0)`, no `tacno` stays NULL. Points change only in a competition and only for rows whose exact-set grade was 0 (they had 0
+  points; now `round(base x udeo)`, base from the round's final `trajanje_ms`); a fully correct answer keeps its stored points. The trail gets
+  `staro_udeo`/`stari_poeni` by the same rule from `staro_tacno`. A second run is a no-op (only `udeo IS NULL` rows). No temporary tables or views
+  (CTEs inside the `UPDATE`s), so the migration needs no privilege beyond the earlier ones (`PopunaUdelaIT` passed as a user without `CREATE
+  TEMPORARY TABLES`).
+- **Rollback across V26:** additive, the old image starts; but its re-grade changes `tacno`/`poeni` and not `udeo` (and writes trail rows with
+  `staro_udeo` NULL), and readers prefer `udeo`. Before going forward again: `UPDATE odgovori SET udeo = IF(tacno, 1, 0) WHERE tacno IS NOT NULL AND
+  udeo IS NOT NULL AND (tacno = 1) <> (udeo >= 1 - 1e-9);` and `UPDATE preocene_odgovora SET staro_udeo = IF(staro_tacno, 1, 0) WHERE staro_udeo IS
+  NULL AND staro_tacno IS NOT NULL;` (deploy repo `README.md`, "Delimično tačno (izdanje)").
+- **Rounding:** every `udeo` and sum of `udeo` the server sends (rang ★ and "Tačno x od y", `Rezultat.zbirUdela`, phone, console, portal, MCP) goes
+  through `Ocenjivac.zaokruzi` (0.01, HALF_UP); sums are exact until that point, and the rang compares the rounded ★ it shows.
 - **Readers:** a row from an older image has `udeo` NULL, so every reader falls back (`RezultatBuilder.udeoIli`; SQL `COALESCE(udeo, IF(tacno, 1, 0))`):
   stored `udeo`, else `tacno` 1/0, else the snapshot. Readers prefer `udeo`, so a re-grade must write it.
 - **Re-grade (`PreocenaOdgovoraService`):** `preoceni` sets `udeo = tacno ? 1 : 0` (ZADATAK: by fields as before, then `udeo` from the overall result), points
   from `Ocenjivac.poeni(udeo, ...)`, and the trail keeps `staro_udeo` (the effective old udeo). The "nothing to change" check compares `udeo` too, so
   `{A}` (0.5) re-graded to `tacno=false` is a real change; `vrati` restores `udeo = staro_udeo` (NULL falls back to `staroTacno ? 1 : 0`). MCP
-  `izvodjenja_prezentacije` rounds carry `zbirUdela`, `odgovori_runde` items `udeo` (additive); `vodic` `pitanja` describes the scoring of `VISE_TACNIH`.
+  `izvodjenja_prezentacije` rounds carry `zbirUdela`, `odgovori_runde` items the effective `udeo` (NULL falls back to `tacno`, rounded; additive); `vodic` `pitanja` describes the scoring of `VISE_TACNIH`.
 
 ### Rang tačnosti (leaderboard)
 

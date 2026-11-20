@@ -19,7 +19,8 @@
 -- izvodjenja nemaju takvu kolonu; rang i lista poena sabiraju odgovori.poeni pri čitanju), pa nema šta drugo da se preračuna.
 -- Aditivno: dve nullable kolone. Rollback (stara slika, pre V26): ddl-auto=validate ne gleda višak i stara slika piše odgovore
 -- bez udela (NULL); čitaoci nove slike zato uvek čitaju COALESCE(udeo, IF(tacno, 1, 0)).
--- Idempotentno kao V2-V25: kolone preko information_schema + PREPARE; pomoćne privremene tabele se brišu na kraju.
+-- Idempotentno kao V2-V25: kolone preko information_schema + PREPARE. Bez privremenih tabela i pogleda (CTE unutar UPDATE-a),
+-- pa traži samo prava koja su tražile i ranije migracije (ALTER, SELECT, UPDATE), ne CREATE TEMPORARY TABLES.
 
 -- ---------------------------------------------------------------- odgovori: udeo
 SET @ima := (SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -34,82 +35,120 @@ SET @sql := IF(@ima = 0, 'ALTER TABLE `preocene_odgovora` ADD COLUMN `staro_udeo
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
 -- ---------------------------------------------------------------- popuna unazad
--- privremene tabele žive samo u sesiji migracije (nova veza ih nema, pa nema DROP na početku: Flyway bi logovao WARN)
-
--- runde čiji je snimak pitanje VISE_TACNIH ("vrsta" PITANJE ili bez nje, kao stari snimak; zadatak ima "vrsta":"ZADATAK");
--- CASE čuva JSON_EXTRACT od neispravnog JSON-a
-CREATE TEMPORARY TABLE `v26_runde` (
-  `runda_id` bigint NOT NULL PRIMARY KEY,
-  `takmicenje` tinyint NOT NULL,
-  `trajanje_ms` bigint DEFAULT NULL
-) ENGINE=InnoDB;
-INSERT INTO `v26_runde` (`runda_id`, `takmicenje`, `trajanje_ms`)
-SELECT r.`id`, IF(i.`takmicenje`, 1, 0), r.`trajanje_ms`
-FROM `pitanje_runde` r
-JOIN `izvodjenja` i ON i.`id` = r.`izvodjenje_id`
-WHERE (CASE WHEN JSON_VALID(r.`snimak`)
-            THEN JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.tip')) = 'VISE_TACNIH'
-                 AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.vrsta')), 'PITANJE') = 'PITANJE'
-            ELSE 0 END) = 1;
-
--- opcije snimka tih rundi (OpcijaSnimak: id, tacna)
-CREATE TEMPORARY TABLE `v26_opcije` (
-  `runda_id` bigint NOT NULL,
-  `opcija_id` bigint NOT NULL,
-  `tacna` tinyint NOT NULL,
-  KEY `idx_v26_opcije_runda` (`runda_id`)
-) ENGINE=InnoDB;
-INSERT INTO `v26_opcije` (`runda_id`, `opcija_id`, `tacna`)
-SELECT vr.`runda_id`, jt.`id`, COALESCE(jt.`tacna`, 0)
-FROM `v26_runde` vr
-JOIN `pitanje_runde` r ON r.`id` = vr.`runda_id`
-JOIN JSON_TABLE(r.`snimak`, '$.opcije[*]' COLUMNS (`id` bigint PATH '$.id', `tacna` boolean PATH '$.tacna')) jt
-WHERE jt.`id` IS NOT NULL;
-
--- izbor svakog odgovora na te runde (opcije = CSV id-jeva; svaka opcija snimka se broji jednom, kao skup u Ocenjivac.udeoIzbora):
--- ocena skupa, udeo po formuli i poeni po udelu (samo za takmičenje; inače se ne koriste)
-CREATE TEMPORARY TABLE `v26_izbor` (
-  `odgovor_id` bigint NOT NULL PRIMARY KEY,
-  `takmicenje` tinyint NOT NULL,
-  `ocena_skupa` tinyint NOT NULL,
-  `udeo` double NOT NULL,
-  `poeni` int NOT NULL
-) ENGINE=InnoDB;
-INSERT INTO `v26_izbor` (`odgovor_id`, `takmicenje`, `ocena_skupa`, `udeo`, `poeni`)
-SELECT b.`odgovor_id`, b.`takmicenje`,
-       IF(b.`pogodjene` = b.`tacnih` AND b.`pogresne` = 0, 1, 0),
-       b.`udeo`,
-       IF(b.`udeo` <= 0, 0,
-          FLOOR(IF(b.`trajanje_ms` IS NULL OR b.`trajanje_ms` <= 0, 1000.0,
-                   1000 * (1 - LEAST(CAST(GREATEST(b.`vreme_ms`, 0) AS DOUBLE) / b.`trajanje_ms`, 1.0) / 2))
-                * b.`udeo` + 0.5))
-FROM (
-  SELECT a.*, GREATEST(0.0, CAST(a.`pogodjene` - a.`pogresne` AS DOUBLE) / a.`tacnih`) AS `udeo`
-  FROM (
-    SELECT o.`id` AS `odgovor_id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`,
-           SUM(op.`tacna`) AS `tacnih`,
-           SUM(IF(op.`tacna` = 1 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogodjene`,
-           SUM(IF(op.`tacna` = 0 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogresne`
-    FROM `odgovori` o
-    JOIN `v26_runde` vr ON vr.`runda_id` = o.`runda_id`
-    JOIN `v26_opcije` op ON op.`runda_id` = o.`runda_id`
-    WHERE o.`polja` IS NULL
-    GROUP BY o.`id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`
-  ) a
-  WHERE a.`tacnih` > 0
-) b;
+-- Izbor se računa u CTE-u (isti tekst u oba UPDATE-a ispod; čita samo izbor i vreme odgovora, ne udeo, tacno ni poene, pa
+-- drugi UPDATE vidi isto što i prvi). brojevi ima GROUP BY, pa se materijalizuje i ne spaja sa ciljnom tabelom odgovori.
 
 -- odgovori: formula gde je tacno jednak oceni skupa; poeni samo u takmičenju i samo za netačan skup (potpuno tačan zadržava
 -- svoje poene: trajanje runde je možda menjano posle bodovanja) ...
+WITH
+-- runde čiji je snimak pitanje VISE_TACNIH ("vrsta" PITANJE ili bez nje, kao stari snimak; zadatak ima "vrsta":"ZADATAK");
+-- CASE čuva JSON_EXTRACT od neispravnog JSON-a
+runde AS (
+  SELECT r.`id` AS `runda_id`, IF(i.`takmicenje`, 1, 0) AS `takmicenje`, r.`trajanje_ms`
+  FROM `pitanje_runde` r
+  JOIN `izvodjenja` i ON i.`id` = r.`izvodjenje_id`
+  WHERE (CASE WHEN JSON_VALID(r.`snimak`)
+              THEN JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.tip')) = 'VISE_TACNIH'
+                   AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.vrsta')), 'PITANJE') = 'PITANJE'
+              ELSE 0 END) = 1
+),
+-- opcije snimka tih rundi (OpcijaSnimak: id, tacna); JSON_TABLE dobija '{}' umesto neispravnog JSON-a bez obzira na
+-- redosled kojim optimizator primenjuje uslove (kao V20)
+opcije AS (
+  SELECT vr.`runda_id`, jt.`id` AS `opcija_id`, COALESCE(jt.`tacna`, 0) AS `tacna`
+  FROM runde vr
+  JOIN `pitanje_runde` r ON r.`id` = vr.`runda_id`
+  JOIN JSON_TABLE(IF(JSON_VALID(r.`snimak`), r.`snimak`, '{}'), '$.opcije[*]'
+                  COLUMNS (`id` bigint PATH '$.id', `tacna` boolean PATH '$.tacna')) jt
+  WHERE jt.`id` IS NOT NULL
+),
+-- izbor svakog odgovora na te runde (opcije = CSV id-jeva; svaka opcija snimka se broji jednom, kao skup u
+-- Ocenjivac.udeoIzbora): ocena skupa, udeo po formuli i poeni po udelu (samo za takmičenje; inače se ne koriste)
+brojevi AS (
+  SELECT o.`id` AS `odgovor_id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`,
+         SUM(op.`tacna`) AS `tacnih`,
+         SUM(IF(op.`tacna` = 1 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogodjene`,
+         SUM(IF(op.`tacna` = 0 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogresne`
+  FROM `odgovori` o
+  JOIN runde vr ON vr.`runda_id` = o.`runda_id`
+  JOIN opcije op ON op.`runda_id` = o.`runda_id`
+  WHERE o.`polja` IS NULL
+  GROUP BY o.`id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`
+),
+udeli AS (
+  SELECT b.*, GREATEST(0.0, CAST(b.`pogodjene` - b.`pogresne` AS DOUBLE) / b.`tacnih`) AS `udeo`
+  FROM brojevi b
+  WHERE b.`tacnih` > 0
+),
+izbor AS (
+  SELECT u.`odgovor_id`, u.`takmicenje`,
+         IF(u.`pogodjene` = u.`tacnih` AND u.`pogresne` = 0, 1, 0) AS `ocena_skupa`,
+         u.`udeo`,
+         IF(u.`udeo` <= 0, 0,
+            FLOOR(IF(u.`trajanje_ms` IS NULL OR u.`trajanje_ms` <= 0, 1000.0,
+                     1000 * (1 - LEAST(CAST(GREATEST(u.`vreme_ms`, 0) AS DOUBLE) / u.`trajanje_ms`, 1.0) / 2))
+                  * u.`udeo` + 0.5)) AS `poeni`
+  FROM udeli u
+)
 UPDATE `odgovori` o
-JOIN `v26_izbor` z ON z.`odgovor_id` = o.`id`
+JOIN izbor z ON z.`odgovor_id` = o.`id`
 SET o.`poeni` = IF(z.`takmicenje` = 1 AND z.`ocena_skupa` = 0, z.`poeni`, o.`poeni`),
     o.`udeo` = z.`udeo`
 WHERE o.`udeo` IS NULL AND o.`tacno` IS NOT NULL AND IF(o.`tacno`, 1, 0) = z.`ocena_skupa`;
 
 -- ... trag preocene po istom pravilu iz staro_tacno (pre popune ostatka odgovora; čita samo izbor) ...
+WITH
+-- runde čiji je snimak pitanje VISE_TACNIH ("vrsta" PITANJE ili bez nje, kao stari snimak; zadatak ima "vrsta":"ZADATAK");
+-- CASE čuva JSON_EXTRACT od neispravnog JSON-a
+runde AS (
+  SELECT r.`id` AS `runda_id`, IF(i.`takmicenje`, 1, 0) AS `takmicenje`, r.`trajanje_ms`
+  FROM `pitanje_runde` r
+  JOIN `izvodjenja` i ON i.`id` = r.`izvodjenje_id`
+  WHERE (CASE WHEN JSON_VALID(r.`snimak`)
+              THEN JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.tip')) = 'VISE_TACNIH'
+                   AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.`snimak`, '$.vrsta')), 'PITANJE') = 'PITANJE'
+              ELSE 0 END) = 1
+),
+-- opcije snimka tih rundi (OpcijaSnimak: id, tacna); JSON_TABLE dobija '{}' umesto neispravnog JSON-a bez obzira na
+-- redosled kojim optimizator primenjuje uslove (kao V20)
+opcije AS (
+  SELECT vr.`runda_id`, jt.`id` AS `opcija_id`, COALESCE(jt.`tacna`, 0) AS `tacna`
+  FROM runde vr
+  JOIN `pitanje_runde` r ON r.`id` = vr.`runda_id`
+  JOIN JSON_TABLE(IF(JSON_VALID(r.`snimak`), r.`snimak`, '{}'), '$.opcije[*]'
+                  COLUMNS (`id` bigint PATH '$.id', `tacna` boolean PATH '$.tacna')) jt
+  WHERE jt.`id` IS NOT NULL
+),
+-- izbor svakog odgovora na te runde (opcije = CSV id-jeva; svaka opcija snimka se broji jednom, kao skup u
+-- Ocenjivac.udeoIzbora): ocena skupa, udeo po formuli i poeni po udelu (samo za takmičenje; inače se ne koriste)
+brojevi AS (
+  SELECT o.`id` AS `odgovor_id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`,
+         SUM(op.`tacna`) AS `tacnih`,
+         SUM(IF(op.`tacna` = 1 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogodjene`,
+         SUM(IF(op.`tacna` = 0 AND FIND_IN_SET(op.`opcija_id`, COALESCE(o.`opcije`, '')) > 0, 1, 0)) AS `pogresne`
+  FROM `odgovori` o
+  JOIN runde vr ON vr.`runda_id` = o.`runda_id`
+  JOIN opcije op ON op.`runda_id` = o.`runda_id`
+  WHERE o.`polja` IS NULL
+  GROUP BY o.`id`, vr.`takmicenje`, vr.`trajanje_ms`, o.`vreme_ms`
+),
+udeli AS (
+  SELECT b.*, GREATEST(0.0, CAST(b.`pogodjene` - b.`pogresne` AS DOUBLE) / b.`tacnih`) AS `udeo`
+  FROM brojevi b
+  WHERE b.`tacnih` > 0
+),
+izbor AS (
+  SELECT u.`odgovor_id`, u.`takmicenje`,
+         IF(u.`pogodjene` = u.`tacnih` AND u.`pogresne` = 0, 1, 0) AS `ocena_skupa`,
+         u.`udeo`,
+         IF(u.`udeo` <= 0, 0,
+            FLOOR(IF(u.`trajanje_ms` IS NULL OR u.`trajanje_ms` <= 0, 1000.0,
+                     1000 * (1 - LEAST(CAST(GREATEST(u.`vreme_ms`, 0) AS DOUBLE) / u.`trajanje_ms`, 1.0) / 2))
+                  * u.`udeo` + 0.5)) AS `poeni`
+  FROM udeli u
+)
 UPDATE `preocene_odgovora` t
-JOIN `v26_izbor` z ON z.`odgovor_id` = t.`odgovor_id`
+JOIN izbor z ON z.`odgovor_id` = t.`odgovor_id`
 SET t.`stari_poeni` = IF(z.`takmicenje` = 1 AND z.`ocena_skupa` = 0, z.`poeni`, t.`stari_poeni`),
     t.`staro_udeo` = z.`udeo`
 WHERE t.`staro_udeo` IS NULL AND t.`staro_tacno` IS NOT NULL AND IF(t.`staro_tacno`, 1, 0) = z.`ocena_skupa`;
@@ -117,7 +156,3 @@ WHERE t.`staro_udeo` IS NULL AND t.`staro_tacno` IS NOT NULL AND IF(t.`staro_tac
 -- ... a sve ostalo (preocenjeno, drugi tipovi, zadatak) 1 ili 0, poeni ostaju
 UPDATE `odgovori` SET `udeo` = IF(`tacno`, 1, 0) WHERE `udeo` IS NULL AND `tacno` IS NOT NULL;
 UPDATE `preocene_odgovora` SET `staro_udeo` = IF(`staro_tacno`, 1, 0) WHERE `staro_udeo` IS NULL AND `staro_tacno` IS NOT NULL;
-
-DROP TEMPORARY TABLE IF EXISTS `v26_izbor`;
-DROP TEMPORARY TABLE IF EXISTS `v26_opcije`;
-DROP TEMPORARY TABLE IF EXISTS `v26_runde`;

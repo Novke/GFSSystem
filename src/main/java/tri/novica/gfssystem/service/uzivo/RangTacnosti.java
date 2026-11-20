@@ -2,8 +2,6 @@ package tri.novica.gfssystem.service.uzivo;
 
 import tri.novica.gfssystem.dto.uzivo.RangTacnostiStavka;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -66,10 +64,10 @@ public final class RangTacnosti {
         long vremeMs;
         double zvezdice;
 
-        public double tacnih() { return zaokruzi(tacnih); }
+        public double tacnih() { return Ocenjivac.zaokruzi(tacnih); }
         public int dugovanih() { return dugovanih; }
         public int odgovorenih() { return odgovorenih; }
-        public double zvezdice() { return zaokruzi(zvezdice); }
+        public double zvezdice() { return Ocenjivac.zaokruzi(zvezdice); }
 
         public void dodaj(Zbir z) {
             tacnih += z.tacnih;
@@ -194,11 +192,6 @@ public final class RangTacnosti {
 
     private static boolean isto(Zbir a, Zbir b) {
         return a.zvezdice() == b.zvezdice() && Objects.equals(prosek100(a), prosek100(b));
-    }
-
-    /** Zaokruženo na 0,01, pola nagore (prikaz ★ i "Tačno x od y", i poređenje u rangu). */
-    public static double zaokruzi(double x) {
-        return BigDecimal.valueOf(x).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     /** Ime gosta za spajanje u okviru predavanja: bez razmaka na krajevima, mala slova, bez dijakritika, jedan razmak. */
