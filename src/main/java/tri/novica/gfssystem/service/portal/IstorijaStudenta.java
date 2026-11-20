@@ -14,6 +14,7 @@ import tri.novica.gfssystem.dto.uzivo.OpcijaDetails;
 import tri.novica.gfssystem.dto.uzivo.PitanjeDetails;
 import tri.novica.gfssystem.dto.banka.Polje;
 import tri.novica.gfssystem.dto.portal.*;
+import tri.novica.gfssystem.entity.uzivo.Odgovor;
 import tri.novica.gfssystem.entity.uzivo.Slajd;
 import tri.novica.gfssystem.entity.uzivo.TipPitanja;
 import tri.novica.gfssystem.entity.uzivo.TipSlajda;
@@ -261,7 +262,7 @@ public class IstorijaStudenta {
     private Map<Long, OdgovorPregleda> mojiOdgovori(long studentId, Long prezentacijaId, List<Long> slajdIds) {
         if (slajdIds.isEmpty()) return Map.of();
         List<Map<String, Object>> redovi = jdbc.queryForList("""
-                SELECT r.id AS runda_id, r.slajd_id, r.snimak, o.opcije, o.broj, o.tekst, o.skala, o.tacno
+                SELECT r.id AS runda_id, r.slajd_id, r.snimak, o.opcije, o.broj, o.tekst, o.skala, o.tacno, o.udeo
                 FROM odgovori o
                 JOIN ucesnici u ON u.id = o.ucesnik_id
                 JOIN pitanje_runde r ON r.id = o.runda_id
@@ -277,9 +278,24 @@ public class IstorijaStudenta {
             String tekst = tekstOdgovora(ps, r);
             if (tekst == null || tekst.isBlank()) continue;
             Boolean tacno = ps.tip() == TipPitanja.ANKETA ? null : bool(r.get("tacno"));
-            rez.put(slajdId, new OdgovorPregleda(tekst, tacno));
+            rez.put(slajdId, new OdgovorPregleda(tekst, tacno, udeo(ps, r)));
         }
         return rez;
+    }
+
+    /**
+     * Udeo sopstvenog odgovora po istom pravilu kao na času ({@link RezultatBuilder#udeoIli}: sačuvan udeo, pa ocena, pa
+     * snimak); {@code null} kad pitanje nema tačan odgovor.
+     */
+    private static Double udeo(PitanjeSnimak ps, Map<String, Object> r) {
+        if (!ps.imaTacanOdgovor()) return null;
+        Odgovor o = new Odgovor();
+        o.setOpcije((String) r.get("opcije"));
+        o.setBroj(r.get("broj") instanceof Number n ? n.doubleValue() : null);
+        o.setTekst((String) r.get("tekst"));
+        o.setTacno(bool(r.get("tacno")));
+        o.setUdeo(r.get("udeo") instanceof Number n ? n.doubleValue() : null);
+        return RezultatBuilder.udeoIli(ps, o);
     }
 
     private static String tekstOdgovora(PitanjeSnimak ps, Map<String, Object> r) {

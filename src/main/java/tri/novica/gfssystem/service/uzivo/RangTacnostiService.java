@@ -376,7 +376,8 @@ public class RangTacnostiService {
             if (izId == null) continue;
             Long ucesnikId = ((Number) red[1]).longValue();
             odgovori.computeIfAbsent(izId, k -> new ArrayList<>()).add(new Odg(rundaId, ucesnikId, (Boolean) red[2],
-                    ((Number) red[3]).longValue(), red[4] == null ? null : ((Number) red[4]).longValue()));
+                    red[6] == null ? null : ((Number) red[6]).doubleValue(), ((Number) red[3]).longValue(),
+                    red[4] == null ? null : ((Number) red[4]).longValue()));
             if (vazece.get(izId).contains(rundaId)) {
                 poeni.computeIfAbsent(izId, k -> new HashMap<>()).merge(ucesnikId, ((Number) red[5]).intValue(), Integer::sum);
             }

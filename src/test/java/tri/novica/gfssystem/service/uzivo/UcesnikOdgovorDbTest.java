@@ -168,7 +168,11 @@ class UcesnikOdgovorDbTest {
                 Long.class, rundaId, anaId));
 
         LicnoStanje licno = stanjeService.licno(id, anaId);
-        assertEquals(new LicniOdgovor(rundaId, true, null, null), licno.odgovor());
+        // pre TACAN: samo sopstveni izbor (ono što je i poslao), bez tačnosti i udela
+        LicniOdgovor primljen = licno.odgovor();
+        assertEquals(new LicniOdgovor(rundaId, true, null, null, primljen.izabrane(), null), primljen);
+        assertEquals(1, primljen.izabrane().size());
+        assertTrue(List.of(tacna, netacna).contains(primljen.izabrane().getFirst()));
 
         // D uživo: tekst stiže tek sada
         k(id, TipKomande.DETALJI);
@@ -186,6 +190,8 @@ class UcesnikOdgovorDbTest {
         LicniOdgovor odgovor = stanjeService.licno(id, anaId).odgovor();
         assertTrue(odgovor.primljen());
         assertNotNull(odgovor.tacno());
+        assertEquals(odgovor.tacno() ? 1.0 : 0.0, odgovor.udeo());
+        assertEquals(primljen.izabrane(), odgovor.izabrane());
         assertEquals(2, stanjeService.licnaZaSve(id).size());
 
         // izbačen: kolačić više ne važi, odgovor se odbija

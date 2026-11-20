@@ -27,7 +27,18 @@ class RangTacnostiTest {
     }
 
     static Odg odg(long runda, long ucesnik, Boolean tacno, long ms) {
-        return new Odg(runda, ucesnik, tacno, ms, null);
+        return new Odg(runda, ucesnik, tacno, null, ms, null);
+    }
+
+    /** Odgovor sa sačuvanim udelom (V26); {@code tacno} je "potpuno tačno". */
+    static Odg udeo(long runda, long ucesnik, double udeo, long ms) {
+        return new Odg(runda, ucesnik, udeo >= 1, udeo, ms, null);
+    }
+
+    static RangTacnostiStavka stavka(Kandidat<String> x, Integer mesto) {
+        return new RangTacnostiStavka(mesto, null, null, x.ime(), false, x.zbir().tacnih(), x.zbir().dugovanih(),
+                x.zbir().odgovorenih(), x.zbir().procenat(), x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null,
+                null, false);
     }
 
     @Test
@@ -37,12 +48,12 @@ class RangTacnostiTest {
                 List.of(odg(1, 1, true, 4000), odg(2, 1, true, 2000), odg(1, 2, true, 1000), odg(3, 2, false, 500)),
                 Map.of(), null);
         // Ana: 2/2 (otvorena runda 3 se ne duguje bez odgovora)
-        assertEquals(2, z.get(1L).tacnih());
+        assertEquals(2.0, z.get(1L).tacnih());
         assertEquals(2, z.get(1L).dugovanih());
         assertEquals(3000L, z.get(1L).prosekMs());
-        assertEquals(2, z.get(1L).zvezdice());
+        assertEquals(2.0, z.get(1L).zvezdice());
         // Bojan: runda 1 tačno, runda 2 propuštena = netačno, otvorena runda 3 odgovorena netačno = duguje
-        assertEquals(1, z.get(2L).tacnih());
+        assertEquals(1.0, z.get(2L).tacnih());
         assertEquals(3, z.get(2L).dugovanih());
         assertEquals(2, z.get(2L).odgovorenih());
         assertEquals(33, z.get(2L).procenat());
@@ -63,7 +74,7 @@ class RangTacnostiTest {
         Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0)),
                 List.of(odg(1, 1, false, 1000), odg(2, 1, true, 1000), odg(4, 1, null, 1000)), Map.of(), null);
         assertEquals(1, z.get(1L).dugovanih());
-        assertEquals(1, z.get(1L).tacnih());
+        assertEquals(1.0, z.get(1L).tacnih());
     }
 
     @Test
@@ -73,11 +84,11 @@ class RangTacnostiTest {
         List<Runda> runde = List.of(zadatak(1, 10L, 5, v));
         Map<Long, Map<Long, Long>> dodele = Map.of(1L, Map.of(1L, 100L, 2L, 101L, 3L, 102L));
         Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0), clan(2, 0), clan(3, 0)),
-                List.of(new Odg(1L, 1L, true, 9000, 100L)), dodele, null);
-        assertEquals(3, z.get(1L).zvezdice());
+                List.of(new Odg(1L, 1L, true, 1.0, 9000, 100L)), dodele, null);
+        assertEquals(3.0, z.get(1L).zvezdice());
         assertEquals(0, z.get(2L).dugovanih()); // rad na papiru
         assertEquals(1, z.get(3L).dugovanih()); // nije predao = netačno
-        assertEquals(0, z.get(3L).tacnih());
+        assertEquals(0.0, z.get(3L).tacnih());
     }
 
     @Test
@@ -107,12 +118,78 @@ class RangTacnostiTest {
                 new Kandidat<>("d", "Dara", zbir(2, 3, 2, 4000, 3)),    // ★3, 2 s (isto mesto kao Cvele)
                 new Kandidat<>("e", "Ema", zbir(2, 3, 0, 0, 3)),        // ★3, bez vremena (teorijski), iza
                 new Kandidat<>("f", "Fića", zbir(0, 0, 0, 0, 0)));      // ništa nije dugovao: izostaje
-        List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(k, (x, mesto) -> new RangTacnostiStavka(mesto, null, null,
-                x.ime(), false, x.zbir().tacnih(), x.zbir().dugovanih(), x.zbir().odgovorenih(), x.zbir().procenat(),
-                x.zbir().prosekMs(), x.zbir().zvezdice(), null, null, null, null, false));
+        List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(k, RangTacnostiTest::stavka);
         assertEquals(List.of("Bojan", "Ana", "Cvele", "Dara", "Ema"), rang.stream().map(RangTacnostiStavka::ime).toList());
         assertEquals(List.of(1, 2, 3, 3, 5), rang.stream().map(RangTacnostiStavka::mesto).toList());
         assertEquals(67, rang.get(1).procenat());
+    }
+
+    @Test
+    void delimicnoNosiDeoZvezdice() {
+        // A: pola na pitanju 1 (jedan od dva tačna), celo na pitanju 2; B: celo pa ništa
+        List<Runda> runde = List.of(pitanje(1, 10L, 1, 5), pitanje(2, 11L, 1, 10));
+        Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0), clan(2, 0)),
+                List.of(udeo(1, 1, 0.5, 2000), udeo(2, 1, 1.0, 2000), udeo(1, 2, 1.0, 2000), udeo(2, 2, 0.0, 2000)),
+                Map.of(), null);
+        assertEquals(1.5, z.get(1L).zvezdice());
+        assertEquals(1.5, z.get(1L).tacnih());
+        assertEquals(75, z.get(1L).procenat());
+        assertEquals(1.0, z.get(2L).zvezdice());
+        assertEquals(1.0, z.get(2L).tacnih());
+        assertEquals(50, z.get(2L).procenat());
+
+        List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(List.of(new Kandidat<>("b", "B", z.get(2L)),
+                new Kandidat<>("a", "A", z.get(1L))), RangTacnostiTest::stavka);
+        assertEquals(List.of("A", "B"), rang.stream().map(RangTacnostiStavka::ime).toList());
+        assertEquals(List.of(1, 2), rang.stream().map(RangTacnostiStavka::mesto).toList());
+        assertEquals(1.5, rang.getFirst().zvezdice());
+    }
+
+    @Test
+    void zadatakNosiUdeoPutaNivo() {
+        Map<Long, Varijanta> v = Map.of(100L, new Varijanta(true, 3));
+        List<Runda> runde = List.of(zadatak(1, 10L, 5, v));
+        Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0), clan(2, 0)),
+                List.of(new Odg(1L, 1L, true, 1.0, 9000, 100L), new Odg(1L, 2L, false, 0.0, 9000, 100L)),
+                Map.of(1L, Map.of(1L, 100L, 2L, 100L)), null);
+        assertEquals(3.0, z.get(1L).zvezdice());
+        assertEquals(1.0, z.get(1L).tacnih());
+        assertEquals(0.0, z.get(2L).zvezdice());
+    }
+
+    @Test
+    void udeoNullPadaNaTacno() {
+        // red upisan starijim imidžom (posle rollback-a): bez udela važi tacno 1/0
+        List<Runda> runde = List.of(pitanje(1, 10L, 1, 5));
+        Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0), clan(2, 0)),
+                List.of(odg(1, 1, true, 1000), odg(1, 2, false, 1000)), Map.of(), null);
+        assertEquals(1.0, z.get(1L).zvezdice());
+        assertEquals(0.0, z.get(2L).zvezdice());
+    }
+
+    @Test
+    void dveTreceZaokruzeno() {
+        // dva od tri tačna = 2/3; stavka i zbir nose 0,67, a isti prikazani broj deli mesto
+        List<Runda> runde = List.of(pitanje(1, 10L, 1, 5));
+        Map<Long, Zbir> z = RangTacnosti.poUcesniku(runde, List.of(clan(1, 0), clan(2, 0), clan(3, 0)),
+                List.of(udeo(1, 1, 2.0 / 3, 3000), udeo(1, 2, 0.667, 3000), udeo(1, 3, 1.0 / 3, 3000)), Map.of(), null);
+        assertEquals(0.67, z.get(1L).zvezdice());
+        assertEquals(0.67, z.get(1L).tacnih());
+        assertEquals(67, z.get(1L).procenat());
+        List<RangTacnostiStavka> rang = RangTacnosti.rangiraj(List.of(new Kandidat<>("a", "A", z.get(1L)),
+                new Kandidat<>("b", "B", z.get(2L)), new Kandidat<>("c", "C", z.get(3L))), RangTacnostiTest::stavka);
+        assertEquals(0.67, rang.getFirst().zvezdice());
+        assertEquals(0.67, rang.getFirst().tacnih());
+        assertEquals(List.of(1, 1, 3), rang.stream().map(RangTacnostiStavka::mesto).toList(), "0,6667 i 0,667 su obe 0,67");
+        assertEquals(0.33, rang.get(2).zvezdice());
+    }
+
+    @Test
+    void zaokruzivanjeNaPolaNagore() {
+        assertEquals(0.13, RangTacnosti.zaokruzi(0.125));
+        assertEquals(1.01, RangTacnosti.zaokruzi(1.005));
+        assertEquals(3.5, RangTacnosti.zaokruzi(3.5));
+        assertEquals(0.0, RangTacnosti.zaokruzi(0.0));
     }
 
     @Test

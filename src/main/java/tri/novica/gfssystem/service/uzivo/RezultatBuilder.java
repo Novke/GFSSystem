@@ -105,7 +105,8 @@ public final class RezultatBuilder {
                 .toList();
     }
 
-    private static Set<Long> izabrane(String opcije) {
+    /** Id-jevi izabranih opcija iz CSV zapisa ({@code odgovori.opcije}), redom zapisa; neispravan deo se preskače. */
+    static Set<Long> izabrane(String opcije) {
         Set<Long> ids = new LinkedHashSet<>();
         if (opcije == null) return ids;
         for (String deo : opcije.split(",")) {

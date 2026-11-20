@@ -126,7 +126,7 @@ public class StanjeService {
                             o == null ? null : o.getTacno(), o == null ? null : o.getVremeMs(),
                             kratakOdgovor(snimakRunde, zr, varijantaId, o), o != null && o.isSakriven(),
                             stariji.contains(u.getId()), u.getUtisan(), oz[1] > 0, (int) oz[0],
-                            u.getStudent() != null);
+                            u.getStudent() != null, udeoOdgovora(snimakRunde, o));
                 })
                 .toList();
         List<RangStavka> rang = RangLista.izracunaj(p.ucesnici(), bodovni);
@@ -497,7 +497,7 @@ public class StanjeService {
     /** Ono što lično stanje traži od celog izvođenja, izračunato jednom (i za {@link #licnaZaSve}). */
     private record LicniPodaci(Map<Long, Integer> poeni, Map<Long, Integer> mesto, Long rundaId,
                                Map<Long, Odgovor> odgovorRunde, boolean tacan, ZadatakRunda zadatak,
-                               Map<Long, Long> dodele, Map<Long, RangTacnosti.Zbir> tacnost) {
+                               Map<Long, Long> dodele, Map<Long, RangTacnosti.Zbir> tacnost, SnimakRunde snimakRunde) {
     }
 
     private LicniPodaci licniPodaci(Podaci p) {
@@ -516,7 +516,8 @@ public class StanjeService {
             p.odgovoriRunde(saOdgovorima.getId()).forEach(o -> odgovorRunde.putIfAbsent(o.getUcesnik().getId(), o));
         }
         return new LicniPodaci(RangLista.poeniPoUcesniku(bodovni), mesto, r == null ? null : r.getId(), odgovorRunde,
-                tacanVidljiv(iz), zr, zr == null ? Map.of() : p.dodeleRunde(), javnaTacnost(p));
+                tacanVidljiv(iz), zr, zr == null ? Map.of() : p.dodeleRunde(), javnaTacnost(p),
+                r == null ? null : snimak(r));
     }
 
     /**
@@ -526,7 +527,10 @@ public class StanjeService {
      */
     private Map<Long, RangTacnosti.Zbir> javnaTacnost(Podaci p) {
         if (p.runde().isEmpty()) return Map.of();
-        List<RangTacnosti.Runda> runde = p.runde().stream().map(r -> RangTacnostiService.runda(r, snimak(r))).toList();
+        Map<Long, SnimakRunde> snimci = new HashMap<>();
+        p.runde().forEach(r -> snimci.put(r.getId(), snimak(r)));
+        List<RangTacnosti.Runda> runde = p.runde().stream()
+                .map(r -> RangTacnostiService.runda(r, snimci.get(r.getId()))).toList();
         Map<Long, Map<Long, Long>> dodele = new HashMap<>();
         if (runde.stream().anyMatch(rr -> rr.varijante() != null)) {
             for (Object[] red : dodelaRepository.paroviIzvodjenja(p.iz().getId())) {
@@ -537,8 +541,8 @@ public class StanjeService {
         List<RangTacnosti.Clan> clanovi = p.ucesnici().stream()
                 .map(u -> new RangTacnosti.Clan(u.getId(), u.getKreirano())).toList();
         List<RangTacnosti.Odg> odgovori = p.odgovori().stream()
-                .map(o -> new RangTacnosti.Odg(o.getRunda().getId(), o.getUcesnik().getId(), o.getTacno(), o.getVremeMs(),
-                        o.getVarijantaId()))
+                .map(o -> new RangTacnosti.Odg(o.getRunda().getId(), o.getUcesnik().getId(), o.getTacno(),
+                        udeoOdgovora(snimci.get(o.getRunda().getId()), o), o.getVremeMs(), o.getVarijantaId()))
                 .toList();
         Long izuzeta = tacanVidljiv(p.iz()) ? null : p.iz().getTrenutnaRundaId();
         return RangTacnosti.poUcesniku(runde, clanovi, odgovori, dodele, izuzeta);
@@ -562,8 +566,10 @@ public class StanjeService {
         if (lp.rundaId() != null) {
             Odgovor o = lp.odgovorRunde().get(u.getId());
             boolean prikazi = o != null && lp.tacan();
+            // sopstveni izbor nije tajna učesniku (sam ga je poslao), a udeo ide tek uz tačnost (posle TACAN)
             odgovor = new LicniOdgovor(lp.rundaId(), o != null, prikazi ? o.getTacno() : null,
-                    prikazi ? o.getPoeni() : null);
+                    prikazi ? o.getPoeni() : null, o == null ? null : izabrane(o),
+                    prikazi ? udeoOdgovora(lp.snimakRunde(), o) : null);
         }
         RangTacnosti.Zbir tacnost = lp.tacnost().get(u.getId());
         return new LicnoStanje(iz.getVerzija(), u.getId(), u.getIme(), lp.poeni().getOrDefault(u.getId(), 0),
@@ -615,8 +621,11 @@ public class StanjeService {
             List<Odgovor> odgovori = poRundi.getOrDefault(r.getId(), List.of());
             Integer procenat = null;
             if (snimak.imaTacanOdgovor() && !odgovori.isEmpty()) {
-                long tacnih = odgovori.stream().filter(o -> Boolean.TRUE.equals(o.getTacno())).count();
-                procenat = (int) Math.round(100.0 * tacnih / odgovori.size());
+                double zbirUdela = odgovori.stream().mapToDouble(o -> {
+                    Double u = udeoOdgovora(snimak, o);
+                    return u == null ? 0 : u;
+                }).sum();
+                procenat = (int) Math.round(100.0 * zbirUdela / odgovori.size());
             }
             PregledZadatka zadatak = snimak instanceof ZadatakSnimak zs
                     ? pregledZadatka(zs, p.ucesnici(), dodelePoRundi.getOrDefault(r.getId(), Map.of()), odgovori, stariji) : null;
@@ -719,6 +728,23 @@ public class StanjeService {
         if (r.getSlajdId() != null) return r.getSlajdId();
         Long izSnimka = snimak(r).slajdId();
         return izSnimka != null ? izSnimka : "runda-" + r.getId();
+    }
+
+    /**
+     * Udeo odgovora za čitaoca koji ima snimak runde: PITANJE po {@link RezultatBuilder#udeoIli}, ZADATAK (sve ili ništa)
+     * sačuvan udeo, inače ocena 1/0; {@code null} bez odgovora, kad runda nema tačan odgovor i za zadatak bez ocene.
+     */
+    static Double udeoOdgovora(SnimakRunde s, Odgovor o) {
+        if (o == null || s == null || !s.imaTacanOdgovor()) return null;
+        if (s instanceof PitanjeSnimak ps) return RezultatBuilder.udeoIli(ps, o);
+        if (o.getUdeo() != null) return o.getUdeo();
+        return o.getTacno() == null ? null : o.getTacno() ? 1.0 : 0.0;
+    }
+
+    /** Sopstvene izabrane opcije, rastuće po id-ju; {@code null} kad odgovor nema opcija (broj, tekst, skala). */
+    static List<Long> izabrane(Odgovor o) {
+        Set<Long> ids = RezultatBuilder.izabrane(o.getOpcije());
+        return ids.isEmpty() ? null : List.copyOf(new TreeSet<>(ids));
     }
 
     SnimakRunde snimak(PitanjeRunda r) {

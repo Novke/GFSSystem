@@ -316,7 +316,15 @@ class PortalDbTest {
         SlajdPregleda pitanje = pr.slajdovi().get(2);
         assertEquals("4", pitanje.mojOdgovor().tekst());
         assertEquals(Boolean.TRUE, pitanje.mojOdgovor().tacno());
+        assertEquals(1.0, pitanje.mojOdgovor().udeo());
         assertTrue(pitanje.tacanPoznat(), "pitanje iz snimka runde nosi tačan odgovor");
+        // sačuvan udeo (delimično tačno) se čita, a red bez udela pada na sačuvanu ocenu
+        String udeo = "update odgovori o join ucesnici u on u.id = o.ucesnik_id join pitanje_runde r on r.id = o.runda_id "
+                + "set o.udeo = ? where u.student_id = ? and r.slajd_id = ?";
+        jdbc.update(udeo, 0.5, s1, slajdPitanje);
+        assertEquals(0.5, istorija.pregled(s1, prezId).slajdovi().get(2).mojOdgovor().udeo());
+        jdbc.update(udeo, null, s1, slajdPitanje);
+        assertEquals(1.0, istorija.pregled(s1, prezId).slajdovi().get(2).mojOdgovor().udeo());
         assertEquals(List.of("4"), pitanje.pitanje().opcije().stream().filter(OpcijaDetails::tacna).map(OpcijaDetails::tekst).toList());
 
         // Novica posle časa izmeni pitanje za drugu grupu: G1 i dalje vidi pitanje i odgovor sa svog časa
