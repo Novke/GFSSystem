@@ -18,6 +18,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.fajlovi.SlajdoviIzvodjenjaRepository;
+import tri.novica.gfssystem.service.fajlovi.FajloviStanja;
 import tri.novica.gfssystem.service.fajlovi.KodoviFajlova;
 import tri.novica.gfssystem.repository.uzivo.*;
 import tri.novica.gfssystem.security.IdentitetStudenta;
@@ -97,6 +98,7 @@ public class IzvodjenjeService {
     private final TemeZaVezbanje temeZaVezbanje;
     private final SlajdoviIzvodjenjaRepository slajdoviIzvodjenja;
     private final KodoviFajlova kodoviFajlova;
+    private final FajloviStanja fajloviStanja;
     private final RangTacnostiService rangTacnosti;
     private final RangPrikazRegistar rangPrikazi;
     private final ImenaUcesnika imenaUcesnika;
@@ -259,6 +261,7 @@ public class IzvodjenjeService {
             case BROJ_VARIJANTI -> brojVarijantiKomanda(iz, sl, cmd.vrednost());
             case NIVO -> nivoKomanda(iz, sl, cmd.vrednost());
             case RANG_BROJ -> rangBroj(iz, cmd.vrednost());
+            case FAJLOVI -> fajloviStanja.prebaciTablu(iz, TokIzvodjenja.trenutni(iz, sl), TokIzvodjenja.indeks(iz, sl));
         }
     }
 
@@ -363,6 +366,7 @@ public class IzvodjenjeService {
         if (iz.getFaza() == Faza.OTVORENO) {
             zatvori(iz);
         }
+        fajloviStanja.zaboravi(iz.getId());   // taster K važi samo za slajd na kom je pritisnut
         iz.setRezultatiPrikazani(false);
         iz.setTacanPrikazan(false);
         iz.setResenjePrikazano(false);
@@ -660,6 +664,7 @@ public class IzvodjenjeService {
         iz.setStatus(StatusIzvodjenja.ZAVRSENO);
         iz.setAktivanKod(null);
         rangPrikazi.zavrsi(iz.getId());
+        fajloviStanja.zaboravi(iz.getId());
         iz.setKraj(sada());
         // pre brisanja rundi kod "Ne čuvaj": izvučeni tipovi se otvaraju grupi za vežbanje tek sada (spec studentskog dela 5.3)
         temeZaVezbanje.krajIzvodjenja(iz);

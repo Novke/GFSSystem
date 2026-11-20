@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Fajlovi uz prezentaciju nad pravom bazom: CRUD i granice (30, tuđ slajd, redosled), brisanje prezentacije i slajda,
- * upis pregleda slajda, kod pri pokretanju i fajlovi u stanju (samo za slajd sa fajlom).
+ * upis pregleda slajda, kod pri pokretanju, fajlovi u stanju i traka na projektoru (pravilo po slajdu i taster K).
  */
 @SpringBootTest
 @Import(PomerljivSatConfig.class)
@@ -177,9 +177,11 @@ class FajloviPrezentacijeIT {
         IzvodjenjeInfo drugo = izvodjenjeService.pokreni(prez, new PokreniCmd(false, null, predavanje));
         assertEquals(kod, jdbc.queryForObject("select aktivan_kod from kodovi_fajlova where predavanje_id = ?", String.class, predavanje));
 
-        // prijava (pre prvog slajda): bez fajlova
-        assertNull(stanjeService.nastavnicko(drugo.id()).fajlovi());
-        assertTrue(stanjeService.javno(drugo.id()).fajlovi().isEmpty());
+        // prijava (pre prvog slajda): samo fajl uz celu prezentaciju, link na tabli dok se studenti okupljaju
+        NastavnickoStanje prijava = stanjeService.nastavnicko(drugo.id());
+        assertEquals(List.of("uz-sve.zip"), prijava.fajlovi().fajlovi().stream().map(x -> x.naziv()).toList());
+        assertTrue(prijava.fajloviNaTabli());
+        assertEquals(1, stanjeService.javno(drugo.id()).fajlovi().size());
 
         NastavnickoStanje na1 = izvodjenjeService.komanda(drugo.id(), new KomandaCmd(TipKomande.IDI_NA, 0));
         FajloviSlajda fs = na1.fajlovi();
@@ -187,13 +189,82 @@ class FajloviPrezentacijeIT {
         assertEquals(kod, fs.kod());
         assertTrue(fs.link().endsWith("/f/" + kod), fs.link());
         assertEquals(List.of("uz-prvi.docx", "uz-sve.zip"), fs.fajlovi().stream().map(x -> x.naziv()).toList());
+        assertTrue(na1.fajloviNaTabli());
         assertEquals(2, stanjeService.javno(drugo.id()).fajlovi().size());
         assertEquals(1, jdbc.queryForObject("select count(*) from slajdovi_izvodjenja where izvodjenje_id = ? and slajd_id = ?",
                 Integer.class, drugo.id(), s1));
 
-        // drugi slajd: samo fajl uz celu prezentaciju
+        // drugi slajd: samo fajl uz celu prezentaciju, link je u stanju (K), ali traka nije na tabli
         NastavnickoStanje na2 = izvodjenjeService.komanda(drugo.id(), new KomandaCmd(TipKomande.IDI_NA, 1));
         assertEquals(List.of("uz-sve.zip"), na2.fajlovi().fajlovi().stream().map(x -> x.naziv()).toList());
+        assertFalse(na2.fajloviNaTabli());
+    }
+
+    @Test
+    void trakaSamoGdeTrebaITasterKDoSledecegSlajda() {
+        Long s3 = f.slajd(prez, "Treći");
+        otpremi(prez, "uz-drugi.xlsx", s2);
+        otpremi(prez, "uz-sve.zip", null);
+        IzvodjenjeInfo iz = izvodjenjeService.pokreni(prez, new PokreniCmd(false, null, null));
+        KomandaCmd k = new KomandaCmd(TipKomande.FAJLOVI, null);
+
+        // prijava: fajl uz celu prezentaciju pali traku; K je gasi i ponovo pali
+        assertTrue(stanjeService.nastavnicko(iz.id()).fajloviNaTabli());
+        assertFalse(izvodjenjeService.komanda(iz.id(), k).fajloviNaTabli());
+        assertTrue(izvodjenjeService.komanda(iz.id(), k).fajloviNaTabli());
+        assertFalse(izvodjenjeService.komanda(iz.id(), k).fajloviNaTabli());
+
+        // prvi slajd: opet po pravilu (prijavino gašenje ne prelazi na slajd)
+        NastavnickoStanje prvi = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 0));
+        assertTrue(prvi.fajloviNaTabli());
+        assertEquals(List.of("uz-sve.zip"), prvi.fajlovi().fajlovi().stream().map(x -> x.naziv()).toList());
+
+        // drugi slajd ima svoj fajl: traka sama; K je skloni, a IDI_NA na isti slajd ništa ne menja
+        NastavnickoStanje drugi = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 1));
+        assertTrue(drugi.fajloviNaTabli());
+        assertEquals(List.of("uz-drugi.xlsx", "uz-sve.zip"), drugi.fajlovi().fajlovi().stream().map(x -> x.naziv()).toList());
+        assertFalse(izvodjenjeService.komanda(iz.id(), k).fajloviNaTabli());
+        assertFalse(izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 1)).fajloviNaTabli());
+
+        // treći slajd: link je u stanju, traka nije; K je pali za kasnioce
+        NastavnickoStanje treci = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 2));
+        assertEquals(s3, treci.trenutniSlajd().id());
+        assertNotNull(treci.fajlovi());
+        assertFalse(treci.fajloviNaTabli());
+        assertTrue(izvodjenjeService.komanda(iz.id(), k).fajloviNaTabli());
+
+        // kraj: nema linka, K je 409; nazad na treći: K se zaboravio
+        NastavnickoStanje kraj = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.SLEDECI, null));
+        assertNull(kraj.fajlovi());
+        assertFalse(kraj.fajloviNaTabli());
+        assertEquals(HttpStatus.CONFLICT.value(), status(() -> izvodjenjeService.komanda(iz.id(), k)));
+        assertFalse(izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.PRETHODNI, null)).fajloviNaTabli());
+    }
+
+    @Test
+    void samoFajlSlajdaPrazanSpisakDrugdeILinkNaK() {
+        otpremi(prez, "uz-drugi.xlsx", s2);
+        IzvodjenjeInfo iz = izvodjenjeService.pokreni(prez, new PokreniCmd(false, null, null));
+
+        // prijava i prvi slajd: link postoji (kasnilac sa K dobija ranije fajlove preko /f), spisak je prazan, traka ugašena
+        NastavnickoStanje prijava = stanjeService.nastavnicko(iz.id());
+        assertNotNull(prijava.fajlovi());
+        assertTrue(prijava.fajlovi().fajlovi().isEmpty());
+        assertFalse(prijava.fajloviNaTabli());
+        assertTrue(stanjeService.javno(iz.id()).fajlovi().isEmpty());
+        NastavnickoStanje prvi = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 0));
+        assertFalse(prvi.fajloviNaTabli());
+        assertTrue(izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.FAJLOVI, null)).fajloviNaTabli());
+
+        // drugi slajd: svoj fajl, traka sama
+        NastavnickoStanje drugi = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 1));
+        assertTrue(drugi.fajloviNaTabli());
+        assertEquals(1, stanjeService.javno(iz.id()).fajlovi().size());
+
+        // kraj izvođenja briše prekidač (nema curenja u memoriji); posle ZAVRSI nema ni stanja sa fajlovima
+        izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.FAJLOVI, null));
+        izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.ZAVRSI, null));
+        assertNull(stanjeService.nastavnicko(iz.id()).fajlovi());
     }
 
     @Test
@@ -201,7 +272,10 @@ class FajloviPrezentacijeIT {
         IzvodjenjeInfo iz = izvodjenjeService.pokreni(prez, new PokreniCmd(false, null, null));
         NastavnickoStanje n = izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.IDI_NA, 0));
         assertNull(n.fajlovi());
+        assertFalse(n.fajloviNaTabli());
         assertTrue(stanjeService.javno(iz.id()).fajlovi().isEmpty());
+        assertEquals(HttpStatus.CONFLICT.value(),
+                status(() -> izvodjenjeService.komanda(iz.id(), new KomandaCmd(TipKomande.FAJLOVI, null))));
         long pre = stanjeService.nastavnicko(iz.id()).verzija();
         FajlPrezentacijeInfo k = otpremi(prez, "kasnije.docx", s1);   // prezentacija koja se izvodi sme da se menja fajlovima
         assertEquals(1, stanjeService.nastavnicko(iz.id()).fajlovi().fajlovi().size());
