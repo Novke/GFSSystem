@@ -165,6 +165,8 @@ POST /public/nalog/cas/skeniraj ANONIMNO
 GET /public/nalog/casovi STUDENT
 POST /public/nalog/casovi/najavi STUDENT
 POST /public/nalog/casovi/povuci STUDENT
+GET /public/nalog/fajlovi/{id} STUDENT
+POST /public/nalog/fajlovi/{id}/mejl STUDENT
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 GET /public/nalog/obavestenja STUDENT
@@ -175,6 +177,7 @@ GET /public/nalog/podesavanja STUDENT
 PUT /public/nalog/podesavanja STUDENT
 POST /public/nalog/pomoc ANONIMNO
 GET /public/nalog/predmeti STUDENT
+GET /public/nalog/predmeti/{id}/fajlovi STUDENT
 GET /public/nalog/predmeti/{id}/moji-zadaci STUDENT
 GET /public/nalog/predmeti/{id}/ocena STUDENT
 GET /public/nalog/predmeti/{id}/prezentacije STUDENT

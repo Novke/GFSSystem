@@ -1124,6 +1124,18 @@ nullable `rasporedi.podsetnik_vreme` filled with 18:00 for existing periods). Pa
 - **Tests:** `PushTekstoviTest`, `WebPushSifraTest` (RFC vector), `PushDbTest` (subscriptions, ownership, limits, bell), `PushPortalDbTest`
   (grades, after class), `PushRasporedDbTest` (reminder rules, cancellation, teacher push), `CiscenjePrijaveIT`, `PristupMatricaTest` snapshot.
 
+## Fajlovi uz prezentaciju
+
+Spec `docs/superpowers/specs/2026-11-20-fajlovi-uz-prezentaciju-design.md`. Pravilo "ko sme da preuzme" je samo u `service/fajlovi/PristupFajlovima` (kod, nalog, mejl).
+
+### Nalog i mejl
+- **Nalog (STUDENT, `rest/fajlovi/NalogFajloviRest`, servis `NalogFajlovi`):** `GET /public/nalog/predmeti/{id}/fajlovi` -> `List<FajloviPrezentacije>` (prezentacije koje nalog otvara i imaju fajl, od najnovije održane; predmet koji student ne sluša je 404 `Nije pronađeno.`),
+  `GET /public/nalog/fajlovi/{id}` -> preuzimanje kroz `Preuzimanje` (zaglavlja iz spec-a 5.1), `POST /public/nalog/fajlovi/{id}/mejl` -> 202 `{"poslatoNa":"a***@gmail.com"}`. Pravilo naloga: završeno izvođenje prezentacije sa nekom od studentovih grupa za predmet; tada su **svi** fajlovi prezentacije vidljivi, i oni uz slajd koji nikad nije prikazan (pravilo slajdova u `pregled` se ne menja). Strano, nepostojeće ili izvođenje u toku je isti 404.
+- `PregledPrezentacije.fajlovi` (poslednje polje, `List<FajlKratko>`): `PristupFajlovima.zaNalogPrezentacije`, prazno kad pravilo naloga ne važi.
+- **Mejl (`MejlFajlova`):** dozvoljen kad važi pravilo naloga **ili** je fajl na važećem kodu (`naVazecemKodu`, uživo na času), inače 404. Redom: 404, 409 `U GFS-u nemaš upisan mejl. Javi se nastavniku.`, 503 `Slanje mejla trenutno ne radi.` (nema SMTP-a), 429 `Već si poslao dosta fajlova. Pokušaj ponovo za sat.` (10 na sat ili 20 dnevno po studentu, `VrstaPokusaja.MEJL_FAJLA`, ključ `s<id>`), 429 `Danas je poslato previše fajlova mejlom. Preuzmi fajl na računaru.` (150 dnevno ukupno, ključ `*`). Dva pokušaja (student i ukupno) se upisuju u istoj kratkoj transakciji pre slanja (neuspeh slanja ne vraća kvotu); greške 409/503 ništa ne troše. Posle commit-a zadatak ide na `mejlStudentimaIzvrsilac` (ne `mejlIzvrsilac`); pun red je 503. **Bajtovi se čitaju tek u izvršiocu** (`MedijService.bajtovi`), da red od 500 poruka ne drži do 5 GB u memoriji; obrisan fajl je samo zapis u logu. Mejl ide samo na `studenti.email` tog studenta; ništa što je student ukucao ne ulazi u tekst.
+- **Mejl sa prilogom:** `MejlPoruka(za, naslov, telo, html, prilozi)` (`MejlPoruka.Prilog(naziv, mime, sadrzaj)`; stari konstruktori ostaju, `toString` ne ispisuje adresu, telo ni priloge). `SmtpMejlServis` sa prilozima pravi `multipart/mixed` (telo = tekst ili `multipart/alternative`, pa prilozi sa `Content-Disposition: attachment` i imenom po RFC 2231); bez priloga je poruka nepromenjena. Tekst: `MejlPoruke.fajl` (naslov konstantan "Fajl sa časa", u telu ime fajla, predmet i prezentacija).
+- Testovi: `NalogFajloviIT` (MockMvc, `LazniMejlServis`, `PomerljivSatConfig`), `SmtpMejlServisTest` (MIME), `PristupMatricaTest`.
+
 ## Build & Run
 
 ```bash
