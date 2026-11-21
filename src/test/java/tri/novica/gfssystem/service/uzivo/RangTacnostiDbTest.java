@@ -145,11 +145,11 @@ class RangTacnostiDbTest {
         assertEquals(1, rang.get("Mile").dugovanih());
         k(i1.id(), TipKomande.OTVORI_ZATVORI);
         rang = poImenu(rangService.zaIzvodjenje(i1.id()));
-        assertEquals(List.of(2, 1, 2), List.of(rang.get("Ana Anić").tacnih(), rang.get("Bojan Bojić").tacnih(),
-                rang.get("Mile").dugovanih()));
+        assertEquals(List.of(2.0, 1.0), List.of(rang.get("Ana Anić").tacnih(), rang.get("Bojan Bojić").tacnih()));
+        assertEquals(2, rang.get("Mile").dugovanih());
         assertEquals(1, rang.get("Ana Anić").mesto());
         assertEquals(100, rang.get("Ana Anić").procenat());
-        assertEquals(2, rang.get("Ana Anić").zvezdice());
+        assertEquals(2.0, rang.get("Ana Anić").zvezdice());
         assertEquals(ana, rang.get("Ana Anić").studentId());
         assertTrue(rang.get("Mile").gost());
         assertNull(rang.get("Ana Anić").poeni()); // nije takmičenje
@@ -190,7 +190,7 @@ class RangTacnostiDbTest {
         k(i2.id(), TipKomande.TACAN);
         projektor = poImenu(stanjeService.nastavnicko(i2.id()).javniRangTacnosti());
         assertEquals(3, projektor.get("Ana A.").dugovanih());
-        assertEquals(1, projektor.get("Ceca C.").tacnih());
+        assertEquals(1.0, projektor.get("Ceca C.").tacnih());
         izvodjenjeService.komanda(i2.id(), new KomandaCmd(TipKomande.RANG_BROJ, 1));
         st = stanjeService.nastavnicko(i2.id());
         assertEquals(1, st.rangBroj());
@@ -210,14 +210,14 @@ class RangTacnostiDbTest {
         Map<String, RangTacnostiStavka> zbir = poImenu(pred.rang());
         assertEquals(List.of(1, 2, 3, 4), pred.rang().stream().map(RangTacnostiStavka::mesto).toList());
         assertEquals(List.of(ana, ceca, bojan), pred.rang().subList(0, 3).stream().map(RangTacnostiStavka::studentId).toList());
-        assertEquals(2, zbir.get("Ana Anić").tacnih());
+        assertEquals(2.0, zbir.get("Ana Anić").tacnih());
         assertEquals(3, zbir.get("Ana Anić").dugovanih());
         assertEquals(2, zbir.get("Ana Anić").izvodjenja());
         RangTacnostiStavka gost = pred.rang().get(3);
         assertTrue(gost.gost());
         assertEquals(2, gost.izvodjenja());
         assertEquals(3, gost.dugovanih());
-        assertEquals(1, gost.tacnih());
+        assertEquals(1.0, gost.tacnih());
 
         // kartica studenta: jedan čas, mesto 1 od 4 (najviše ★)
         UzivoStudenta s = rangService.zaStudenta(ana, null, null);
@@ -227,7 +227,7 @@ class RangTacnostiDbTest {
         assertEquals("4. Sile", red.naslov());
         assertEquals(1, red.stavka().mesto());
         assertEquals(4, red.ukupnoURangu());
-        assertEquals(2, s.ukupno().tacnih());
+        assertEquals(2.0, s.ukupno().tacnih());
         assertEquals(1, s.ukupno().casova());
         assertTrue(rangService.zaStudenta(ana, null, SkolskaGodina.za(LocalDate.now()) - 1).casovi().isEmpty());
         assertEquals(new UzivoStudenta(null, List.of()), rangService.zaStudenta(ana, predmet.getId() + 100_000, null));
@@ -238,6 +238,34 @@ class RangTacnostiDbTest {
         assertEquals(List.of("Ana Anić", "Ceca Cecić", "Bojan Bojić"),
                 g.rang().stream().map(RangTacnostiStavka::ime).toList());
         assertEquals(1, g.rang().getFirst().casova());
+    }
+
+    @Test
+    void udeoNullPadaNaTacno() {
+        PrezentacijaDetails p = prezentacija("Udeo", 1);
+        IzvodjenjeInfo iz = izvodjenjeService.pokreni(p.id(), new PokreniCmd(true, null, predavanjeId));
+        Long uAna = ucesnikService.prijavi(iz.kod(), "x", Optional.of(ana)).info().ucesnikId();
+        Long uBojan = ucesnikService.prijavi(iz.kod(), "x", Optional.of(bojan)).info().ucesnikId();
+        Long runda = otvoriSledece(iz.id());
+        odgovori(iz.id(), uAna, runda, opcija(p, 0, 0));
+        odgovori(iz.id(), uBojan, runda, opcija(p, 0, 1));
+        k(iz.id(), TipKomande.OTVORI_ZATVORI);
+
+        // sačuvan udeo se čita (delimično tačno)
+        jdbc.update("update odgovori set udeo = 0.5 where ucesnik_id = ?", uAna);
+        Map<String, RangTacnostiStavka> rang = poImenu(rangService.zaIzvodjenje(iz.id()));
+        assertEquals(0.5, rang.get("Ana Anić").zvezdice());
+        assertEquals(0.5, rang.get("Ana Anić").tacnih());
+        assertEquals(50, rang.get("Ana Anić").procenat());
+
+        // red bez udela (stariji imidž posle rollback-a): tacno 1 -> 1 ★, tacno 0 -> 0
+        jdbc.update("update odgovori set udeo = null where runda_id = ?", runda);
+        rang = poImenu(rangService.zaIzvodjenje(iz.id()));
+        assertEquals(1.0, rang.get("Ana Anić").zvezdice());
+        assertEquals(1.0, rang.get("Ana Anić").tacnih());
+        assertEquals(0.0, rang.get("Bojan Bojić").zvezdice());
+        assertEquals(1, rang.get("Bojan Bojić").dugovanih());
+        assertEquals(1.0, poImenu(rangService.zaPredavanje(predavanjeId).rang()).get("Ana Anić").zvezdice());
     }
 
     @Test

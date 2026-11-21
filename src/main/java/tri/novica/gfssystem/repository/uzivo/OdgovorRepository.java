@@ -37,10 +37,14 @@ public interface OdgovorRepository extends JpaRepository<Odgovor, Long> {
 
     /**
      * Odgovori neizbačenih učesnika više izvođenja, samo brojevi za rang tačnosti: redovi
-     * {@code [rundaId, ucesnikId, tacno, vremeMs, varijantaId, poeni]}, po vremenu prijema.
+     * {@code [rundaId, ucesnikId, tacno, vremeMs, varijantaId, poeni, udeo]}, po vremenu prijema. {@code udeo} je
+     * sačuvan udeo, a red bez njega (upisan starijim imidžom) pada na {@code tacno} 1/0 ({@code null} kad pitanje nema
+     * tačan odgovor), isto pravilo kao {@code RezultatBuilder.udeoIli}.
      */
     @Query("""
-            select o.runda.id, o.ucesnik.id, o.tacno, o.vremeMs, o.varijantaId, o.poeni from Odgovor o
+            select o.runda.id, o.ucesnik.id, o.tacno, o.vremeMs, o.varijantaId, o.poeni,
+                   coalesce(o.udeo, case when o.tacno = true then 1.0 when o.tacno = false then 0.0 else null end)
+            from Odgovor o
             where o.runda.izvodjenje.id in :ids and o.ucesnik.izbacen = false order by o.kreirano, o.id""")
     List<Object[]> findZaRang(@Param("ids") Collection<Long> ids);
 }

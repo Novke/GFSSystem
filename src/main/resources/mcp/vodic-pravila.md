@@ -55,9 +55,9 @@ Kad Novica jasno kaže šta da se promeni, uradi tačno to, i na `PROD`: "to je 
 - Za "Vežbe N – zadaci": pročitaj izvornu prezentaciju (`prezentacija`, `slajd`), izvuci teme, pokaži listu tema i isključenih i pitaj šta se izbacuje; za svaku temu nađi ili napravi grupu namene `PREDAVANJE` sa dovoljno varijanti, a na kraju navedi grupe koje Novica mora da odobri pre časa.
 
 ## Odgovori sa časa
-- Preocena je za slučaj kad je ocena pogrešna ne krivicom studenta (npr. telefon nije imao minus) i kad Novica to izričito traži. Put: `izvodjenja_prezentacije` (izvođenja i runde), `odgovori_runde` (`id`, `ime`, `vrednost`, `tacno`), pa `preoceni_odgovore` sa `razlog`.
+- Preocena je za slučaj kad je ocena pogrešna ne krivicom studenta (npr. telefon nije imao minus) i kad Novica to izričito traži. Put: `izvodjenja_prezentacije` (izvođenja i runde), `odgovori_runde` (`id`, `ime`, `vrednost`, `tacno`, `udeo`), pa `preoceni_odgovore` sa `razlog`.
 - Pre poziva mu pokaži spisak (ko, šta je uneo, stara i nova ocena); aplikacija zatim traži potvrdu. Za zadatak sa više polja pošalji `polje`, inače se ocena menja za sva polja.
-- Radi samo nad završenim izvođenjem (dok traje je 409). Menja tačnost, polja i poene; rang, pregled izvođenja i "Tačno X od Y" se računaju iz toga, a trag ostaje u `preocene_odgovora`. Pogrešna preocena se poništava sa `vrati_preocenu` (`rundaId`, `ciljSerija`): tačnost, polja i poeni se vraćaju tačno iz traga, takođe uz potvrdu.
+- Radi samo nad završenim izvođenjem (dok traje je 409). Menja tačnost, polja i poene, a `udeo` postavlja na 1 (tačno) ili 0 (netačno): delimično tačan odgovor ("više tačnih", `udeo` između 0 i 1) proglašen netačnim gubi i delimične bodove, a proglašen tačnim dobija pune; reci mu to pre nego što predložiš preocenu takvog odgovora. Rang, pregled izvođenja i "Tačno X od Y" se računaju iz toga, a trag ostaje u `preocene_odgovora`. Pogrešna preocena se poništava sa `vrati_preocenu` (`rundaId`, `ciljSerija`): tačnost, polja, udeo i poeni se vraćaju tačno iz traga, takođe uz potvrdu.
 - Ne preocenjuj na svoju ruku ni kad vidiš očiglednu grešku: reci mu šta si video.
 
 ## Poništavanje

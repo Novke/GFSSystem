@@ -218,7 +218,7 @@ class NastavnickoStanjeTest {
 
         // učesnici bez izbačenih; poeni samo iz poslednje runde (Anin poen iz runde 1 više ne važi)
         assertEquals(List.of(new UcesnikStanje(31L, "Ana", 0, true, false), new UcesnikStanje(32L, "Bojan", 800, false, true,
-                        null, true, 3000L, "A", false, false, null, false, 0, false)),
+                        null, true, 3000L, "A", false, false, null, false, 0, false, 1.0)),
                 st.ucesnici());
         assertEquals(1, st.brojPovezanih());
         assertEquals(List.of(new RangStavka(1, 32L, "Bojan", 800), new RangStavka(2, 31L, "Ana", 0)), st.rangLista());
@@ -430,6 +430,33 @@ class NastavnickoStanjeTest {
         when(izvodjenjeRepository.findSaVezama(9L)).thenReturn(Optional.empty());
         SystemException e = assertThrows(SystemException.class, () -> service.nastavnicko(9L));
         assertEquals(404, e.getCode());
+    }
+
+    @Test
+    void ucesnikDelimicnoUdeo() {
+        // pitanje postaje "više tačnih" sa obe opcije tačne: Bojan je u rundi 2 izabrao samo prvu (pola)
+        s2.getPitanje().setTip(TipPitanja.VISE_TACNIH);
+        s2.getPitanje().getOpcije().get(1).setTacna(true);
+        runde.forEach(r -> r.setSnimak(jsonMapper.writeValueAsString(PitanjeSnimak.od(s2))));
+        Odgovor bojanR2 = odgovori.get(2);
+        bojanR2.setTacno(false);
+        bojanR2.setUdeo(0.5);
+        bojanR2.setPoeni(400);
+
+        List<UcesnikStanje> ucesnici = service.nastavnicko(IZ).ucesnici();
+        assertEquals(Boolean.FALSE, ucesnici.get(1).tacno());
+        assertEquals(0.5, ucesnici.get(1).udeo());
+        assertNull(ucesnici.get(0).udeo(), "bez odgovora nema udela");
+
+        // pregled: procenat po zbiru udela (runda 2: samo Bojan, pola), runda 1 (stari redovi bez udela) po oceni
+        IzvodjenjeRezultati rez = service.rezultati(IZ);
+        assertEquals(50, rez.pitanja().get(1).procenatTacnih());
+        assertEquals(50, rez.pitanja().get(0).procenatTacnih());
+        // red bez udela i bez ocene (nemoguće posle V27, ali čitač ne puca): udeo iz snimka i izbora
+        bojanR2.setUdeo(null);
+        bojanR2.setTacno(null);
+        assertEquals(0.5, service.nastavnicko(IZ).ucesnici().get(1).udeo());
+        assertEquals(50, service.rezultati(IZ).pitanja().get(1).procenatTacnih());
     }
 
     @Test

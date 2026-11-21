@@ -23,7 +23,7 @@ Zajedničko za sve tipove:
 | Tip | Polja i pravila |
 |---|---|
 | `JEDAN_TACAN` | `opcije` 2-6 (`tekst` 1-300 znakova, `tacna`), tačno jedna tačna |
-| `VISE_TACNIH` | `opcije` 2-6, bar jedna tačna |
+| `VISE_TACNIH` | `opcije` 2-6, bar jedna tačna; boduje se delimično: (tačni izabrani − pogrešni izabrani) / broj tačnih, najmanje 0; na tabli i telefonu piše „Može biti više tačnih“. U seriji pitanja ponekad daj `VISE_TACNIH` sa samo jednim tačnim, da natpis ne odaje da ih ima više. |
 | `ANKETA` | `opcije` 2-6, nema tačnih (`tacna` se zanemaruje) |
 | `TACNO_NETACNO` | tačno dve `opcije`: prva je "Tačno", druga "Netačno" (tekst postavlja server), tačno jedna tačna |
 | `KRATAK_TEKST` | `prihvatljiviOdgovori` do 20, svaki do 100 znakova (poređenje bez velikih slova, dijakritika i razmaka, ćirilica kao latinica); `tekstPrikaz` `OBLAK` (podrazumevano) ili `LISTA`; bez prihvatljivih nema tačnog odgovora |

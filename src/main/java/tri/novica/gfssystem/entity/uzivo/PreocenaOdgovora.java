@@ -26,6 +26,9 @@ public class PreocenaOdgovora {
     @Column(nullable = false)
     private Long odgovorId;
     private Boolean staroTacno;
+    /** Udeo pre preocene (vraćanje ga vraća); {@code null} kad je i {@code staroTacno} null. */
+    @Column(name = "staro_udeo")
+    private Double staroUdeo;
     @Column(nullable = false)
     private boolean novoTacno;
     @Column(columnDefinition = "text")

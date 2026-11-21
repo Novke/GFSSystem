@@ -100,12 +100,13 @@ public class OdgovorService {
         }
         PitanjeSnimak snimak = (PitanjeSnimak) snimakRunde;
         OdgovorVrednost v = vrednost(snimak.tip(), cmd);
-        Boolean tacno;
+        Double udeo;
         try {
-            tacno = Ocenjivac.tacno(snimak, v);
+            udeo = Ocenjivac.udeo(snimak, v);
         } catch (SystemException e) {
             throw new OdgovorOdbijen(e.getMessage());
         }
+        Boolean tacno = Ocenjivac.tacnoIzUdela(udeo);
         long vremeMs = vremeMs(r, sada);
 
         Odgovor o = new Odgovor();
@@ -117,7 +118,8 @@ public class OdgovorService {
         o.setTekst(v.tekst());
         o.setSkala(v.skala());
         o.setTacno(tacno);
-        o.setPoeni(Ocenjivac.poeni(tacno, iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
+        o.setUdeo(udeo);
+        o.setPoeni(Ocenjivac.poeni(udeo, iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
         o.setVremeMs(vremeMs);
         o.setSakriven(false);
         o.setKreirano(sada);
@@ -145,7 +147,8 @@ public class OdgovorService {
         o.setPolja(jsonMapper.writeValueAsString(ishod.polja()));
         o.setVarijantaId(varijantaId);
         o.setTacno(ishod.tacno());
-        o.setPoeni(Ocenjivac.poeni(ishod.tacno(), iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
+        o.setUdeo(ishod.tacno() ? 1.0 : 0.0);
+        o.setPoeni(Ocenjivac.poeni(ishod.tacno() ? 1.0 : 0.0, iz.isTakmicenje(), r.getTrajanjeMs(), vremeMs));
         o.setVremeMs(vremeMs);
         o.setSakriven(false);
         o.setKreirano(sada);

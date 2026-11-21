@@ -13,10 +13,11 @@ import java.util.function.BiFunction;
  * <p><b>Bodovana runda:</b> poslednja runda svakog slajda (po rundama, kao {@code StanjeService.bodovniOdgovori}), PITANJE
  * sa tačnim odgovorom, ili ZADATAK za učesnika čija dodeljena varijanta ima polja (rad na papiru ne ulazi).
  * <b>Duguje</b> je učesnik koji je odgovorio, ili koji nije a ušao je pre zatvaranja runde; otvorena runda se ne duguje
- * dok se ne zatvori. Propušteno pitanje je netačno. ★: tačno PITANJE 1, tačan ZADATAK nivo varijante (bez nivoa 2).
+ * dok se ne zatvori. Propušteno pitanje je netačno. ★: PITANJE udeo odgovora (1 tačno, delimično tačno kod "više tačnih"
+ * deo), ZADATAK udeo (sve ili ništa) puta nivo varijante (bez nivoa 2); tačnih je zbir udela.
  *
  * <p><b>Redosled:</b> više ★, pa prosečno vreme rastuće (bez odgovora iza), pa ime. Tačnost je samo podatak u redu (ne
- * rangira). Isto mesto dele redovi sa istim ★ i istim prosekom na 100 ms.
+ * rangira). Isto mesto dele redovi sa istim ★ (zaokruženim na 0,01, kako se prikazuju) i istim prosekom na 100 ms.
  */
 public final class RangTacnosti {
 
@@ -45,22 +46,28 @@ public final class RangTacnosti {
     public record Clan(Long ucesnikId, LocalDateTime kreirano) {
     }
 
-    /** Odgovor (učesnik je neizbačen); {@code varijantaId} samo za ZADATAK. */
-    public record Odg(Long rundaId, Long ucesnikId, Boolean tacno, long vremeMs, Long varijantaId) {
+    /**
+     * Odgovor (učesnik je neizbačen); {@code varijantaId} samo za ZADATAK. {@code udeo} 0..1 (V27); {@code null} (red
+     * starijeg imidža) pada na {@code tacno} 1/0, kao {@code COALESCE(udeo, tacno)} u upitima.
+     */
+    public record Odg(Long rundaId, Long ucesnikId, Boolean tacno, Double udeo, long vremeMs, Long varijantaId) {
     }
 
-    /** Sirovi brojevi jednog učesnika (ili zbira više njih); procenat i prosek se računaju tek na kraju. */
+    /**
+     * Sirovi brojevi jednog učesnika (ili zbira više njih); procenat i prosek se računaju tek na kraju. {@code tacnih} i
+     * {@code zvezdice} se sabiraju tačno, a čitaju zaokruženi na 0,01.
+     */
     public static final class Zbir {
-        int tacnih;
+        double tacnih;
         int dugovanih;
         int odgovorenih;
         long vremeMs;
-        int zvezdice;
+        double zvezdice;
 
-        public int tacnih() { return tacnih; }
+        public double tacnih() { return Ocenjivac.zaokruzi(tacnih); }
         public int dugovanih() { return dugovanih; }
         public int odgovorenih() { return odgovorenih; }
-        public int zvezdice() { return zvezdice; }
+        public double zvezdice() { return Ocenjivac.zaokruzi(zvezdice); }
 
         public void dodaj(Zbir z) {
             tacnih += z.tacnih;
@@ -101,7 +108,7 @@ public final class RangTacnosti {
             Map<Long, Long> dodeleRunde = dodele.getOrDefault(r.id(), Map.of());
             for (Clan c : ucesnici) {
                 Odg o = odg.get(c.ucesnikId());
-                int zvezdice = 1;
+                double zvezdice = 1;
                 if (r.zadatak()) {
                     Long varijantaId = o != null && o.varijantaId() != null ? o.varijantaId() : dodeleRunde.get(c.ucesnikId());
                     Varijanta v = varijantaId == null ? null : r.varijante().get(varijantaId);
@@ -113,16 +120,21 @@ public final class RangTacnosti {
                     z.dugovanih++;
                     z.odgovorenih++;
                     z.vremeMs += Math.max(0, o.vremeMs());
-                    if (Boolean.TRUE.equals(o.tacno())) {
-                        z.tacnih++;
-                        z.zvezdice += zvezdice;
-                    }
+                    double udeo = udeo(o);
+                    z.tacnih += udeo;
+                    z.zvezdice += udeo * zvezdice;
                 } else if (r.zatvoreno() != null && c.kreirano().isBefore(r.zatvoreno())) {
                     z.dugovanih++;
                 }
             }
         }
         return zbir;
+    }
+
+    /** Udeo odgovora: sačuvan, inače (red bez udela) {@code tacno} 1/0; bez ocene 0. */
+    static double udeo(Odg o) {
+        if (o.udeo() != null) return o.udeo();
+        return Boolean.TRUE.equals(o.tacno()) ? 1.0 : 0.0;
     }
 
     /** Poslednja runda svakog slajda (po {@code redniBroj}), redom kojim su runde date. */
@@ -164,7 +176,7 @@ public final class RangTacnosti {
 
     private static <K> Comparator<Kandidat<K>> redosled() {
         return (a, b) -> {
-            int c = Integer.compare(b.zbir().zvezdice, a.zbir().zvezdice);
+            int c = Double.compare(b.zbir().zvezdice(), a.zbir().zvezdice());
             if (c != 0) return c;
             c = Comparator.<Long>nullsLast(Comparator.naturalOrder()).compare(prosek100(a.zbir()), prosek100(b.zbir()));
             if (c != 0) return c;
@@ -179,7 +191,7 @@ public final class RangTacnosti {
     }
 
     private static boolean isto(Zbir a, Zbir b) {
-        return a.zvezdice == b.zvezdice && Objects.equals(prosek100(a), prosek100(b));
+        return a.zvezdice() == b.zvezdice() && Objects.equals(prosek100(a), prosek100(b));
     }
 
     /** Ime gosta za spajanje u okviru predavanja: bez razmaka na krajevima, mala slova, bez dijakritika, jedan razmak. */

@@ -870,20 +870,20 @@ class JavnoStanjeTest {
         assertEquals(3, ceca.mesto());
         assertEquals(8, ceca.brojUcesnika());
         assertFalse(ceca.izbacen());
-        assertEquals(new LicniOdgovor(RUNDA, true, null, null), ceca.odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, true, null, null, null, null), ceca.odgovor());
 
         LicnoStanje hana = service.licno(IZ, 40L);
         assertEquals(0, hana.poeni());
         assertEquals(8, hana.mesto());
-        assertEquals(new LicniOdgovor(RUNDA, false, null, null), hana.odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, false, null, null, null, null), hana.odgovor());
 
         iz.setTacanPrikazan(true);
         ceca = service.licno(IZ, 33L);
         assertEquals(500, ceca.poeni());
         assertEquals(3, ceca.mesto());
-        assertEquals(new LicniOdgovor(RUNDA, true, true, 500), ceca.odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, true, true, 500, null, 1.0), ceca.odgovor());
         assertEquals(0, service.licno(IZ, 40L).poeni());
-        assertEquals(new LicniOdgovor(RUNDA, false, null, null), service.licno(IZ, 40L).odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, false, null, null, null, null), service.licno(IZ, 40L).odgovor());
     }
 
     @Test
@@ -906,24 +906,24 @@ class JavnoStanjeTest {
 
         // pre TACAN trenutna runda ne ulazi (ni u tačne ni u dugovane), inače bi broj odao tačnost
         LicnoStanje a = service.licno(IZ, 31L);
-        assertEquals(1, a.tacnih());
+        assertEquals(1.0, a.tacnih());
         assertEquals(1, a.dugovanih());
-        assertEquals(0, service.licno(IZ, 32L).tacnih());
+        assertEquals(0.0, service.licno(IZ, 32L).tacnih());
         assertEquals(1, service.licno(IZ, 32L).dugovanih());
         assertEquals(1, service.licno(IZ, 33L).dugovanih(), "propušteno zatvoreno pitanje se duguje");
 
         iz.setTacanPrikazan(true);
         a = service.licno(IZ, 31L);
-        assertEquals(2, a.tacnih());
+        assertEquals(2.0, a.tacnih());
         assertEquals(2, a.dugovanih());
         // Bojan je ušao pre zatvaranja a nije odgovorio: duguje i trenutno
-        assertEquals(0, service.licno(IZ, 32L).tacnih());
+        assertEquals(0.0, service.licno(IZ, 32L).tacnih());
         assertEquals(2, service.licno(IZ, 32L).dugovanih());
         // licnaZaSve daje isto što i pojedinačno
         assertEquals(a, service.licnaZaSve(IZ).get(31L));
         // bez takmičenja tačnost postoji, poena nema
         iz.setTakmicenje(false);
-        assertEquals(2, service.licno(IZ, 31L).tacnih());
+        assertEquals(2.0, service.licno(IZ, 31L).tacnih());
     }
 
     @Test
@@ -931,7 +931,98 @@ class JavnoStanjeTest {
         na(TipPitanja.JEDAN_TACAN, Faza.ZATVORENO);
         odgovor(trenutna(), ucesnik(31L, "Ana"), 0, false);
         iz.setTacanPrikazan(true);
-        assertEquals(new LicniOdgovor(RUNDA, true, false, 0), service.licno(IZ, 31L).odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, true, false, 0, null, 0.0), service.licno(IZ, 31L).odgovor());
+    }
+
+    /** Odgovor sa izabranim opcijama (CSV kao u bazi) i sačuvanim udelom. */
+    Odgovor odgovorOpcije(PitanjeRunda r, Ucesnik u, int poeni, Boolean tacno, Double udeo, Long... opcije) {
+        Odgovor o = odgovor(r, u, poeni, tacno);
+        o.setUdeo(udeo);
+        o.setOpcije(String.join(",", java.util.Arrays.stream(opcije).map(String::valueOf).toList()));
+        return o;
+    }
+
+    Long opcijaViseTacnih(int i) {
+        return pitanja.get(TipPitanja.VISE_TACNIH).getPitanje().getOpcije().get(i).getId();
+    }
+
+    @Test
+    void licnoPosleTacnogNosiIzabrane() {
+        // "više tačnih" sa tačnim A i C: Ana je izabrala samo A (pola), Bojan C pa A (poslato redom C, A)
+        na(TipPitanja.VISE_TACNIH, Faza.ZATVORENO);
+        Long a = opcijaViseTacnih(0);
+        Long c = opcijaViseTacnih(2);
+        odgovorOpcije(trenutna(), ucesnik(31L, "Ana"), 0, false, 0.5, a);
+        odgovorOpcije(trenutna(), ucesnik(32L, "Bojan"), 800, true, 1.0, c, a);
+
+        // pre TACAN: sopstveni izbor da, tačnost i udeo ne
+        assertEquals(new LicniOdgovor(RUNDA, true, null, null, List.of(a), null), service.licno(IZ, 31L).odgovor());
+        assertEquals(List.of(a, c), service.licno(IZ, 32L).odgovor().izabrane(), "rastuće po id-ju");
+        bezTajni(service.licno(IZ, 31L));
+
+        iz.setTacanPrikazan(true);
+        LicnoStanje ana = service.licno(IZ, 31L);
+        assertEquals(new LicniOdgovor(RUNDA, true, false, 0, List.of(a), 0.5), ana.odgovor());
+        assertEquals(0.5, ana.tacnih());
+        assertEquals(1, ana.dugovanih());
+        assertEquals(new LicniOdgovor(RUNDA, true, true, 800, List.of(a, c), 1.0), service.licno(IZ, 32L).odgovor());
+        // DUGMAD: posle TACAN i dalje samo id-jevi, nijedan tekst opcije
+        bezTajni(ana);
+        bezTajni(service.javno(IZ));
+        assertEquals(ana, service.licnaZaSve(IZ).get(31L));
+    }
+
+    @Test
+    void licnoBezSacuvanogUdelaPadaNaTacno() {
+        // red upisan starijim imidžom (bez udela): udeo po sačuvanoj oceni
+        na(TipPitanja.VISE_TACNIH, Faza.ZATVORENO);
+        odgovorOpcije(trenutna(), ucesnik(31L, "Ana"), 0, false, null, opcijaViseTacnih(0));
+        iz.setTacanPrikazan(true);
+        assertEquals(0.0, service.licno(IZ, 31L).odgovor().udeo());
+        assertEquals(0.0, service.licno(IZ, 31L).tacnih());
+    }
+
+    /**
+     * Isti izbor na "više tačnih" pitanju sa jednom i sa dve tačne opcije: dok tačan odgovor nije prikazan, sve što ide
+     * telefonima (javno i lično stanje) i projektoru (javni rezultat i rang) je bajt po bajt isto, u oba režima telefona,
+     * sa prikazanim rezultatom i rang-listom. Posle TACAN se razlikuje (provera da test nije prazan).
+     */
+    @ParameterizedTest
+    @EnumSource(TelefonPrikaz.class)
+    void istiJsonPreTacnogZaJednuIDveTacne(TelefonPrikaz telefon) {
+        for (Faza faza : List.of(Faza.OTVORENO, Faza.ZATVORENO)) {
+            assertEquals(mreza(1, faza, telefon, false), mreza(2, faza, telefon, false), faza + " " + telefon);
+        }
+        assertNotEquals(mreza(1, Faza.ZATVORENO, telefon, true), mreza(2, Faza.ZATVORENO, telefon, true));
+    }
+
+    /**
+     * Sve što server šalje telefonima i projektoru kad "više tačnih" pitanje ima {@code brojTacnih} tačnih (A, pa i C), a
+     * Ana izabere A i Bojan A i C; tačnost, udeo i poeni odgovora su kako bi ih server upisao.
+     */
+    String mreza(int brojTacnih, Faza faza, TelefonPrikaz telefon, boolean tacanPrikazan) {
+        runde.clear();
+        odgovori.clear();
+        ucesnici.clear();
+        pitanja.get(TipPitanja.VISE_TACNIH).getPitanje().getOpcije().get(2).setTacna(brojTacnih == 2);
+        na(TipPitanja.VISE_TACNIH, faza);
+        iz.setTelefonPrikaz(telefon);
+        iz.setRezultatiPrikazani(true);
+        iz.setRangListaPrikazana(true);
+        iz.setTacanPrikazan(tacanPrikazan);
+        Long a = opcijaViseTacnih(0);
+        Long c = opcijaViseTacnih(2);
+        if (brojTacnih == 2) {
+            odgovorOpcije(trenutna(), ucesnik(31L, "Ana"), 0, false, 0.5, a);
+            odgovorOpcije(trenutna(), ucesnik(32L, "Bojan"), 800, true, 1.0, a, c);
+        } else {
+            odgovorOpcije(trenutna(), ucesnik(31L, "Ana"), 900, true, 1.0, a);
+            odgovorOpcije(trenutna(), ucesnik(32L, "Bojan"), 0, false, 0.0, a, c);
+        }
+        NastavnickoStanje n = service.nastavnicko(IZ);
+        return jsonMapper.writeValueAsString(List.of(service.javno(IZ), service.licno(IZ, 31L), service.licno(IZ, 32L),
+                service.licnaZaSve(IZ), service.pocetno(IZ, 31L),
+                java.util.Arrays.asList(n.javniRezultat(), n.javnaRangLista())));
     }
 
     @Test
@@ -946,8 +1037,8 @@ class JavnoStanjeTest {
         na(TipPitanja.JEDAN_TACAN, Faza.OTVORENO);
         odgovor(trenutna(), ucesnik(31L, "Ana"), 750, true);
         ucesnik(32L, "Bojan");
-        assertEquals(new LicniOdgovor(RUNDA, true, null, null), service.licno(IZ, 31L).odgovor());
-        assertEquals(new LicniOdgovor(RUNDA, false, null, null), service.licno(IZ, 32L).odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, true, null, null, null, null), service.licno(IZ, 31L).odgovor());
+        assertEquals(new LicniOdgovor(RUNDA, false, null, null, null, null), service.licno(IZ, 32L).odgovor());
     }
 
     @Test
@@ -989,7 +1080,7 @@ class JavnoStanjeTest {
             LicnoStanje l = sva.get(31L + i);
             assertEquals(i + 1, l.mesto());
             assertEquals(700 - 100 * i, l.poeni());
-            assertEquals(new LicniOdgovor(RUNDA, true, true, 700 - 100 * i), l.odgovor());
+            assertEquals(new LicniOdgovor(RUNDA, true, true, 700 - 100 * i, null, 1.0), l.odgovor());
             assertEquals(service.licno(IZ, 31L + i), l);
         }
         // jedno učitavanje za sve (i još 7 za pojedinačne provere iznad)

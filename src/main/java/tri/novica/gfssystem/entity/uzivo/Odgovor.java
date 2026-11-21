@@ -29,6 +29,11 @@ public class Odgovor {
     private Integer skala;
     /** {@code null} kad pitanje nema tačan odgovor (anketa, procena, skala). */
     private Boolean tacno;
+    /**
+     * Udeo tačnosti od 0 do 1 (VISE_TACNIH razlomak, ostali 1 ili 0); {@code null} kad pitanje nema tačan odgovor. Red koji je
+     * upisala starija slika (posle rollback-a) nema udeo: čitaoci uzimaju {@code COALESCE(udeo, IF(tacno, 1, 0))}.
+     */
+    private Double udeo;
     @Column(nullable = false)
     private int poeni;
     @Column(nullable = false)

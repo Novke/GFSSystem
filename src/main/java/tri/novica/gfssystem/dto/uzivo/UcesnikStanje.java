@@ -10,15 +10,18 @@ import tri.novica.gfssystem.entity.uzivo.Utisanje;
  * {@code stariji}: oznaka studenta iza učesnika, samo za konzolu (projektor je ne crta). Moderacija (V25), samo konzola:
  * {@code utisan} (do kraja izvođenja), {@code oznacen} (student ima oznaku ponašanja na ovom predavanju, a izvođenje bez
  * predavanja: u ovom izvođenju), {@code brojOznaka} (sve oznake studenta na kartonu; gost 0) i {@code student} (prijavljen
- * student, ima karton; gost {@code false}).
+ * student, ima karton; gost {@code false}). {@code udeo}: udeo odgovora u trenutnoj rundi (0..1, delimično tačno kod "više
+ * tačnih"), vidljiv kad i {@code tacno}.
  */
 public record UcesnikStanje(Long id, String ime, int poeni, boolean povezan, boolean odgovorio, Long varijantaId,
                             Boolean tacno, Long vremeMs, String odgovor, boolean odgovorSakriven, boolean stariji,
-                            Utisanje utisan, boolean oznacen, int brojOznaka, boolean student) {
+                            Utisanje utisan, boolean oznacen, int brojOznaka, boolean student,
+                            Double udeo) {
 
     public UcesnikStanje(Long id, String ime, int poeni, boolean povezan, boolean odgovorio, Long varijantaId,
                          Boolean tacno) {
-        this(id, ime, poeni, povezan, odgovorio, varijantaId, tacno, null, null, false, false, null, false, 0, false);
+        this(id, ime, poeni, povezan, odgovorio, varijantaId, tacno, null, null, false, false, null, false, 0, false,
+                null);
     }
 
     public UcesnikStanje(Long id, String ime, int poeni, boolean povezan, boolean odgovorio) {
