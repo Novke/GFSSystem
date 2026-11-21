@@ -164,6 +164,27 @@ class FajloviPrezentacijeIT {
     }
 
     @Test
+    void brojFajlovaUListiIzboruIDetaljima() {
+        Long bez = f.prezentacija("Bez fajlova " + System.nanoTime());
+        otpremi(prez, "a.docx", null);
+        otpremi(prez, "b.docx", s1);
+
+        java.util.Map<Long, Long> lista = new java.util.HashMap<>();
+        prezentacijaService.lista(d.predmetId).forEach(p -> lista.put(p.id(), p.brojFajlova()));
+        assertEquals(2L, lista.get(prez));
+        assertEquals(0L, lista.get(bez));
+
+        java.util.Map<Long, Long> izbor = new java.util.HashMap<>();
+        prezentacijaService.izbor(d.predmetId, null, null).stavke()
+                .forEach(s -> izbor.put(s.prezentacija().id(), s.prezentacija().brojFajlova()));
+        assertEquals(2L, izbor.get(prez));
+        assertEquals(0L, izbor.get(bez));
+
+        assertEquals(2L, prezentacijaService.detalji(prez).brojFajlova());
+        assertEquals(0L, prezentacijaService.detalji(bez).brojFajlova());
+    }
+
+    @Test
     void pokretanjeDajeKodAPrikazSlajdaSePise() {
         Long grupa = d.grupa(2026);
         Long predavanje = d.predavanje(grupa, LocalDate.now());

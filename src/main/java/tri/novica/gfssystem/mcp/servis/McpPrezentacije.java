@@ -217,7 +217,7 @@ public class McpPrezentacije {
         return new PrezentacijaInfo(d.id(), d.naziv(), d.opis(), d.predmet(), d.brojSlajdova(), d.brojPitanja(),
                 d.izmenjeno(), d.takmicenje(), d.telefonPrikaz(), d.detaljiDozvoljeni(), d.brojIzvodjenja(),
                 d.aktivnoIzvodjenjeId(), d.tema(), d.vezba(), d.vrsta(), d.brojZadataka(), d.kreirano(),
-                d.poslednjePustanje());
+                d.poslednjePustanje(), d.brojFajlova());
     }
 
     /** Id iz argumenta alata; bez njega 400 {@code Neispravan parametar: <ime>.} (kao REST za pogrešan parametar). */

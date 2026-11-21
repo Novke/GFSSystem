@@ -92,6 +92,23 @@ public class FajloviPrezentacijeServis {
         return broj;
     }
 
+    /** Broj fajlova jedne prezentacije (za {@code PrezentacijaInfo} i {@code PrezentacijaDetails}). */
+    @Transactional(readOnly = true)
+    public long broj(Long prezentacijaId) {
+        return fajlovi.countByPrezentacijaId(prezentacijaId);
+    }
+
+    /** Broj fajlova po prezentaciji za listu, jednim upitom; prezentacija bez fajlova nema ključ. */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> brojPoPrezentaciji(Collection<Long> prezentacijaIds) {
+        Map<Long, Long> broj = new HashMap<>();
+        if (prezentacijaIds.isEmpty()) return broj;
+        for (Object[] red : fajlovi.brojPoPrezentaciji(prezentacijaIds)) {
+            broj.put((Long) red[0], (Long) red[1]);
+        }
+        return broj;
+    }
+
     /** Bajtovi za nastavnika (bez ograničenja koda ili naloga). */
     @Transactional(readOnly = true)
     public Sadrzaj sadrzaj(Long fajlId) {
