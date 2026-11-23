@@ -37,10 +37,11 @@ public class KontekstAlati {
     @McpTool(name = "vodic", description = "Vodič za rad sa GFS-om, kao tekst. Teme: `pravila` (tok rada, nacrti, serije, "
             + "isključene teme, pregled, poništavanje; čitaj pre prvog upisa), `banka` (LaTeX za telefon, preambula, "
             + "zabranjene komande, prilozi, šema polja i odgovori, slike rendera), `pitanja` (INFO, PITANJE i ZADATAK slajdovi, formule, "
-            + "granice). Pročitaj temu pre rada u toj oblasti.",
+            + "granice), `ankete` (brza anketa: sačuvana pitanja, prečice, pokretanje, rezultat). Pročitaj temu pre rada u toj "
+            + "oblasti.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true,
                     openWorldHint = false))
-    public CallToolResult vodic(@McpToolParam(description = "Tema vodiča: `pravila`, `banka` ili `pitanja`.") String tema) {
+    public CallToolResult vodic(@McpToolParam(description = "Tema vodiča: `pravila`, `banka`, `pitanja` ili `ankete`.") String tema) {
         return McpGreske.izvrsi("vodic", poziv -> odgovor.tekst(kontekst.vodic(tema)));
     }
 

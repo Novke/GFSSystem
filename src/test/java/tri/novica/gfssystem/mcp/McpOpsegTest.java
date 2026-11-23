@@ -131,7 +131,18 @@ class McpOpsegTest {
             "FajloviPrezentacijeServis.brojPoSlajdu(Long)",
             "FajloviPrezentacijeServis.dodajIzMedija(Long, String, Long, String, String)",
             "FajloviPrezentacijeServis.izmeni(Long, FajlPrezentacijeCmd)",
-            "FajloviPrezentacijeServis.obrisi(Long)");
+            "FajloviPrezentacijeServis.obrisi(Long)",
+            // McpAnkete: brza anketa (spec brze ankete 8); bez glasanja, brisanja ankete i ičega o studentima
+            "AnketaSablonService.sve()",
+            "AnketaSablonService.sacuvajZaKloda(Long, String, SablonAnketeCmd)",
+            "AnketaSablonService.obrisi(Long)",
+            "AnketaSablonService.folderZaKloda(Long, String)",
+            "AnketaSablonService.obrisiFolder(Long)",
+            "AnketaSablonService.poredjajPrecice(List)",
+            "AnketaService.istorijaZaMcp(Long, Long, Long)",
+            "AnketaService.pokreniZaKloda(PokreniAnketuCmd, Integer)",
+            "AnketaService.zatvori(Long)",
+            "AnketaService.prikaziRezultat(Long, boolean)");
 
     /** Statički čisti pomoćnici iz {@code service..} ({@code public static} u {@code final} klasi koja nije bean). */
     static final Set<String> DOZVOLJENI_POMOCNICI = Set.of(
@@ -188,7 +199,12 @@ class McpOpsegTest {
             SERVIS + ".banka.VarijantaService.obrisi",
             SERVIS + ".banka.LatexPreambulaService.postavi",
             SERVIS + ".uzivo.MedijService.obrisi",
-            SERVIS + ".uzivo.MedijService.sacuvajRender");
+            SERVIS + ".uzivo.MedijService.sacuvajRender",
+            // brza anketa: glas i lista studenta (sesija studenta), brisanje iz istorije i kraj predavanja ostaju van MCP-a
+            SERVIS + ".anketa.AnketaService.glasaj",
+            SERVIS + ".anketa.AnketaService.zaStudenta",
+            SERVIS + ".anketa.AnketaService.obrisi",
+            SERVIS + ".anketa.AnketaService.zatvoriNaKrajuPredavanja");
 
     static final JavaClasses KLASE = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())

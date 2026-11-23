@@ -80,7 +80,17 @@ class McpAlatiTest {
             Map.entry("izvodjenja_prezentacije", new Red(true, false, true, false)),
             Map.entry("odgovori_runde", new Red(true, false, true, false)),
             Map.entry("preoceni_odgovore", new Red(false, true, true, true)),
-            Map.entry("vrati_preocenu", new Red(false, true, true, true)));
+            Map.entry("vrati_preocenu", new Red(false, true, true, true)),
+            Map.entry("ankete_sabloni", new Red(true, false, true, false)),
+            Map.entry("sacuvaj_sablon_ankete", new Red(false, true, true, false)),
+            Map.entry("obrisi_sablon_ankete", new Red(false, true, true, false)),
+            Map.entry("sacuvaj_folder_ankete", new Red(false, false, true, false)),
+            Map.entry("obrisi_folder_ankete", new Red(false, true, true, false)),
+            Map.entry("poredjaj_precice", new Red(false, false, true, false)),
+            Map.entry("ankete_istorija", new Red(true, false, true, false)),
+            Map.entry("pokreni_anketu", new Red(false, false, false, false)),
+            Map.entry("zatvori_anketu", new Red(false, true, true, false)),
+            Map.entry("prikazi_rezultat_ankete", new Red(false, false, true, false)));
 
     static final String SERIJA_PORUKA = "Serija mora imati 3 do 60 malih slova, cifara ili crtica.";
 
