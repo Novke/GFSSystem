@@ -60,6 +60,7 @@ src/main/java/tri/novica/gfssystem/
 - **TestGrupa** - Test group association
 - **OnboardingSesija** - Onboarding session of a group (`onboarding_sesije`): public token, active flag, expiry, max submissions
 - **Prijava** - A student's submission in a session (`prijave`), status `StatusPrijave` (`NA_CEKANJU`, `PRIHVACENA`, `ODBIJENA`)
+- **Anketa**, **AnketaGlas**, **AnketaSablon**, **AnketaFolder** - Quick class poll, one vote per student, saved questions and their folders (see "Brza anketa")
 
 ## Manual "older student" flag (`Student.stariji`)
 
@@ -578,7 +579,7 @@ through the plan's "Tačke proširenja za B i A2".
   SDK's schema check would answer in technical English before `McpOmotac`), a transport JSON mapper that keeps `null` in maps
   (merge patch needs `"opis": null`) and `immediateExecution` (the tool runs on the request thread and sees request
   attributes). Server instructions (`initialize`, <= 4 000 chars) are `resources/mcp/uputstva.md`, read as UTF-8 by a bean
-  post-processor (Boot reads `.properties` as ISO-8859-1); the `vodic` tool serves `mcp/vodic-{banka,pitanja,pravila}.md`
+  post-processor (Boot reads `.properties` as ISO-8859-1); the `vodic` tool serves `mcp/vodic-{banka,pitanja,pravila,ankete}.md`
   (`VodicTema`, <= 16 000 chars each, read at startup).
 - **Properties, also in the test `application.properties`** (it shadows the main file; without them a STREAMABLE server or
   nothing starts): `spring.ai.mcp.server.*` (protocol, type, `name=gfs`, version, `streamable-http.mcp-endpoint=/mcp`,
@@ -1163,6 +1164,70 @@ Files for students (DOCX, XLSX, PPTX, PDF, ZIP; medium kind `FAJL_PREZENTACIJE`)
 - **Mejl sa prilogom:** `MejlPoruka(za, naslov, telo, html, prilozi)` (`MejlPoruka.Prilog(naziv, mime, sadrzaj)`; stari konstruktori ostaju, `toString` ne ispisuje adresu, telo ni priloge). `SmtpMejlServis` sa prilozima pravi `multipart/mixed` (telo = tekst ili `multipart/alternative`, pa prilozi sa `Content-Disposition: attachment` i imenom po RFC 2231); bez priloga je poruka nepromenjena. Tekst: `MejlPoruke.fajl` (naslov konstantan "Fajl sa časa", u telu ime fajla, predmet i prezentacija).
 - Testovi: `NalogFajloviIT` (MockMvc, `LazniMejlServis`, `PomerljivSatConfig`), `SmtpMejlServisTest` (MIME), `PristupMatricaTest`.
 
+## Brza anketa (quick class poll)
+
+Branch `feature/brza-anketa` in all three repos. Spec: deploy repo `docs/superpowers/specs/2026-11-23-brza-anketa-design.md` (mockup next to it).
+An organisational question to students during a lecture ("Pauza?", "Kolokvijum ovog ili onog datuma?"), **not** a slide: it never touches runs,
+`StanjeService`, STOMP, rank or activities, and "Ne čuvaj" of a run does not delete it. Only choices (one or several of 2-10 answers), no free text,
+no correct answer. Package `anketa` in `entity`, `repository`, `service`, `rest`, `dto`; Flyway **`V27__brza_anketa.sql`**.
+- **Tables:** `ankete_folderi` (name, `rb`), `ankete_sabloni` (saved questions: answers as a JSON array via `StringListJsonConverter`, audience,
+  `trajanje_sekunde` only for `NA_CASU`, `rok_sati` 1-336 only for `GRUPA`, shortcut look `precica`/`precica_rb`/`ikonica`/`boja`/`kratak_naziv`/
+  `pokreni_odmah`, launch counter; `folder_id` `SET NULL`), `ankete` (a snapshot of question and answers at launch; `sablon_id` and `predavanje_id`
+  `SET NULL`, `grupa_id` always set and `CASCADE`, `otvoreno`/`rok`/`zatvoreno`, `rezultat_prikazan`, `izvor` `NASTAVNIK|CLAUDE`), `ankete_glasovi`
+  (`UNIQUE(anketa_id, student_id)`, `opcije` = ascending indexes `"0,2"`, both FKs `CASCADE`), and `podesavanja_studenta.push_ankete` (default 1).
+- **State is computed, nothing is scheduled** (`AnketaPravila.stanje`): open while `zatvoreno IS NULL`, `rok` has not passed and, for `NA_CASU`, the
+  lecture exists, is not finished and less than 5 h passed since launch (`NAJDUZE_NA_CASU`, so a forgotten "Završi predavanje" cannot leave it open
+  forever; deviation from the spec, which has no 5 h cap). The effective close time is the earliest of `zatvoreno`, a passed `rok` and the 5 h cap.
+  `PredavanjeService.zavrsiPredavanje` calls `AnketaService.zatvoriNaKrajuPredavanja` (`MANDATORY`, after the lecture row lock) so class polls get
+  the real close time; group polls run until `rok`.
+- **Who may vote** (`AnketaService.glasaj`, student id only from the session): `NA_CASU` = a `cekiranja` row for the poll's lecture; `GRUPA` =
+  `studenti.grupa_id = ankete.grupa_id` **or** checked in on the poll's lecture (older students in class). Order of checks: 404 `Anketa nije
+  pronađena.`, 403 `Ova anketa nije za tebe.`, 409 `Anketa je zatvorena.`, 400 (`Izaberi jedan odgovor.`, `Izaberi bar jedan odgovor.`, `Neispravan
+  odgovor.`). A new vote replaces the old one with a native `INSERT ... AS novo ON DUPLICATE KEY UPDATE` (parallel double tap = one row); the vote
+  takes `FOR SHARE` on the poll row, close/result/delete take `FOR UPDATE`. **Lock order: lecture row, then poll rows**; nothing locks a lecture
+  after a poll.
+- **Launch (`pokreni`)**: `NA_CASU` locks the lecture (`findByIdForUpdate`; must exist 404, not finished 409 `Predavanje nije u toku.`, have a group
+  409 `Predavanje nema grupu.`), closes the open class poll of that lecture (at most one open per lecture), `rok = otvoreno + trajanjeSekunde`
+  (10-1800, null = until closed). `GRUPA`: `grupaId` or the lecture's group (a different one is 400 `Grupa nije grupa predavanja.`), `rok` required,
+  in the future, at most 14 days (400 `Rok mora biti u narednih 14 dana.`), at most 5 open per group (409). `sablonId` bumps the template's counter
+  (404 when missing); the template itself is never changed by a launch. Limits: 200 templates, 30 folders (names unique case-insensitively, 409),
+  12 shortcuts (409), counted without locks.
+- **Numbers for the teacher:** `glasovi` per answer (sum per option for multi-answer), `brojGlasalo` = students who voted, `brojMogucih` = union of
+  eligible students and voters (never below `brojGlasalo`). **Anonymity: no teacher or MCP response carries a student id, a name or an
+  individual vote** (`AnketaDetails`, `AnketaInfo` have only sums; checked in `AnketaRestIT` and `AnketeAlatiDbTest`).
+- **Student set** (`zaStudenta`, also in `CasStanje.ankete`): polls he may vote in that are open, or closed with a shown result (class poll: while
+  the lecture runs and at most 2 h after closing; group poll: 24 h after closing), newest first, at most 5; `mojGlas`, and `rezultat` only when
+  `rezultatPrikazan`. `CasStanje` gained the last field `ankete` (never null; old constructors kept, `saAnketama`); the REST layer
+  (`CasPublicRest`) fills it in a separate short read after check-in, so `CekiranjeService` and its lecture lock are unchanged.
+- **Paths (exact names in spec 5):** ADMIN `GET|POST /ankete/sabloni`, `PUT|DELETE /ankete/sabloni/{id}`, `PUT /ankete/precice`, `POST /ankete/folderi`,
+  `PUT /ankete/folderi/redosled`, `PUT|DELETE /ankete/folderi/{id}`, `POST /ankete` (201), `GET /ankete/aktivne?predavanjeId&grupaId` (open +
+  closed with a shown result in the last 30 min; at least one parameter, 400 otherwise), `GET /ankete` (paging, sort only `otvoreno`, default
+  `otvoreno desc`), `GET|DELETE /ankete/{id}`, `POST /ankete/{id}/zatvori` (idempotent), `PUT /ankete/{id}/rezultat {prikazan}`; STUDENT
+  `GET /public/nalog/ankete`, `POST /public/nalog/ankete/{id}/glas {opcije}`; `GET /public/nalog/cas` (and `skeniraj`/`potvrdi`) carry `ankete`.
+  All in `PristupMatrica` and the snapshot `src/test/resources/pristup-matrica.txt`. Nothing new for nginx.
+- **Push and bell** (only through `StudentskaObavestenja`, one row per recipient in the launch transaction, key `ANKETA:<id>`; push after commit on
+  the push thread, only to `push_ankete = 1`, `Prekidac.PUSH_ANKETE`): `ANKETA_CAS` (class poll; never shown in the bell, like `PODSETNIK`;
+  title `Anketa: <question cut to 60>`, text `Dodirni i glasaj.`, path `nalog/cas`, tag `anketa-cas`, TTL to `rok` or 15 min, urgency high;
+  recipients = checked in) and `ANKETA` (group poll; always shown in the bell; text `Glasaj do <dan d.m.> u HH:mm.`, path `nalog/pocetna`, tag
+  `anketa-<id>`, TTL to `rok` capped at 24 h, normal; recipients = the group plus checked in on the poll's lecture). Texts in `PushTekstovi`
+  (teacher's question and the deadline only). `PodesavanjaNaloga` gained the 8th field `pushAnkete` (a `PUT` without it keeps the stored value).
+- **MCP (level "slobodno", no card):** facade `mcp/servis/McpAnkete` (calls only `AnketaService`/`AnketaSablonService`, listed in
+  `McpOpsegTest.DOZVOLJENE_METODE`; `glasaj`, `zaStudenta`, `obrisi` and `zatvoriNaKrajuPredavanja` are in `ZABRANJENE_METODE`), tools
+  `mcp/alati/AnketeAlati`: `ankete_sabloni`, `sacuvaj_sablon_ankete` (whole replace by `id`; without `id` the template with the same question
+  text, case-insensitive, is updated instead of duplicated; `folder` by name, created when missing), `obrisi_sablon_ankete`,
+  `sacuvaj_folder_ankete` (without `id` get-or-create by name), `obrisi_folder_ankete`, `poredjaj_precice`, `ankete_istorija` (filters predmet via
+  the poll's lecture, grupa, predavanje; at most 50), `pokreni_anketu` (`izvor = CLAUDE`; fields not sent come from `sablonId`; `NA_CASU` without
+  `predavanjeId` goes to today's single unfinished lecture, none 409, several 400 with the list; `GRUPA` with `rok` as ISO local time or `rokSati`;
+  not idempotent), `zatvori_anketu`, `prikazi_rezultat_ankete` (`prikazan` default true). Every write tool takes `serija` (repo convention, only
+  checked, nothing is stored per series). `vodic` topic `ankete` (`mcp/vodic-ankete.md`).
+- **Rollback across V27:** an older image maps none of the new tables or the column, but it cannot read a `studentska_obavestenja` row of kind
+  `ANKETA` or `ANKETA_CAS` (unknown enum constant, like `MNOGO_NAJAVA` in V18): run
+  `delete from studentska_obavestenja where vrsta in ('ANKETA', 'ANKETA_CAS');` first.
+- **Tests:** `AnketaPravilaTest` (pure rules), `AnketaServiceDbTest` (eligibility, parallel double tap, vote change, closing, new class poll and
+  lecture end, numbers, student windows, limits, templates, Claude launch, bell and push via `LazniPushTransport`, clock `RasporedSatConfig` in
+  2033), `AnketaSablonServiceDbTest` (templates, folders, shortcuts, limits; wipes both global tables), `AnketaRestIT` (whole chain, anonymity,
+  origin check, 401/403), `V27MigracijaDbTest`, `AnketeAlatiDbTest`, `PushTekstoviTest`, `PushDbTest` (`pushAnkete`).
+
 ## Build & Run
 
 ```bash
@@ -1238,8 +1303,12 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `V22` = app and push (see "Aplikacija i obaveštenja"). `V23` = manual "older student" flag (`V23__stariji_student.sql`, branch `feature/stariji-student`):
   `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
   `V24` = MCP changes (`V24__mcp_izmene.sql`, see "MCP za Claude-a"). `V25` = Uživo moderation (`V25__moderacija_uzivo.sql`: nullable
-  `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo").
-  **Next free version: `V26`.**
+  `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo"). `V26` = files for students
+  (`V26__fajlovi_prezentacije.sql`, see "Fajlovi uz prezentaciju"). `V27` = quick class poll (`V27__brza_anketa.sql`, branch `feature/brza-anketa`,
+  see "Brza anketa"; provisional: PR #55 "Delimično tačno" also claims V27, whoever merges second renames to the next free number and updates
+  `V27MigracijaDbTest.PRE_ANKETE`): tables `ankete_folderi`, `ankete_sabloni`, `ankete`, `ankete_glasovi`, `podesavanja_studenta.push_ankete`;
+  idempotent and additive (rollback: delete the `ANKETA`/`ANKETA_CAS` bell rows first, see that section).
+  **Next free version: `V28`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose
