@@ -99,7 +99,7 @@ class McpKrajNaKrajDbTest extends McpDbTestOsnova {
         List<JsonNode> alati = mcp.alati();
         Set<String> imena = new TreeSet<>();
         alati.forEach(a -> imena.add(a.path("name").asString()));
-        assertEquals(49, alati.size());
+        assertEquals(59, alati.size());
         assertEquals(new TreeSet<>(McpAlatiTest.OCEKIVANO.keySet()), imena);
     }
 
