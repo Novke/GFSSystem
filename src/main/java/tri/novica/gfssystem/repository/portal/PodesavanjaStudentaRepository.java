@@ -21,9 +21,9 @@ public interface PodesavanjaStudentaRepository extends JpaRepository<Podesavanja
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
             INSERT INTO podesavanja_studenta (student_id, mejl_otkazan_cas, push_podsetnik, push_otkazan_cas, push_ocene,
-                                              push_posle_casa, zvono_ocene, zvono_posle_casa, izmenjeno)
+                                              push_posle_casa, zvono_ocene, zvono_posle_casa, push_ankete, izmenjeno)
             VALUES (:studentId, :mejl, IF(:pp < 0, 1, :pp), IF(:poc < 0, 1, :poc), IF(:po < 0, 1, :po), IF(:ppc < 0, 1, :ppc),
-                    IF(:zo < 0, 1, :zo), IF(:zpc < 0, 1, :zpc), :sada) AS novo
+                    IF(:zo < 0, 1, :zo), IF(:zpc < 0, 1, :zpc), IF(:pa < 0, 1, :pa), :sada) AS novo
             ON DUPLICATE KEY UPDATE mejl_otkazan_cas = novo.mejl_otkazan_cas,
                 push_podsetnik = IF(:pp < 0, podesavanja_studenta.push_podsetnik, novo.push_podsetnik),
                 push_otkazan_cas = IF(:poc < 0, podesavanja_studenta.push_otkazan_cas, novo.push_otkazan_cas),
@@ -31,10 +31,12 @@ public interface PodesavanjaStudentaRepository extends JpaRepository<Podesavanja
                 push_posle_casa = IF(:ppc < 0, podesavanja_studenta.push_posle_casa, novo.push_posle_casa),
                 zvono_ocene = IF(:zo < 0, podesavanja_studenta.zvono_ocene, novo.zvono_ocene),
                 zvono_posle_casa = IF(:zpc < 0, podesavanja_studenta.zvono_posle_casa, novo.zvono_posle_casa),
+                push_ankete = IF(:pa < 0, podesavanja_studenta.push_ankete, novo.push_ankete),
                 izmenjeno = novo.izmenjeno""", nativeQuery = true)
     int upisiSve(@Param("studentId") Long studentId, @Param("mejl") boolean mejlOtkazanCas, @Param("pp") int pushPodsetnik,
                  @Param("poc") int pushOtkazanCas, @Param("po") int pushOcene, @Param("ppc") int pushPosleCasa,
-                 @Param("zo") int zvonoOcene, @Param("zpc") int zvonoPosleCasa, @Param("sada") LocalDateTime sada);
+                 @Param("zo") int zvonoOcene, @Param("zpc") int zvonoPosleCasa, @Param("pa") int pushAnkete,
+                 @Param("sada") LocalDateTime sada);
 
     /**
      * Student je otvorio zvono: {@code zvono_otvoreno = sada}; red bez izbora se pravi sa podrazumevanim vrednostima.
