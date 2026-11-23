@@ -254,7 +254,7 @@ public class IzvodjenjeService {
                     iz.getTelefonPrikaz() == TelefonPrikaz.PITANJE ? TelefonPrikaz.DUGMAD : TelefonPrikaz.PITANJE);
             case DETALJI -> iz.setDetaljiDozvoljeni(!iz.isDetaljiDozvoljeni());
             case EKRAN_CRN -> iz.setEkran(iz.getEkran() == Ekran.CRN ? Ekran.NORMALAN : Ekran.CRN);
-            case EKRAN_BEO -> iz.setEkran(iz.getEkran() == Ekran.BEO ? Ekran.NORMALAN : Ekran.BEO);
+            case EKRAN_BEO -> ekranBeo(iz);
             case QR -> iz.setQrPrikazan(!iz.isQrPrikazan());
             case ZAVRSI -> zavrsi(iz);
             case RESENJE -> resenjePrikaz(iz, sl);
@@ -344,6 +344,20 @@ public class IzvodjenjeService {
         }
     }
 
+    /**
+     * Beli ekran ({@code W}) uključi ili isključi. Uključivanje pamti slajd na platnu: bela strana crteža je
+     * ({@code belaSlajdId}, BELA) i ostaje ista dok se lista (spec crtanja 5.3); na prijavi slajda nema ({@link #idiNa}
+     * upiše prvi slajd do kog se stigne). Isključivanje ga ne briše.
+     */
+    private static void ekranBeo(Izvodjenje iz) {
+        if (iz.getEkran() == Ekran.BEO) {
+            iz.setEkran(Ekran.NORMALAN);
+            return;
+        }
+        iz.setEkran(Ekran.BEO);
+        iz.setBelaSlajdId(iz.getPrikaz() == Prikaz.SLAJD ? iz.getTrenutniSlajdId() : null);
+    }
+
     private void idiNaKomanda(Izvodjenje iz, List<Slajd> sl, Integer vrednost) {
         int n = sl.size();
         if (vrednost == null || vrednost < -1 || vrednost > n) {
@@ -389,6 +403,9 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
+        if (iz.getEkran() == Ekran.BEO && iz.getBelaSlajdId() == null) {
+            iz.setBelaSlajdId(s.getId());   // beli ekran uključen na prijavi: bela strana je prvog slajda (spec crtanja 5.3)
+        }
         temeZaVezbanje.prikazan(iz, s.getId());   // studentski pregled: slajd vidljiv grupi posle kraja izvođenja
         slajdoviIzvodjenja.upisiPrikaz(iz.getId(), s.getId(), sada());   // fajlovi na času: slajd je prikazan (svako izvođenje)
         if (!TokIzvodjenja.saRundama(s)) {

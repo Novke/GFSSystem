@@ -385,6 +385,31 @@ Spec `docs/superpowers/specs/2026-11-18-moderacija-uzivo-design.md` (deploy repo
 - Tests: `ModeracijaUzivoDbTest` (mute, hide with flags, expel per run and per lecture, guest by cookie, "Ne čuvaj", card list/delete, states),
   plus `IzvodjenjeRestTest`, `PublicUzivoRestTest`, `NastavnickoStanjeTest`, `UcesnikServiceTest` and the access snapshot.
 
+### Crtanje u izvođenju (drawing over a slide, white board, lecture board)
+
+Spec `docs/superpowers/specs/2026-11-23-crtanje-uzivo-design.md`, contract `docs/superpowers/plans/2026-11-23-crtanje-uzivo.md` (deploy repo).
+Migration `V27__crtanje.sql` (idempotent, additive). The console draws; the projector window of the same browser mirrors it over a
+`BroadcastChannel` (front only), the server stores each finished stroke and tells other devices that a page changed.
+- **Page** = (slide, `PozadinaCrteza` `SLAJD` | `BELA`) of one run, row `crtezi_izvodjenja` (created by the first stroke; "Obriši sve" stores
+  `[]`, the row stays and `verzija` grows). The white page is (`izvodjenja.bela_slajd_id`, `BELA`): `EKRAN_BEO` turning white on stores the
+  current slide (`null` on PRIJAVA, then `idiNa` stores the first slide it reaches while the screen is white); turning it off does not clear it.
+- **Elements** (`ElementCrteza` `{tip, boja, debljina, tacke}`, `TipElementa` OLOVKA, LINIJA, ISPREKIDANA, STRELICA, PRAVOUGAONIK, KRUG,
+  ELIPSA) in the 960×540 scene. `CrtanjeJson` reads strictly (unknown field, wrong type = 400 `Neispravan crtež: ...`), `CrtanjePravila`
+  checks the limits (color `#RRGGBB`, stored upper-case; width 1–40; coordinates finite within ±2000, rounded to 0.1; OLOVKA 1–5000 points,
+  other types exactly 4 numbers; ≤ 2000 elements; stored JSON ≤ 1 MB).
+- **REST** (`CrtanjeRest`, ADMIN): `GET /izvodjenja/{id}/crtezi` (non-empty pages for the run overview, slide order, deleted slide last with
+  `slajdBroj: null`), `GET|PUT /izvodjenja/{id}/crtezi/strana?slajdId=&pozadina=` (PUT = the whole element list, under the run row lock;
+  404 slide not from the run's presentation, 410 finished), `GET /izvodjenja/{id}/crtezi/ranije?slajdId=` (the same slide in other runs of the
+  presentation, also runs without saving, newest first, max 5 per background), `GET /predavanja/{id}/tabla?posle=` (204 when nothing newer)
+  and `PUT /predavanja/{id}/tabla` (`table_predavanja`, one board per lecture, no presentation needed).
+- **Snapshot:** `NastavnickoStanje.crtez` (last field, `CrtezTrenutni {slajdId, pozadina, verzija}`): white screen → the white page (null
+  without `bela_slajd_id`), slide shown (also on the black screen) → its SLAJD page, otherwise null. A page PUT publishes `CrtezPromenjen`
+  after commit and `UzivoObjavljivac.onCrtez` sends **only** the teacher snapshot at once (no public state, no personal states).
+- **Lifetime:** drawings survive "Ne čuvaj" and are deleted with their run (CASCADE); a deleted slide keeps them (FK `SET NULL`). A copied
+  presentation has new slide ids, so its runs do not see the original's drawings (accepted).
+- Tests: `CrtanjeServiceDbTest` (real MySQL: pages, versions, 400/404/410, white page, snapshot, earlier drawings, delete, lecture board),
+  `CrtanjePravilaTest`, `CrtanjeRestTest`, `UzivoObjavljivacTest.crtezIdeSamoNastavnikuOdmah` and the access snapshot.
+
 ## Banka zadataka (faza 1)
 
 Per-subject bank of tasks for lectures and tests: a tree of groups, variants of a task (LaTeX text and solution rendered to SVG
@@ -1238,8 +1263,10 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   `V22` = app and push (see "Aplikacija i obaveštenja"). `V23` = manual "older student" flag (`V23__stariji_student.sql`, branch `feature/stariji-student`):
   `studenti.stariji` tinyint(1) NOT NULL DEFAULT 0, idempotent and additive (the DDL default covers an older image's inserts, so a rollback needs no DB work).
   `V24` = MCP changes (`V24__mcp_izmene.sql`, see "MCP za Claude-a"). `V25` = Uživo moderation (`V25__moderacija_uzivo.sql`: nullable
-  `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo").
-  **Next free version: `V26`.**
+  `ucesnici.utisan`, tables `oznake_ponasanja` and `zabrane_gostiju`; additive, see "Moderacija uživo"). `V26` = files for a presentation
+  (see "Fajlovi uz prezentaciju"). `V27` = drawing during a run (`V27__crtanje.sql`: tables `crtezi_izvodjenja` and `table_predavanja`,
+  nullable `izvodjenja.bela_slajd_id`; additive, see "Crtanje u izvođenju").
+  **Next free version: `V28`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

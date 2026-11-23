@@ -124,7 +124,8 @@ class NastavnickoStanjeTest {
                 ucesnikRepository, org.mockito.Mockito.mock(tri.novica.gfssystem.repository.uzivo.OznakaPonasanjaRepository.class), dodelaRepository, povezanost, jsonMapper, new PlatnoJson(), zadaci,
                 org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
                 org.mockito.Mockito.mock(RangTacnostiService.class), new RangPrikazRegistar(),
-                org.mockito.Mockito.mock(tri.novica.gfssystem.service.fajlovi.FajloviStanja.class), clock);
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.fajlovi.FajloviStanja.class),
+                org.mockito.Mockito.mock(CrtanjeService.class), clock);
     }
 
     Slajd pitanje(Long id, int rb, TipPitanja tip) {
