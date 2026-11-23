@@ -34,6 +34,9 @@ public class PodesavanjaStudenta {
     private boolean zvonoOcene = true;
     @Column(name = "zvono_posle_casa", nullable = false)
     private boolean zvonoPosleCasa = true;
+    /** Push brze ankete (V27, podrazumevano da); zvono za ankete grupe nema prekidač. */
+    @Column(name = "push_ankete", nullable = false)
+    private boolean pushAnkete = true;
     @Column(name = "zvono_otvoreno")
     private LocalDateTime zvonoOtvoreno;
     @Column(nullable = false)

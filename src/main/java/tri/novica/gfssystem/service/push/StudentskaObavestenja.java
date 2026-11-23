@@ -25,7 +25,7 @@ import java.util.*;
 
 /**
  * Obaveštenja studentu (spec aplikacije 6.8): jedini izvor za zvono na nalogu i za push poruke studentu. Svaki događaj
- * (podsetnik, otkazan čas, ipak se održava, ocene, posle časa) upisuje <b>jedan red po studentu</b> u
+ * (podsetnik, otkazan čas, ipak se održava, ocene, posle časa, brza anketa) upisuje <b>jedan red po studentu</b> u
  * {@code studentska_obavestenja} u transakciji događaja, sa sadržajem zamrznutim u tom trenutku; ključ je jedinstven po
  * studentu, pa ponovljen događaj ne pravi drugi red ni drugi push. Red nastaje bez obzira na prekidače: prekidači zvona
  * filtriraju prikaz ({@link #zvono}), prekidači push-a slanje ({@link #posalji}).
@@ -37,7 +37,7 @@ public class StudentskaObavestenja {
     public static final int ZVONO_NAJVISE = 30;
     /** Vrste uvek vidljive u zvonu (ne mogu da se isključe). */
     private static final Set<VrstaStudentskogObavestenja> UVEK = EnumSet.of(VrstaStudentskogObavestenja.OTKAZAN_CAS,
-            VrstaStudentskogObavestenja.ODRZAVA_SE);
+            VrstaStudentskogObavestenja.ODRZAVA_SE, VrstaStudentskogObavestenja.ANKETA);
 
     private final StudentskoObavestenjeRepository repository;
     private final PodesavanjaStudentaServis podesavanja;

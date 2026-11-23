@@ -42,7 +42,7 @@ public class Izvodjenje {
     private LocalDateTime pocetak;
     private LocalDateTime kraj;
     private Long trenutniSlajdId;
-    /** Slajd na kom je beli ekran ({@code W}) uključen: bela strana crteža je ({@code belaSlajdId}, BELA); V27, bez FK. */
+    /** Slajd na kom je beli ekran ({@code W}) uključen: bela strana crteža je ({@code belaSlajdId}, BELA); V28, bez FK. */
     private Long belaSlajdId;
     @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
     private Prikaz prikaz;

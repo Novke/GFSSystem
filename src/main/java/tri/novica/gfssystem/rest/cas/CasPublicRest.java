@@ -14,6 +14,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.security.Kolacici;
 import tri.novica.gfssystem.security.NastavnikAutentikacija;
 import tri.novica.gfssystem.security.StudentAutentikacija;
+import tri.novica.gfssystem.service.anketa.AnketaService;
 import tri.novica.gfssystem.service.cas.CekiranjeService;
 import tri.novica.gfssystem.service.uzivo.TokenHash;
 import tri.novica.gfssystem.utility.TokenGenerator;
@@ -26,7 +27,8 @@ import java.util.Optional;
  * ({@code /api/public/nalog/cas*}): {@code skeniraj} je ANONIMNO (prijavljen student se čekira odmah, neprijavljen dobija
  * ključ), {@code potvrdi} i stanje traže studentski kolačić (STUDENT u {@code PristupMatrica}). Student se uzima samo iz
  * sesije. {@code skeniraj} i {@code potvrdi} postavljaju kolačić {@code gfs_uredjaj} (oznaka telefona, 365 dana) kad ga
- * nema; servis dobija samo njegov SHA-256.
+ * nema; servis dobija samo njegov SHA-256. Svako stanje časa nosi i ankete studenta ({@code CasStanje.ankete}, brza
+ * anketa), pročitane posle čekiranja (u sopstvenoj kratkoj transakciji, bez brave predavanja).
  */
 @RestController
 @RequestMapping("/public/nalog/cas")
@@ -37,6 +39,7 @@ public class CasPublicRest {
     static final Duration UREDJAJ_TRAJE = Duration.ofDays(365);
 
     private final CekiranjeService cekiranje;
+    private final AnketaService ankete;
     private final TokenGenerator tokenGenerator;
 
     /**
@@ -51,21 +54,29 @@ public class CasPublicRest {
             throw new SystemException(ODJAVI_SE_KAO_NASTAVNIK, HttpStatus.CONFLICT);
         }
         Optional<Long> student = StudentAutentikacija.trenutna().map(StudentAutentikacija::studentId);
-        return cekiranje.skeniraj(cmd.token(), student, uredjaj(req, res));
+        SkeniranjeOdgovor o = cekiranje.skeniraj(cmd.token(), student, uredjaj(req, res));
+        return o.stanje() == null || student.isEmpty() ? o
+                : new SkeniranjeOdgovor(o.kljuc(), saAnketama(o.stanje(), student.get()));
     }
 
     /** Čekiranje iz ključa posle prijave: 410 za nepoznat, istekao ili potrošen ključ. */
     @PostMapping("potvrdi")
     @ResponseStatus(HttpStatus.OK)
     public CasStanje potvrdi(@Valid @RequestBody PotvrdaCekiranjaCmd cmd, HttpServletRequest req, HttpServletResponse res) {
-        return cekiranje.potvrdi(cmd.kljuc(), trenutni().studentId(), uredjaj(req, res));
+        long student = trenutni().studentId();
+        return saAnketama(cekiranje.potvrdi(cmd.kljuc(), student, uredjaj(req, res)), student);
     }
 
     /** Stanje časa: predavanje na kome je student (5 h od čekiranja) i aktivno izvođenje; {@code predavanje: null} inače. */
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     public CasStanje stanje() {
-        return cekiranje.stanje(trenutni().studentId());
+        long student = trenutni().studentId();
+        return saAnketama(cekiranje.stanje(student), student);
+    }
+
+    private CasStanje saAnketama(CasStanje s, long studentId) {
+        return s.saAnketama(ankete.zaStudenta(studentId));
     }
 
     /** SHA-256 kolačića {@code gfs_uredjaj}; nov (32 znaka) kad ga nema ili nije ispravnog oblika. */

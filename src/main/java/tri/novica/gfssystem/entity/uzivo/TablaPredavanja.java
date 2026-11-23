@@ -8,7 +8,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * Bela tabla predavanja (tabela {@code table_predavanja}, V27): jedna po predavanju, dugme "Tabla" bez prezentacije. FK
+ * Bela tabla predavanja (tabela {@code table_predavanja}, V28): jedna po predavanju, dugme "Tabla" bez prezentacije. FK
  * {@code CASCADE} na predavanje. {@code elementi} je JSON niz elemenata kao kod {@link CrtezIzvodjenja}.
  */
 @Entity

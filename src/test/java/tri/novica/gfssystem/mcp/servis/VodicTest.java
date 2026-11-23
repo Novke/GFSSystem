@@ -203,6 +203,19 @@ class VodicTest {
     }
 
     @Test
+    void vodicAnketePokrivaAlateIAnonimnost() {
+        String s = tekst(VodicTema.ANKETE);
+        for (String izraz : List.of("ankete_sabloni", "sacuvaj_sablon_ankete", "obrisi_sablon_ankete", "sacuvaj_folder_ankete",
+                "obrisi_folder_ankete", "poredjaj_precice", "ankete_istorija", "pokreni_anketu", "zatvori_anketu",
+                "prikazi_rezultat_ankete", "NA_CASU", "GRUPA", "ko je za šta glasao", "jasno traži", "serija")) {
+            assertTrue(s.contains(izraz), "vodič ankete nema: " + izraz);
+        }
+        for (tri.novica.gfssystem.entity.anketa.BojaPrecice boja : tri.novica.gfssystem.entity.anketa.BojaPrecice.values()) {
+            assertTrue(s.contains("`" + boja.name() + "`"), "vodič ankete nema boju " + boja);
+        }
+    }
+
+    @Test
     void uputstvaServera() throws Exception {
         String s = new ClassPathResource("mcp/uputstva.md").getContentAsString(StandardCharsets.UTF_8).strip();
         assertTrue(s.length() <= 4_000, "uputstva imaju " + s.length() + " znakova");
@@ -216,6 +229,8 @@ class VodicTest {
         assertEquals(VodicTema.BANKA, VodicTema.iz("banka"));
         assertEquals(VodicTema.PITANJA, VodicTema.iz("pitanja"));
         assertEquals(VodicTema.PRAVILA, VodicTema.iz("pravila"));
+        assertEquals(VodicTema.ANKETE, VodicTema.iz("ankete"));
+        assertEquals("mcp/vodic-ankete.md", VodicTema.ANKETE.resurs());
         assertEquals("mcp/vodic-banka.md", VodicTema.BANKA.resurs());
         assertEquals("mcp/vodic-pravila.md", VodicTema.PRAVILA.resurs());
         for (String losa : Arrays.asList("platno", "BANKA", " banka", "", null)) {

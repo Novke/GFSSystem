@@ -21,7 +21,7 @@ import java.util.Set;
 /**
  * Podešavanja studenta (tab "Ja"): mejl o otkazanom času (čita ga {@code MejlObavestavanjeStudenata}, jedini put kojim
  * aplikacija šalje studentu mejl o promeni termina) i, od faze 4, prekidači push-a i zvona po vrsti
- * ({@link Prekidac}; čitaju ih sastavljači push poruka i zvono u {@code service.push}). Bez reda važe podrazumevane
+ * ({@link Prekidac}; čitaju ih sastavljači push poruka i zvono u {@code service.push}; od V27 i push brze ankete). Bez reda važe podrazumevane
  * vrednosti (sve uključeno).
  */
 @Service
@@ -35,6 +35,7 @@ public class PodesavanjaStudentaServis {
         PUSH_OTKAZAN_CAS("push_otkazan_cas"),
         PUSH_OCENE("push_ocene"),
         PUSH_POSLE_CASA("push_posle_casa"),
+        PUSH_ANKETE("push_ankete"),
         ZVONO_OCENE("zvono_ocene"),
         ZVONO_POSLE_CASA("zvono_posle_casa");
 
@@ -54,11 +55,11 @@ public class PodesavanjaStudentaServis {
     public PodesavanjaNaloga za(long studentId) {
         Optional<PodesavanjaStudenta> p = repository.findById(studentId);
         if (p.isEmpty()) {
-            return new PodesavanjaNaloga(true, true, true, true, true, true, true);
+            return new PodesavanjaNaloga(true, true, true, true, true, true, true, true);
         }
         PodesavanjaStudenta x = p.get();
         return new PodesavanjaNaloga(x.isMejlOtkazanCas(), x.isPushPodsetnik(), x.isPushOtkazanCas(), x.isPushOcene(),
-                x.isPushPosleCasa(), x.isZvonoOcene(), x.isZvonoPosleCasa());
+                x.isPushPosleCasa(), x.isZvonoOcene(), x.isZvonoPosleCasa(), x.isPushAnkete());
     }
 
     /**
@@ -69,7 +70,7 @@ public class PodesavanjaStudentaServis {
         if (!studenti.existsById(studentId)) throw KontekstStudenta.nema();
         repository.upisiSve(studentId, cmd.mejlOtkazanCas(), broj(cmd.pushPodsetnik()), broj(cmd.pushOtkazanCas()),
                 broj(cmd.pushOcene()), broj(cmd.pushPosleCasa()), broj(cmd.zvonoOcene()), broj(cmd.zvonoPosleCasa()),
-                LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
+                broj(cmd.pushAnkete()), LocalDateTime.now(clock).truncatedTo(ChronoUnit.MICROS));
         return za(studentId);
     }
 

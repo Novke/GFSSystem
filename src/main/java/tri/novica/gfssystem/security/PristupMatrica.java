@@ -121,6 +121,9 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/nalog/push/proba"),
             new Pravilo(GET, "/public/nalog/obavestenja"),
             new Pravilo(POST, "/public/nalog/obavestenja/otvoreno"),
+            // brza anketa (spec brze ankete 5): ankete za koje student sme da glasa i glas; student samo iz sesije
+            new Pravilo(GET, "/public/nalog/ankete"),
+            new Pravilo(POST, "/public/nalog/ankete/{id}/glas"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

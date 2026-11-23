@@ -36,7 +36,8 @@ class PredavanjeServiceStarijiTest {
     @BeforeEach
     void setUp() {
         service = new PredavanjeService(predavanjeRepository, predmetRepository, grupaRepository, studentRepository,
-                aktivnostRepository, org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class), mapper);
+                aktivnostRepository, org.mockito.Mockito.mock(tri.novica.gfssystem.repository.cas.CekiranjeRepository.class),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.anketa.AnketaService.class), mapper);
         when(predavanjeRepository.save(any(Predavanje.class))).thenAnswer(inv -> inv.getArgument(0));
         when(mapper.map(any(), eq(PredavanjeDetails.class))).thenReturn(new PredavanjeDetails());
     }

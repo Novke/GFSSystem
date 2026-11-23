@@ -10,7 +10,7 @@ import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 
 /**
- * Crtež jedne strane izvođenja (tabela {@code crtezi_izvodjenja}, V27): strana je (slajd, pozadina). Veze su goli id-jevi:
+ * Crtež jedne strane izvođenja (tabela {@code crtezi_izvodjenja}, V28): strana je (slajd, pozadina). Veze su goli id-jevi:
  * FK {@code CASCADE} na izvođenje (brisanje izvođenja briše crteže, "Ne čuvaj" ne), {@code SET NULL} na slajd (crtež ostaje
  * u pregledu kao "obrisan slajd"). {@code elementi} je JSON niz elemenata ({@link tri.novica.gfssystem.service.uzivo.CrtanjeJson}).
  */

@@ -1,4 +1,4 @@
--- V27: crtanje u izvođenju i tabla sa predavanja (spec docs/superpowers/specs/2026-11-23-crtanje-uzivo-design.md u GFS-deploy,
+-- V28: crtanje u izvođenju i tabla sa predavanja (spec docs/superpowers/specs/2026-11-23-crtanje-uzivo-design.md u GFS-deploy,
 -- odeljak 4; ugovor u docs/superpowers/plans/2026-11-23-crtanje-uzivo.md).
 -- crtezi_izvodjenja: crtež jedne strane izvođenja; strana = (slajd, pozadina SLAJD | BELA). Red nastaje prvim crtanjem na strani,
 --   "Obriši sve" upisuje prazan niz (red ostaje, verzija raste). Brisanje izvođenja (pa i prezentacije) briše redove (CASCADE);

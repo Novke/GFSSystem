@@ -38,6 +38,27 @@ class PushTekstoviTest {
         assertEquals(p.oznaka(), v.oznaka(), "vraćanje zamenjuje otkazivanje na telefonu");
     }
 
+    /** Brza anketa (spec brze ankete 7): samo Novicin tekst pitanja (skraćen na 60) i rok; nikad imena ni brojevi. */
+    @Test
+    void anketaNaCasuIZaGrupu() {
+        PushPoruka c = PushTekstovi.anketaNaCasu("  Da li vam\n treba   pauza?  ");
+        assertEquals("Anketa: Da li vam treba pauza?", c.naslov());
+        assertEquals("Dodirni i glasaj.", c.tekst());
+        assertEquals("nalog/cas", c.putanja());
+        assertEquals("anketa-cas", c.oznaka(), "nova anketa na času zamenjuje staru na telefonu");
+
+        PushPoruka g = PushTekstovi.anketaGrupe(42L, "Kolokvijum: koji datum?", LocalDateTime.of(2026, 10, 30, 20, 0));
+        assertEquals("Anketa: Kolokvijum: koji datum?", g.naslov());
+        assertEquals("Glasaj do pet 30.10. u 20:00.", g.tekst());
+        assertEquals("nalog/pocetna", g.putanja());
+        assertEquals("anketa-42", g.oznaka());
+
+        String dugo = "p".repeat(200);
+        String naslov = PushTekstovi.anketaNaCasu(dugo).naslov();
+        assertEquals("Anketa: " + "p".repeat(PushTekstovi.MAX_PITANJE_ANKETE - 1) + "…", naslov);
+        assertTrue(PushTekstovi.anketaNaCasu(null).naslov().startsWith("Anketa:"));
+    }
+
     @Test
     void podsetnikIOcene() {
         PushPoruka p = PushTekstovi.podsetnik(CET, List.of(new PushTekstovi.SutrasnjiTermin(LocalTime.of(8, 0), "A")));
