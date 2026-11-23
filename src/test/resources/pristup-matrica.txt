@@ -8,6 +8,22 @@
 # ne sme pod /public/**. Ako klasa treba da bude drugačija, menja se PristupMatrica (i spec), ne samo ovaj fajl.
 # Obrisan endpoint: ukloni njegov red. Posle pada testa ceo predlog fajla je u target/pristup-matrica.predlog.txt.
 
+GET /ankete ADMIN
+POST /ankete ADMIN
+GET /ankete/aktivne ADMIN
+POST /ankete/folderi ADMIN
+PUT /ankete/folderi/redosled ADMIN
+DELETE /ankete/folderi/{id} ADMIN
+PUT /ankete/folderi/{id} ADMIN
+PUT /ankete/precice ADMIN
+GET /ankete/sabloni ADMIN
+POST /ankete/sabloni ADMIN
+DELETE /ankete/sabloni/{id} ADMIN
+PUT /ankete/sabloni/{id} ADMIN
+DELETE /ankete/{id} ADMIN
+GET /ankete/{id} ADMIN
+PUT /ankete/{id}/rezultat ADMIN
+POST /ankete/{id}/zatvori ADMIN
 GET /auth/ja ANONIMNO
 POST /auth/odjava ADMIN
 POST /auth/prijava ANONIMNO
@@ -167,6 +183,8 @@ GET /public/lti/prijava ANONIMNO
 POST /public/lti/prijava ANONIMNO
 POST /public/lti/start ANONIMNO
 GET /public/mediji/{id} ANONIMNO
+GET /public/nalog/ankete STUDENT
+POST /public/nalog/ankete/{id}/glas STUDENT
 GET /public/nalog/cas STUDENT
 POST /public/nalog/cas/potvrdi STUDENT
 POST /public/nalog/cas/skeniraj ANONIMNO

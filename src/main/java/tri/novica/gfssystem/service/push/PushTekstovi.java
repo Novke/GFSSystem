@@ -5,6 +5,7 @@ import tri.novica.gfssystem.service.raspored.PromenaTermina;
 import tri.novica.gfssystem.service.raspored.TerminOpis;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -19,6 +20,8 @@ public final class PushTekstovi {
     static final int MAX_NAPOMENA = 120;
     static final int MAX_NASLOV = 120;
     static final int MAX_TEKST = 400;
+    /** Najviše znakova pitanja ankete u naslovu push-a (spec brze ankete 7). */
+    static final int MAX_PITANJE_ANKETE = 60;
     private static final String[] DANI = {"pon", "uto", "sre", "čet", "pet", "sub", "ned"};
 
     private PushTekstovi() {}
@@ -117,6 +120,26 @@ public final class PushTekstovi {
             case PREVISE_KODOVA -> poruka("Previše zahteva za kod", "Otvori obaveštenja.", "?obavestenja=otvori",
                     "previse-kodova");
         };
+    }
+
+    /**
+     * Anketa na času (spec brze ankete 7, {@code ANKETA_CAS}): naslov je Novicino pitanje skraćeno na
+     * {@value #MAX_PITANJE_ANKETE} znakova, putanja tab Čas, ista oznaka za sve ankete na času (nova zamenjuje staru na
+     * telefonu). Nikad imena ni brojevi glasova.
+     */
+    public static PushPoruka anketaNaCasu(String pitanje) {
+        return poruka(naslovAnkete(pitanje), "Dodirni i glasaj.", "nalog/cas", "anketa-cas");
+    }
+
+    /** Anketa za grupu ({@code ANKETA}): rok u tekstu ({@code Glasaj do čet 30.10. u 20:00.}), putanja Početna, oznaka po anketi. */
+    public static PushPoruka anketaGrupe(long anketaId, String pitanje, LocalDateTime rok) {
+        return poruka(naslovAnkete(pitanje), "Glasaj do " + danIDatum(rok.toLocalDate()) + " u "
+                + TerminOpis.hhmm(rok.toLocalTime()) + ".", "nalog/pocetna", "anketa-" + anketaId);
+    }
+
+    private static String naslovAnkete(String pitanje) {
+        String p = pitanje == null ? "" : pitanje.strip().replaceAll("\\s+", " ");
+        return "Anketa: " + skrati(p, MAX_PITANJE_ANKETE);
     }
 
     /** Probno obaveštenje (ugovor API-ja): studentu putanja {@code nalog}, nastavniku prazna (kontrolna tabla). */

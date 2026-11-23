@@ -19,6 +19,7 @@ import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.*;
 import tri.novica.gfssystem.repository.cas.CekiranjeRepository;
 import tri.novica.gfssystem.repository.spec.PredavanjeSpecs;
+import tri.novica.gfssystem.service.anketa.AnketaService;
 import tri.novica.gfssystem.utility.Brojaci;
 import tri.novica.gfssystem.utility.SkolskaGodina;
 import tri.novica.gfssystem.utility.Utility;
@@ -45,6 +46,7 @@ public class PredavanjeService {
     private final StudentRepository studentRepository;
     private final AktivnostRepository aktivnostRepository;
     private final CekiranjeRepository cekiranjeRepository;
+    private final AnketaService anketaService;
     private final ModelMapper mapper;
 
     public PredavanjeDetails findById(Long id) {
@@ -245,6 +247,8 @@ public class PredavanjeService {
         // tokeni QR-a sa ovog časa više ništa ne vrede (spec studentskog dela 4.3)
         predavanje.setCekiranjeTajna(null);
         predavanje.setCekiranjeTajnaOd(null);
+        // otvorene ankete na času dobijaju pravo vreme zatvaranja (brza anketa, spec 3); red predavanja je već zaključan
+        anketaService.zatvoriNaKrajuPredavanja(id);
         return mapper.map(predavanje, PredavanjeDetails.class);
     }
 
