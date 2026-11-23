@@ -80,6 +80,23 @@ class UzivoObjavljivacTest {
     }
 
     @Test
+    void crtezIdeSamoNastavnikuOdmah() {
+        StanjeService.Snimci s = snimci(1, 2);
+        when(stanje.snimci(7L)).thenReturn(s);
+
+        objavljivac.onCrtez(new CrtezPromenjen(7L));
+        verifyNoInteractions(stanje, poruke);
+        assertEquals(1, zakazano.size());
+
+        pokreniZakazano();
+
+        verify(poruke).convertAndSend("/topic/izvodjenja/7/nastavnik", s.nastavnicko());
+        verify(poruke, never()).convertAndSend(eq("/topic/izvodjenja/7/javno"), any(Object.class));
+        verify(poruke, never()).convertAndSendToUser(anyString(), anyString(), any());
+        assertTrue(objavljivac.zaprljana().isEmpty());
+    }
+
+    @Test
     void talasPrijavaJeJednoCitanjePoFlushu() {
         long[] ucesnici = new long[300];
         for (int i = 0; i < ucesnici.length; i++) ucesnici[i] = i + 1;

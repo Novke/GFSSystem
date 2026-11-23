@@ -93,6 +93,10 @@ PATCH /grupe/{id}/wa-link ADMIN
 DELETE /iskljucene-teme/{id} ADMIN
 GET /izvodjenja ADMIN
 DELETE /izvodjenja/{id} ADMIN
+GET /izvodjenja/{id}/crtezi ADMIN
+GET /izvodjenja/{id}/crtezi/ranije ADMIN
+GET /izvodjenja/{id}/crtezi/strana ADMIN
+PUT /izvodjenja/{id}/crtezi/strana ADMIN
 POST /izvodjenja/{id}/komande ADMIN
 GET /izvodjenja/{id}/rang ADMIN
 GET /izvodjenja/{id}/rezultati ADMIN
@@ -142,6 +146,8 @@ GET /predavanja/{id}/cekiranje ADMIN
 PUT /predavanja/{id}/posecenost ADMIN
 PATCH /predavanja/{id}/prisustvo ADMIN
 GET /predavanja/{id}/rang ADMIN
+GET /predavanja/{id}/tabla ADMIN
+PUT /predavanja/{id}/tabla ADMIN
 PATCH /predavanja/{id}/zadatak ADMIN
 PATCH /predavanja/{id}/zvezdica ADMIN
 DELETE /predavanja/{pId}/prisustvo/{sId} ADMIN

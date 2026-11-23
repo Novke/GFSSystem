@@ -19,6 +19,9 @@ public interface SlajdRepository extends JpaRepository<Slajd, Long> {
     @EntityGraph(attributePaths = {"slika", "pitanje", "pitanje.slika", "pitanje.opcije"})
     List<Slajd> findAllByPrezentacijaIdOrderByRbAsc(Long id);
 
+    /** Da li slajd pripada prezentaciji (crtanje: strana izvođenja mora biti slajd njegove prezentacije). */
+    boolean existsByIdAndPrezentacijaId(Long id, Long prezentacijaId);
+
     long countByPrezentacijaId(Long id);
 
     long countByPrezentacijaIdAndTip(Long id, TipSlajda tip);

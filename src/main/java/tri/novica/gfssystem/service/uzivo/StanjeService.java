@@ -57,6 +57,7 @@ public class StanjeService {
     private final RangTacnostiService rangTacnosti;
     private final RangPrikazRegistar rangPrikazi;
     private final FajloviStanja fajloviStanja;
+    private final CrtanjeService crtanje;
     private final Clock clock;
 
     /**
@@ -167,7 +168,7 @@ public class StanjeService {
                 brojOcekivanih(p, naCasu), naCasu == null ? null : naCasu.size(), javniRangTacnosti, rangPrikaz,
                 rangTacnosti.imaRangPredavanja(iz), rangPrikazi.broj(iz.getId()),
                 fajlovi.map(FajloviStanja.Trenutno::fajlovi).orElse(null),
-                fajlovi.map(FajloviStanja.Trenutno::naTabli).orElse(false));
+                fajlovi.map(FajloviStanja.Trenutno::naTabli).orElse(false), crtanje.trenutni(iz));
     }
 
     private static final long[] BEZ_OZNAKA = {0, 0};
