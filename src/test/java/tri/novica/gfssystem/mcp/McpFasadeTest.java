@@ -1,7 +1,9 @@
 package tri.novica.gfssystem.mcp;
 
 import org.junit.jupiter.api.Test;
+import tri.novica.gfssystem.mcp.servis.McpAnkete;
 import tri.novica.gfssystem.mcp.servis.McpBanka;
+import tri.novica.gfssystem.mcp.servis.McpFajlovi;
 import tri.novica.gfssystem.mcp.servis.McpIzvodjenja;
 import tri.novica.gfssystem.mcp.servis.McpKontekst;
 import tri.novica.gfssystem.mcp.servis.McpPrezentacije;
@@ -43,8 +45,16 @@ class McpFasadeTest {
                     "izmeniSlajd(Long, SlajdPatch, String, String)", "zameniPlatno(Long, JsonNode, String, String, String)",
                     "premestiSlajd(Long, Long, String)", "obrisiSlajd(Long, String)", "obrisiKoriscenSlajd(Long, String)",
                     "vratiIzmenu(Long, String)"),
+            McpFajlovi.class, Set.of("fajloviPrezentacije(Long)", "dodajFajl(Long, String, Long, String, String)",
+                    "izmeniFajl(Long, String, Long, String)", "obrisiFajl(Long, String)",
+                    "sacuvajFajl(byte[], String, String)"),
             McpIzvodjenja.class, Set.of("izvodjenja(Long)", "odgovori(Long)",
-                    "preoceni(Long, List, Boolean, String, String, String)", "vratiPreocenu(Long, String, String)"));
+                    "preoceni(Long, List, Boolean, String, String, String)", "vratiPreocenu(Long, String, String)"),
+            McpAnkete.class, Set.of("sabloni()", "sacuvajSablon(Long, String, SablonAnketeCmd, String)",
+                    "obrisiSablon(Long, String)", "sacuvajFolder(Long, String, String)", "obrisiFolder(Long, String)",
+                    "poredjajPrecice(List, String)", "istorija(Long, Long, Long)",
+                    "pokreni(PokreniAnketuCmd, String, Integer, String)", "zatvori(Long, String)",
+                    "prikaziRezultat(Long, Boolean, String)"));
 
     static String kljuc(Method m) {
         return m.getName() + Arrays.stream(m.getParameterTypes()).map(Class::getSimpleName)

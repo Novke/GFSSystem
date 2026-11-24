@@ -17,6 +17,9 @@ import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.repository.GrupaRepository;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
+import tri.novica.gfssystem.repository.fajlovi.SlajdoviIzvodjenjaRepository;
+import tri.novica.gfssystem.service.fajlovi.FajloviStanja;
+import tri.novica.gfssystem.service.fajlovi.KodoviFajlova;
 import tri.novica.gfssystem.repository.uzivo.*;
 import tri.novica.gfssystem.security.IdentitetStudenta;
 import tri.novica.gfssystem.utility.Nivo;
@@ -93,6 +96,9 @@ public class IzvodjenjeService {
     private final StanjeService stanjeService;
     private final ZadatakDodelaService zadatakDodelaService;
     private final TemeZaVezbanje temeZaVezbanje;
+    private final SlajdoviIzvodjenjaRepository slajdoviIzvodjenja;
+    private final KodoviFajlova kodoviFajlova;
+    private final FajloviStanja fajloviStanja;
     private final RangTacnostiService rangTacnosti;
     private final RangPrikazRegistar rangPrikazi;
     private final ImenaUcesnika imenaUcesnika;
@@ -180,6 +186,7 @@ public class IzvodjenjeService {
             log.error("Upis izvođenja nije uspeo: prezentacija={}", p.getId(), e);
             throw e;
         }
+        kodoviFajlova.obezbedi(iz);   // kratak kod za /f/<kod>; bez koda izvođenje kreće (projektor ne prikazuje link)
         log.info("Izvođenje pokrenuto: id={}, prezentacija={}, cuvanje={}, boduje={}", iz.getId(), p.getId(), cuvanje,
                 c.boduje());
         return IzvodjenjeMapper.info(iz, 0, 0);
@@ -247,13 +254,14 @@ public class IzvodjenjeService {
                     iz.getTelefonPrikaz() == TelefonPrikaz.PITANJE ? TelefonPrikaz.DUGMAD : TelefonPrikaz.PITANJE);
             case DETALJI -> iz.setDetaljiDozvoljeni(!iz.isDetaljiDozvoljeni());
             case EKRAN_CRN -> iz.setEkran(iz.getEkran() == Ekran.CRN ? Ekran.NORMALAN : Ekran.CRN);
-            case EKRAN_BEO -> iz.setEkran(iz.getEkran() == Ekran.BEO ? Ekran.NORMALAN : Ekran.BEO);
+            case EKRAN_BEO -> ekranBeo(iz);
             case QR -> iz.setQrPrikazan(!iz.isQrPrikazan());
             case ZAVRSI -> zavrsi(iz);
             case RESENJE -> resenjePrikaz(iz, sl);
             case BROJ_VARIJANTI -> brojVarijantiKomanda(iz, sl, cmd.vrednost());
             case NIVO -> nivoKomanda(iz, sl, cmd.vrednost());
             case RANG_BROJ -> rangBroj(iz, cmd.vrednost());
+            case FAJLOVI -> fajloviStanja.prebaciTablu(iz, TokIzvodjenja.trenutni(iz, sl), TokIzvodjenja.indeks(iz, sl));
         }
     }
 
@@ -336,6 +344,20 @@ public class IzvodjenjeService {
         }
     }
 
+    /**
+     * Beli ekran ({@code W}) uključi ili isključi. Uključivanje pamti slajd na platnu: bela strana crteža je
+     * ({@code belaSlajdId}, BELA) i ostaje ista dok se lista (spec crtanja 5.3); na prijavi slajda nema ({@link #idiNa}
+     * upiše prvi slajd do kog se stigne). Isključivanje ga ne briše.
+     */
+    private static void ekranBeo(Izvodjenje iz) {
+        if (iz.getEkran() == Ekran.BEO) {
+            iz.setEkran(Ekran.NORMALAN);
+            return;
+        }
+        iz.setEkran(Ekran.BEO);
+        iz.setBelaSlajdId(iz.getPrikaz() == Prikaz.SLAJD ? iz.getTrenutniSlajdId() : null);
+    }
+
     private void idiNaKomanda(Izvodjenje iz, List<Slajd> sl, Integer vrednost) {
         int n = sl.size();
         if (vrednost == null || vrednost < -1 || vrednost > n) {
@@ -358,6 +380,7 @@ public class IzvodjenjeService {
         if (iz.getFaza() == Faza.OTVORENO) {
             zatvori(iz);
         }
+        fajloviStanja.zaboravi(iz.getId());   // taster K važi samo za slajd na kom je pritisnut
         iz.setRezultatiPrikazani(false);
         iz.setTacanPrikazan(false);
         iz.setResenjePrikazano(false);
@@ -380,7 +403,11 @@ public class IzvodjenjeService {
         Slajd s = sl.get(j);
         iz.setPrikaz(Prikaz.SLAJD);
         iz.setTrenutniSlajdId(s.getId());
+        if (iz.getEkran() == Ekran.BEO && iz.getBelaSlajdId() == null) {
+            iz.setBelaSlajdId(s.getId());   // beli ekran uključen na prijavi: bela strana je prvog slajda (spec crtanja 5.3)
+        }
         temeZaVezbanje.prikazan(iz, s.getId());   // studentski pregled: slajd vidljiv grupi posle kraja izvođenja
+        slajdoviIzvodjenja.upisiPrikaz(iz.getId(), s.getId(), sada());   // fajlovi na času: slajd je prikazan (svako izvođenje)
         if (!TokIzvodjenja.saRundama(s)) {
             iz.setKorak(napred ? 0 : TokIzvodjenja.brojKoraka(s));
         } else {
@@ -654,6 +681,7 @@ public class IzvodjenjeService {
         iz.setStatus(StatusIzvodjenja.ZAVRSENO);
         iz.setAktivanKod(null);
         rangPrikazi.zavrsi(iz.getId());
+        fajloviStanja.zaboravi(iz.getId());
         iz.setKraj(sada());
         // pre brisanja rundi kod "Ne čuvaj": izvučeni tipovi se otvaraju grupi za vežbanje tek sada (spec studentskog dela 5.3)
         temeZaVezbanje.krajIzvodjenja(iz);

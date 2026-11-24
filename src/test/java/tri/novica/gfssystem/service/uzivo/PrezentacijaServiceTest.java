@@ -76,7 +76,9 @@ class PrezentacijaServiceTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         service = new PrezentacijaService(prezentacijaRepository, slajdRepository, izvodjenjeRepository,
-                predmetRepository, predavanjeRepository, medijService, medijRepository, grupaZadatakaRepository, zadaci,
+                predmetRepository, predavanjeRepository, medijService, medijRepository,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.fajlovi.FajloviPrezentacijeServis.class),
+                grupaZadatakaRepository, zadaci,
                 platnoJson, istorija, promeneProvider, CLOCK);
 
         predmet = new Predmet();

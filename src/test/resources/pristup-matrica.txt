@@ -8,6 +8,22 @@
 # ne sme pod /public/**. Ako klasa treba da bude drugačija, menja se PristupMatrica (i spec), ne samo ovaj fajl.
 # Obrisan endpoint: ukloni njegov red. Posle pada testa ceo predlog fajla je u target/pristup-matrica.predlog.txt.
 
+GET /ankete ADMIN
+POST /ankete ADMIN
+GET /ankete/aktivne ADMIN
+POST /ankete/folderi ADMIN
+PUT /ankete/folderi/redosled ADMIN
+DELETE /ankete/folderi/{id} ADMIN
+PUT /ankete/folderi/{id} ADMIN
+PUT /ankete/precice ADMIN
+GET /ankete/sabloni ADMIN
+POST /ankete/sabloni ADMIN
+DELETE /ankete/sabloni/{id} ADMIN
+PUT /ankete/sabloni/{id} ADMIN
+DELETE /ankete/{id} ADMIN
+GET /ankete/{id} ADMIN
+PUT /ankete/{id}/rezultat ADMIN
+POST /ankete/{id}/zatvori ADMIN
 GET /auth/ja ANONIMNO
 POST /auth/odjava ADMIN
 POST /auth/prijava ANONIMNO
@@ -59,6 +75,9 @@ GET /error ADMIN
 PATCH /error ADMIN
 POST /error ADMIN
 PUT /error ADMIN
+DELETE /fajlovi-prezentacije/{id} ADMIN
+PUT /fajlovi-prezentacije/{id} ADMIN
+GET /fajlovi-prezentacije/{id}/sadrzaj ADMIN
 GET /grupe ADMIN
 POST /grupe ADMIN
 GET /grupe/{grupaId}/onboarding ADMIN
@@ -74,6 +93,10 @@ PATCH /grupe/{id}/wa-link ADMIN
 DELETE /iskljucene-teme/{id} ADMIN
 GET /izvodjenja ADMIN
 DELETE /izvodjenja/{id} ADMIN
+GET /izvodjenja/{id}/crtezi ADMIN
+GET /izvodjenja/{id}/crtezi/ranije ADMIN
+GET /izvodjenja/{id}/crtezi/strana ADMIN
+PUT /izvodjenja/{id}/crtezi/strana ADMIN
 POST /izvodjenja/{id}/komande ADMIN
 GET /izvodjenja/{id}/rang ADMIN
 GET /izvodjenja/{id}/rezultati ADMIN
@@ -123,6 +146,8 @@ GET /predavanja/{id}/cekiranje ADMIN
 PUT /predavanja/{id}/posecenost ADMIN
 PATCH /predavanja/{id}/prisustvo ADMIN
 GET /predavanja/{id}/rang ADMIN
+GET /predavanja/{id}/tabla ADMIN
+PUT /predavanja/{id}/tabla ADMIN
 PATCH /predavanja/{id}/zadatak ADMIN
 PATCH /predavanja/{id}/zvezdica ADMIN
 DELETE /predavanja/{pId}/prisustvo/{sId} ADMIN
@@ -146,12 +171,17 @@ DELETE /prezentacije/{id} ADMIN
 GET /prezentacije/{id} ADMIN
 PUT /prezentacije/{id} ADMIN
 POST /prezentacije/{id}/dupliraj ADMIN
+GET /prezentacije/{id}/fajlovi ADMIN
+POST /prezentacije/{id}/fajlovi ADMIN
+PUT /prezentacije/{id}/fajlovi/redosled ADMIN
 POST /prezentacije/{id}/izvodjenja ADMIN
 GET /prezentacije/{id}/predavanja ADMIN
 PUT /prezentacije/{id}/redosled ADMIN
 POST /prezentacije/{id}/slajdovi ADMIN
 POST /prezentacije/{id}/slajdovi/uvoz ADMIN
 PATCH /prezentacije/{id}/vezba ADMIN
+GET /public/fajlovi/{kod} ANONIMNO
+GET /public/fajlovi/{kod}/{fajlId} ANONIMNO
 GET /public/lti/jwks ANONIMNO
 POST /public/lti/povezi STUDENT
 GET /public/lti/povezivanje ANONIMNO
@@ -159,12 +189,16 @@ GET /public/lti/prijava ANONIMNO
 POST /public/lti/prijava ANONIMNO
 POST /public/lti/start ANONIMNO
 GET /public/mediji/{id} ANONIMNO
+GET /public/nalog/ankete STUDENT
+POST /public/nalog/ankete/{id}/glas STUDENT
 GET /public/nalog/cas STUDENT
 POST /public/nalog/cas/potvrdi STUDENT
 POST /public/nalog/cas/skeniraj ANONIMNO
 GET /public/nalog/casovi STUDENT
 POST /public/nalog/casovi/najavi STUDENT
 POST /public/nalog/casovi/povuci STUDENT
+GET /public/nalog/fajlovi/{id} STUDENT
+POST /public/nalog/fajlovi/{id}/mejl STUDENT
 GET /public/nalog/ja STUDENT
 POST /public/nalog/kod ANONIMNO
 GET /public/nalog/obavestenja STUDENT
@@ -175,6 +209,7 @@ GET /public/nalog/podesavanja STUDENT
 PUT /public/nalog/podesavanja STUDENT
 POST /public/nalog/pomoc ANONIMNO
 GET /public/nalog/predmeti STUDENT
+GET /public/nalog/predmeti/{id}/fajlovi STUDENT
 GET /public/nalog/predmeti/{id}/moji-zadaci STUDENT
 GET /public/nalog/predmeti/{id}/ocena STUDENT
 GET /public/nalog/predmeti/{id}/prezentacije STUDENT

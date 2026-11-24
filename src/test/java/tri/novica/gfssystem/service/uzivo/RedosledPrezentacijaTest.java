@@ -28,7 +28,7 @@ class RedosledPrezentacijaTest {
 
     static PrezentacijaInfo p(long id, Integer vezba, VrstaPrezentacije vrsta, String naziv, Long aktivno) {
         return new PrezentacijaInfo(id, naziv, null, new PredmetKratko(1L, "Uvod"), 5, 0, T, false,
-                TelefonPrikaz.DUGMAD, true, 0, aktivno, Tema.NACRT, vezba, vrsta, 0, T, null);
+                TelefonPrikaz.DUGMAD, true, 0, aktivno, Tema.NACRT, vezba, vrsta, 0, T, null, 0);
     }
 
     /** Poređa kao servis i označi puštene (id -> vreme). */

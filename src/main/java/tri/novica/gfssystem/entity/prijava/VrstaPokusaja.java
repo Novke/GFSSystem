@@ -30,5 +30,9 @@ public enum VrstaPokusaja {
     /** Upis push pretplate, po uređaju studenta ({@code u:<id>}) ili sesiji nastavnika ({@code s:<id>}). */
     PUSH_PRETPLATA,
     /** Probno push obaveštenje, po uređaju ili sesiji (isti ključ). */
-    PUSH_PROBA
+    PUSH_PROBA,
+    /** Pogrešan kod za {@code /f} (fajlovi na času), po IP-u (spec fajlova, odeljak 5). */
+    KOD_FAJLOVA,
+    /** Fajl poslat mejlom, po studentu (ključ {@code s<id>}) i ukupno (ključ {@code *}). */
+    MEJL_FAJLA
 }

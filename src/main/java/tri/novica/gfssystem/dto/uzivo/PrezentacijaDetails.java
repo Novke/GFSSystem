@@ -12,5 +12,5 @@ public record PrezentacijaDetails(Long id, String naziv, String opis, PredmetKra
                                   TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, long brojIzvodjenja,
                                   Long aktivnoIzvodjenjeId, Tema tema, List<SlajdDetails> slajdovi, Integer vezba,
                                   VrstaPrezentacije vrsta, long brojZadataka, LocalDateTime kreirano,
-                                  LocalDateTime poslednjePustanje) {
+                                  LocalDateTime poslednjePustanje, long brojFajlova) {
 }

@@ -307,19 +307,36 @@ class PushDbTest {
     void podesavanjaNalogaNullZnaciBezIzmene() {
         Long s = d.student(grupa, "Ana");
         PodesavanjaNaloga p = podesavanja.za(s);
-        assertEquals(new PodesavanjaNaloga(true, true, true, true, true, true, true), p, "bez reda: sve uključeno");
+        assertEquals(new PodesavanjaNaloga(true, true, true, true, true, true, true, true), p, "bez reda: sve uključeno");
 
         p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(true, false, null, null, true, null, false));
-        assertEquals(new PodesavanjaNaloga(true, false, true, true, true, true, false), p);
+        assertEquals(new PodesavanjaNaloga(true, false, true, true, true, true, false, true), p);
         p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(false));   // stari klijent: samo mejl
-        assertEquals(new PodesavanjaNaloga(false, false, true, true, true, true, false), p);
+        assertEquals(new PodesavanjaNaloga(false, false, true, true, true, true, false, true), p);
         p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(false, null, false, false, false, true, null));
-        assertEquals(new PodesavanjaNaloga(false, false, false, false, false, true, false), podesavanja.za(s));
+        assertEquals(new PodesavanjaNaloga(false, false, false, false, false, true, false, true), podesavanja.za(s));
         assertEquals(p, podesavanja.za(s));
 
         Long t = d.student(grupa, "Bora");
         podesavanja.sacuvaj(t, new PodesavanjaNaloga(true, null, null, true, null, null, null));   // nov red: null = podrazumevano
-        assertEquals(new PodesavanjaNaloga(true, true, true, true, true, true, true), podesavanja.za(t));
+        assertEquals(new PodesavanjaNaloga(true, true, true, true, true, true, true, true), podesavanja.za(t));
+    }
+
+    /** Brza anketa: {@code pushAnkete} (V27) se čuva, a klijent koji ga ne šalje (7 polja) zadržava sačuvanu vrednost. */
+    @Test
+    void podesavanjaPushAnketeBezPoljaZadrzavaVrednost() {
+        Long s = d.student(grupa, "Ana");
+        PodesavanjaNaloga p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(true, null, null, null, null, null, null, false));
+        assertEquals(new PodesavanjaNaloga(true, true, true, true, true, true, true, false), p);
+        p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(true, false, null, null, null, null, null));
+        assertEquals(Boolean.FALSE, p.pushAnkete(), "PUT bez pushAnkete ne menja sačuvano");
+        assertEquals(Boolean.FALSE, p.pushPodsetnik());
+        p = podesavanja.sacuvaj(s, new PodesavanjaNaloga(true, null, null, null, null, null, null, true));
+        assertEquals(Boolean.TRUE, podesavanja.za(s).pushAnkete());
+
+        Long t = d.student(grupa, "Bora");
+        podesavanja.sacuvaj(t, new PodesavanjaNaloga(false));
+        assertEquals(Boolean.TRUE, podesavanja.za(t).pushAnkete(), "nov red bez polja: podrazumevano uključeno");
     }
 
     // ---------------------------------------------------------------- nastavnik

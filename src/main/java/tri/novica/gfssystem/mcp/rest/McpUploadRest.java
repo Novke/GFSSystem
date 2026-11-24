@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import tri.novica.gfssystem.exceptions.SystemException;
 import tri.novica.gfssystem.mcp.servis.McpBanka;
+import tri.novica.gfssystem.mcp.servis.McpFajlovi;
 import tri.novica.gfssystem.mcp.servis.McpMedij;
 import tri.novica.gfssystem.mcp.servis.McpPrezentacije;
 import tri.novica.gfssystem.utility.Serija;
@@ -31,18 +33,32 @@ public class McpUploadRest {
 
     private final McpBanka banka;
     private final McpPrezentacije prezentacije;
+    private final McpFajlovi fajlovi;
 
-    public McpUploadRest(McpBanka banka, McpPrezentacije prezentacije) {
+    public McpUploadRest(McpBanka banka, McpPrezentacije prezentacije, McpFajlovi fajlovi) {
         this.banka = banka;
         this.prezentacije = prezentacije;
+        this.fajlovi = fajlovi;
     }
 
-    /** Prilog zadatka banke (PNG, JPEG, PDF) za {@code prilozi} varijante; nije javan. */
+    /**
+     * Po {@code namena}: {@code prilog} (podrazumevano) je prilog zadatka banke (PNG, JPEG, PDF) za {@code prilozi}
+     * varijante; {@code fajl} je fajl za studente uz prezentaciju (DOCX, XLSX, PPTX, PDF, ZIP; vrsta
+     * {@code FAJL_PREZENTACIJE}), pa ga {@code dodaj_fajl} veže za prezentaciju. Nijedan nije javan. Ista putanja, bez nove
+     * MCP putanje; nepoznata namena je 400.
+     */
     @PostMapping(path = "/prilozi", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public McpMedij prilog(@RequestParam("fajl") MultipartFile fajl, @RequestParam(required = false) String serija) {
+    public McpMedij prilog(@RequestParam("fajl") MultipartFile fajl, @RequestParam(required = false) String serija,
+                           @RequestParam(required = false) String namena) {
         String s = Serija.proveri(serija);
-        return banka.sacuvajPrilog(bajtovi(fajl), fajl.getOriginalFilename(), s);
+        if (namena == null || namena.equals("prilog")) {
+            return banka.sacuvajPrilog(bajtovi(fajl), fajl.getOriginalFilename(), s);
+        }
+        if (namena.equals("fajl")) {
+            return fajlovi.sacuvajFajl(bajtovi(fajl), fajl.getOriginalFilename(), s);
+        }
+        throw new SystemException("Nepoznata namena: dozvoljeno je `prilog` ili `fajl`.", HttpStatus.BAD_REQUEST);
     }
 
     /** Slika slajda ili pitanja (PNG, JPEG, GIF, WebP), vrsta {@code SLIKA}. */

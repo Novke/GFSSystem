@@ -13,16 +13,16 @@ import java.util.Locale;
 
 /**
  * Tema alata {@code vodic} (spec MCP 4.2): tekst je u {@code classpath:mcp/vodic-<tema>.md}, pa stiže sa deploy-em, a skill
- * ostaje tanak. A2 dodaje {@code PLATNO}. Svaki vodič ima najviše {@link #MAX_ZNAKOVA} znakova (oko 4 000 tokena; odgovor
+ * ostaje tanak. A2 dodaje {@code PLATNO}; brza anketa dodaje {@code ANKETE}. Svaki vodič ima najviše {@link #MAX_ZNAKOVA} znakova (oko 4 000 tokena; odgovor
  * alata sme do {@code McpOdgovor.MAX_ZNAKOVA}).
  */
 public enum VodicTema {
-    BANKA, PITANJA, PRAVILA;
+    BANKA, PITANJA, PRAVILA, ANKETE;
 
     public static final int MAX_ZNAKOVA = 16_000;
     static final String NEPOZNATA = "Nepoznata tema vodiča.";
 
-    /** Tema po imenu malim slovima ({@code banka}, {@code pitanja}, {@code pravila}); sve drugo je 400 {@value #NEPOZNATA}. */
+    /** Tema po imenu malim slovima ({@code banka}, {@code pitanja}, {@code pravila}, {@code ankete}); sve drugo je 400 {@value #NEPOZNATA}. */
     public static VodicTema iz(String tema) {
         for (VodicTema t : values()) {
             if (t.ime().equals(tema)) {

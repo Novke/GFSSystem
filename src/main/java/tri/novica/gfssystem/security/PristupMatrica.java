@@ -62,6 +62,9 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/uzivo/{kod}/ja"),
             new Pravilo(POST, "/public/uzivo/{kod}/prijava"),
             new Pravilo(GET, "/public/mediji/{uuid}"),
+            // fajlovi na času po kratkom kodu sa table (spec fajlova 5); kod i ograničenje pogrešnih su u servisu
+            new Pravilo(GET, "/public/fajlovi/{kod}"),
+            new Pravilo(GET, "/public/fajlovi/{kod}/{fajlId}"),
             // studentski WebSocket: rukovanje i dalje traži kolačić učesnika (UzivoHandshakeInterceptor)
             new Pravilo(null, "/public/ws"),
             // studentski nalog bez lozinke
@@ -102,6 +105,9 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/nalog/predmeti/{id}/prezentacije"),
             new Pravilo(GET, "/public/nalog/predmeti/{id}/ocena"),
             new Pravilo(GET, "/public/nalog/prezentacije/{id}"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/fajlovi"),
+            new Pravilo(GET, "/public/nalog/fajlovi/{id}"),
+            new Pravilo(POST, "/public/nalog/fajlovi/{id}/mejl"),
             new Pravilo(POST, "/public/nalog/vezbanje"),
             new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/provera"),
             new Pravilo(POST, "/public/nalog/vezbanje/{pokusajId}/resenje"),
@@ -115,6 +121,9 @@ public final class PristupMatrica {
             new Pravilo(POST, "/public/nalog/push/proba"),
             new Pravilo(GET, "/public/nalog/obavestenja"),
             new Pravilo(POST, "/public/nalog/obavestenja/otvoreno"),
+            // brza anketa (spec brze ankete 5): ankete za koje student sme da glasa i glas; student samo iz sesije
+            new Pravilo(GET, "/public/nalog/ankete"),
+            new Pravilo(POST, "/public/nalog/ankete/{id}/glas"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 

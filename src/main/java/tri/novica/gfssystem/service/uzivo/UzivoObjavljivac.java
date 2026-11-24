@@ -94,6 +94,12 @@ public class UzivoObjavljivac {
         if (zaprljaj(e.izvodjenjeId(), z -> z.sve = true)) odmah(e.izvodjenjeId());
     }
 
+    /** Upisan crtež (spec crtanja 5.5): samo snimak nastavnika (prazan zahtev), odmah; telefoni ništa ne dobijaju. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onCrtez(CrtezPromenjen e) {
+        if (zaprljaj(e.izvodjenjeId(), z -> { })) odmah(e.izvodjenjeId());
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onPrijava(UcesnikPrijavljen e) {
         zaprljaj(e.izvodjenjeId(), z -> z.sve = true);

@@ -141,7 +141,10 @@ class IzvodjenjeServiceTest {
 
         service = new IzvodjenjeService(izvodjenjeRepository, prezentacijaRepository, slajdRepository, rundaRepository,
                 odgovorRepository, ucesnikRepository, predavanjeRepository, grupaRepository, kodGenerator, rokPlaner,
-                stanjeService, zadatakDodelaService, temeZaVezbanje, rangTacnosti,
+                stanjeService, zadatakDodelaService, temeZaVezbanje,
+                org.mockito.Mockito.mock(tri.novica.gfssystem.repository.fajlovi.SlajdoviIzvodjenjaRepository.class),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.fajlovi.KodoviFajlova.class),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.fajlovi.FajloviStanja.class), rangTacnosti,
                 rangPrikazi, imenaUcesnika, identitet, oznake, oznakaPonasanjaRepository, publisher, jsonMapper, clock);
     }
 

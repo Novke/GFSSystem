@@ -6,6 +6,8 @@ import tri.novica.gfssystem.entity.uzivo.Prikaz;
 import tri.novica.gfssystem.entity.uzivo.TelefonPrikaz;
 import tri.novica.gfssystem.entity.uzivo.Tema;
 
+import tri.novica.gfssystem.dto.fajlovi.FajloviSlajda;
+
 import java.util.List;
 
 /**
@@ -27,6 +29,15 @@ import java.util.List;
  * rang je prikazan ({@code null} kad nijedan); {@code imaRangPredavanja}: izvođenje je sa predavanja koje ima još
  * izvođenja sa rundama (tab "Predavanje" u konzoli, {@code Shift+L}); {@code rangBroj}: koliko prvih redova ranga tačnosti
  * ide na projektor ({@code RANG_BROJ}), {@code null} = svi.
+ * {@code fajlovi}: kod i link fajlova uz prezentaciju (spec fajlova 5) sa fajlovima trenutnog mesta (na slajdu njegovi i
+ * oni uz celu prezentaciju, na prijavi samo oni uz celu prezentaciju; spisak može biti prazan), {@code null} kad
+ * prezentacija nema fajlova, nema važećeg koda ili je izvođenje na kraju.
+ * {@code fajloviNaTabli}: da li projektor pokazuje traku sa linkom (spec fajlova 6): sama na slajdu sa svojim fajlovima,
+ * a za fajlove uz celu prezentaciju samo na prijavi i na prvom slajdu; taster {@code K} ({@code FAJLOVI}) je na
+ * trenutnom mestu pali ili gasi, do sledeće promene slajda. Uvek {@code false} kad je {@code fajlovi} {@code null}.
+ * {@code crtez}: trenutna strana crteža (spec crtanja 5.5): slajd + SLAJD dok je slajd na platnu (i na crnom ekranu), na belom
+ * ekranu ({@code BEO}) bela strana slajda na kom je beli ekran uključen; {@code null} na prijavi i kraju bez belog ekrana i kad
+ * je beli ekran uključen na prijavi. {@code verzija} 0 dok na strani niko nije crtao. Nastavnik i projektor po njoj preuzimaju stranu.
  */
 public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
                                 int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
@@ -37,7 +48,61 @@ public record NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long se
                                 List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema, long pocetakMs,
                                 NastavnickiZadatak zadatak, int brojOcekivanih, Integer brojCekiranih,
                                 List<RangTacnostiStavka> javniRangTacnosti, RangPrikaz rangPrikaz,
-                                boolean imaRangPredavanja, Integer rangBroj) {
+                                boolean imaRangPredavanja, Integer rangBroj, FajloviSlajda fajlovi,
+                                boolean fajloviNaTabli, CrtezTrenutni crtez) {
+    /** Oblik pre crtanja: nema trenutne strane crteža. */
+    public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
+                             int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
+                             SlajdDetails sledeciSlajd, Faza faza, RundaInfo runda, boolean rezultatiPrikazani,
+                             boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
+                             TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
+                             Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
+                             List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema,
+                             long pocetakMs, NastavnickiZadatak zadatak, int brojOcekivanih, Integer brojCekiranih,
+                             List<RangTacnostiStavka> javniRangTacnosti, RangPrikaz rangPrikaz,
+                             boolean imaRangPredavanja, Integer rangBroj, FajloviSlajda fajlovi, boolean fajloviNaTabli) {
+        this(izvodjenje, verzija, serverVremeMs, prikaz, korak, brojStavki, indeks, brojSlajdova, trenutniSlajd, sledeciSlajd,
+                faza, runda, rezultatiPrikazani, tacanPrikazan, rangListaPrikazana, ekran, qrPrikazan, telefonPrikaz,
+                detaljiDozvoljeni, takmicenje, rezultat, brojOdgovora, brojPovezanih, ucesnici, rangLista, javniRezultat,
+                javnaRangLista, tema, pocetakMs, zadatak, brojOcekivanih, brojCekiranih, javniRangTacnosti, rangPrikaz,
+                imaRangPredavanja, rangBroj, fajlovi, fajloviNaTabli, null);
+    }
+
+    /** Oblik pre trake po slajdu: traka je tu kad god ima fajlova (kao pre tastera {@code K}). */
+    public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
+                             int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
+                             SlajdDetails sledeciSlajd, Faza faza, RundaInfo runda, boolean rezultatiPrikazani,
+                             boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
+                             TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
+                             Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
+                             List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema,
+                             long pocetakMs, NastavnickiZadatak zadatak, int brojOcekivanih, Integer brojCekiranih,
+                             List<RangTacnostiStavka> javniRangTacnosti, RangPrikaz rangPrikaz,
+                             boolean imaRangPredavanja, Integer rangBroj, FajloviSlajda fajlovi) {
+        this(izvodjenje, verzija, serverVremeMs, prikaz, korak, brojStavki, indeks, brojSlajdova, trenutniSlajd, sledeciSlajd,
+                faza, runda, rezultatiPrikazani, tacanPrikazan, rangListaPrikazana, ekran, qrPrikazan, telefonPrikaz,
+                detaljiDozvoljeni, takmicenje, rezultat, brojOdgovora, brojPovezanih, ucesnici, rangLista, javniRezultat,
+                javnaRangLista, tema, pocetakMs, zadatak, brojOcekivanih, brojCekiranih, javniRangTacnosti, rangPrikaz,
+                imaRangPredavanja, rangBroj, fajlovi, fajlovi != null);
+    }
+
+    /** Oblik pre fajlova uz prezentaciju: {@code fajlovi} je {@code null}. */
+    public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,
+                             int brojStavki, int indeks, int brojSlajdova, SlajdDetails trenutniSlajd,
+                             SlajdDetails sledeciSlajd, Faza faza, RundaInfo runda, boolean rezultatiPrikazani,
+                             boolean tacanPrikazan, boolean rangListaPrikazana, Ekran ekran, boolean qrPrikazan,
+                             TelefonPrikaz telefonPrikaz, boolean detaljiDozvoljeni, boolean takmicenje,
+                             Rezultat rezultat, int brojOdgovora, int brojPovezanih, List<UcesnikStanje> ucesnici,
+                             List<RangStavka> rangLista, Rezultat javniRezultat, List<RangStavka> javnaRangLista, Tema tema,
+                             long pocetakMs, NastavnickiZadatak zadatak, int brojOcekivanih, Integer brojCekiranih,
+                             List<RangTacnostiStavka> javniRangTacnosti, RangPrikaz rangPrikaz,
+                             boolean imaRangPredavanja, Integer rangBroj) {
+        this(izvodjenje, verzija, serverVremeMs, prikaz, korak, brojStavki, indeks, brojSlajdova, trenutniSlajd, sledeciSlajd,
+                faza, runda, rezultatiPrikazani, tacanPrikazan, rangListaPrikazana, ekran, qrPrikazan, telefonPrikaz,
+                detaljiDozvoljeni, takmicenje, rezultat, brojOdgovora, brojPovezanih, ucesnici, rangLista, javniRezultat,
+                javnaRangLista, tema, pocetakMs, zadatak, brojOcekivanih, brojCekiranih, javniRangTacnosti, rangPrikaz,
+                imaRangPredavanja, rangBroj, null, false);
+    }
 
     /** Oblik pre ranga tačnosti: bez ranga na projektoru, bez ranga predavanja. */
     public NastavnickoStanje(IzvodjenjeInfo izvodjenje, long verzija, long serverVremeMs, Prikaz prikaz, int korak,

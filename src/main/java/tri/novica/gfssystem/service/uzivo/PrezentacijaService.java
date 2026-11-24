@@ -17,6 +17,7 @@ import tri.novica.gfssystem.entity.banka.GrupaZadataka;
 import tri.novica.gfssystem.entity.banka.Namena;
 import tri.novica.gfssystem.entity.uzivo.*;
 import tri.novica.gfssystem.exceptions.SystemException;
+import tri.novica.gfssystem.service.fajlovi.FajloviPrezentacijeServis;
 import tri.novica.gfssystem.repository.PredavanjeRepository;
 import tri.novica.gfssystem.repository.PredmetRepository;
 import tri.novica.gfssystem.repository.banka.GrupaZadatakaRepository;
@@ -101,6 +102,7 @@ public class PrezentacijaService {
     private final PredavanjeRepository predavanjeRepository;
     private final MedijService medijService;
     private final MedijRepository medijRepository;
+    private final FajloviPrezentacijeServis fajloviPrezentacije;
     private final GrupaZadatakaRepository grupaZadatakaRepository;
     private final ZadaciSlajdova zadaci;
     private final PlatnoJson platnoJson;
@@ -115,7 +117,8 @@ public class PrezentacijaService {
         List<Prezentacija> lista = predmetId == null
                 ? prezentacijaRepository.findAllByOrderByIzmenjenoDesc()
                 : prezentacijaRepository.findAllByPredmetIdOrderByIzmenjenoDesc(predmetId);
-        return lista.stream().map(this::info).toList();
+        Map<Long, Long> fajlovi = brojFajlova(lista);
+        return lista.stream().map(p -> info(p, fajlovi.getOrDefault(p.getId(), 0L))).toList();
     }
 
     /**
@@ -135,8 +138,10 @@ public class PrezentacijaService {
                 pusteno.put((Long) red[0], (LocalDateTime) red[1]);
             }
         }
-        List<StavkaIzbora> stavke = prezentacijaRepository.findAllByPredmetIdOrderByIzmenjenoDesc(predmetId).stream()
-                .map(this::info)
+        List<Prezentacija> prezentacije = prezentacijaRepository.findAllByPredmetIdOrderByIzmenjenoDesc(predmetId);
+        Map<Long, Long> fajlovi = brojFajlova(prezentacije);
+        List<StavkaIzbora> stavke = prezentacije.stream()
+                .map(p -> info(p, fajlovi.getOrDefault(p.getId(), 0L)))
                 .sorted(RedosledPrezentacija.REDOSLED)
                 .map(p -> new StavkaIzbora(p, pusteno.get(p.id())))
                 .toList();
@@ -237,6 +242,8 @@ public class PrezentacijaService {
     /** Briše zaključanu prezentaciju sa slajdovima (pitanja i opcije kroz JPA) i izvođenjima (kaskada u bazi). */
     private void obrisiZakljucanu(Prezentacija p) {
         Long id = p.getId();
+        // fajlovi za studente (redovi i mediji) prvo: kaskada u bazi bi obrisala redove, a medije i bajtove ostavila
+        fajloviPrezentacije.obrisiSve(id);
         // kroz JPA, ne kaskadom u bazi: FK slajdovi -> pitanja nema ON DELETE CASCADE
         slajdRepository.deleteAll(slajdRepository.findAllByPrezentacijaIdOrderByRbAsc(id));
         slajdRepository.flush();
@@ -1065,6 +1072,15 @@ public class PrezentacijaService {
     }
 
     private PrezentacijaInfo info(Prezentacija p) {
+        return info(p, fajloviPrezentacije.broj(p.getId()));
+    }
+
+    /** Fajlovi za listu jednim upitom, ne po redu. */
+    private Map<Long, Long> brojFajlova(List<Prezentacija> lista) {
+        return fajloviPrezentacije.brojPoPrezentaciji(lista.stream().map(Prezentacija::getId).toList());
+    }
+
+    private PrezentacijaInfo info(Prezentacija p, long brojFajlova) {
         Long id = p.getId();
         long brojPitanja = slajdRepository.countByPrezentacijaIdAndTipIn(id, SA_RUNDAMA);
         long brojZadataka = slajdRepository.countByPrezentacijaIdAndTip(id, TipSlajda.ZADATAK);
@@ -1073,7 +1089,7 @@ public class PrezentacijaService {
                 p.getIzmenjeno(), p.isTakmicenje(), p.getTelefonPrikaz(), p.isDetaljiDozvoljeni(),
                 izvodjenjeRepository.countByPrezentacijaId(id), aktivnoIzvodjenjeId(id), p.getTema(), p.getVezba(),
                 VrstaPrezentacije.od(brojPitanja, brojZadataka), brojZadataka, p.getKreirano(),
-                izvodjenjeRepository.poslednjePustanje(id));
+                izvodjenjeRepository.poslednjePustanje(id), brojFajlova);
     }
 
     private PrezentacijaDetails details(Prezentacija p, List<Slajd> slajdovi) {
@@ -1085,7 +1101,7 @@ public class PrezentacijaService {
                 izvodjenjeRepository.countByPrezentacijaId(p.getId()), aktivnoIzvodjenjeId(p.getId()), p.getTema(),
                 slajdovi.stream().map(s -> SlajdMapper.uDetails(s, platnoJson, zadaciSlajdova.get(s.getId()))).toList(),
                 p.getVezba(), VrstaPrezentacije.od(brojPitanja, brojZadataka), brojZadataka, p.getKreirano(),
-                izvodjenjeRepository.poslednjePustanje(p.getId()));
+                izvodjenjeRepository.poslednjePustanje(p.getId()), fajloviPrezentacije.broj(p.getId()));
     }
 
     private Long aktivnoIzvodjenjeId(Long prezentacijaId) {

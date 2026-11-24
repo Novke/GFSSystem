@@ -40,6 +40,18 @@ class PublicMedijRestTest {
     }
 
     @Test
+    void fajlPrezentacijeNijeJavanIJe404KaoNepoznatId() throws Exception {
+        // fajl za studente se preuzima samo kroz PristupFajlovima (kod ili nalog), nikad kroz /public/mediji
+        byte[] pk = {0x50, 0x4B, 3, 4, 1, 2};
+        when(service.ucitaj(ID)).thenReturn(new MedijService.Fajl(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", pk.length,
+                new ByteArrayResource(pk), VrstaMedija.FAJL_PREZENTACIJE));
+        mvc.perform(get("/public/mediji/" + ID))
+           .andExpect(status().isNotFound())
+           .andExpect(jsonPath("$.reason").value("Slika nije pronađena."));
+    }
+
+    @Test
     void slikaPrilogaNijeJavnaIJe404KaoNepoznatId() throws Exception {
         // PNG/JPEG prilog zadatka može biti deo rešenja: kao i PDF, nikad se ne servira javno
         when(service.ucitaj(ID)).thenReturn(new MedijService.Fajl("image/png", PNG.length, new ByteArrayResource(PNG), VrstaMedija.PRILOG_SLIKA));

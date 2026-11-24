@@ -44,13 +44,25 @@ final class PrezentacijaPregled {
      * {@code 1..brojStrana} je 400 {@code Neispravan parametar: strana.}
      */
     static McpPrezentacijaPregled pregled(PrezentacijaDetails p, int strana, String link) {
+        return pregled(p, strana, link, new java.util.HashMap<>());
+    }
+
+    /**
+     * Isto, sa brojem fajlova za studente: {@code fajlovi} je slajd -> broj, ključ {@code null} su fajlovi uz celu
+     * prezentaciju (mapa mora dozvoljavati {@code null} ključ, pa {@code HashMap}); bez fajlova se polja ne pišu.
+     */
+    static McpPrezentacijaPregled pregled(PrezentacijaDetails p, int strana, String link, java.util.Map<Long, Integer> fajlovi) {
         List<SlajdDetails> slajdovi = p.slajdovi() == null ? List.of() : p.slajdovi();
-        List<List<McpSlajdSazetak>> strane = strane(slajdovi.stream().map(PrezentacijaPregled::sazetak).toList());
+        List<List<McpSlajdSazetak>> strane = strane(slajdovi.stream()
+                .map(s -> sazetak(s).saFajlovima(fajlovi.get(s.id()))).toList());
+        int ukupno = fajlovi.values().stream().mapToInt(Integer::intValue).sum();
+        Integer uzCelu = fajlovi.get(null);
         if (strana < 1 || strana > strane.size()) {
             throw new SystemException(McpStrana.NEISPRAVNA_STRANA, HttpStatus.BAD_REQUEST);
         }
         return new McpPrezentacijaPregled(p.id(), p.naziv(), p.opis(), p.tema(), p.aktivnoIzvodjenjeId(),
-                slajdovi.size(), strana, strane.size(), strane.get(strana - 1), link);
+                slajdovi.size(), strana, strane.size(), strane.get(strana - 1), link, ukupno == 0 ? null : ukupno,
+                uzCelu == null || uzCelu == 0 ? null : uzCelu);
     }
 
     /** Sažetak jednog slajda (i za rezultat {@code dodaj_slajd}). */

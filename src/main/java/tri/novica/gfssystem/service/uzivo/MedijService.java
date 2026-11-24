@@ -47,11 +47,22 @@ public class MedijService {
 
     public static final String NEDOZVOLJEN_TIP = "Dozvoljene su samo slike PNG, JPEG, GIF i WebP.";
     public static final String NEDOZVOLJEN_PRILOG = "Dozvoljeni prilozi: PNG, JPEG i PDF.";
+    public static final String NEDOZVOLJEN_FAJL = "Dozvoljeni fajlovi: DOCX, XLSX, PPTX, PDF i ZIP.";
+    public static final String PRAZAN_NAZIV = "Naziv fajla je obavezan.";
+    public static final String PREDUG_NAZIV = "Naziv fajla može imati najviše 200 znakova.";
     public static final String PRAZAN_FAJL = "Fajl je prazan.";
     public static final String NIJE_PRONADJENA = "Slika nije pronađena.";
     public static final String NIJE_SLIKA = "Medij nije slika.";
 
     private static final int MAX_NAZIV = 255;
+    /** Najduže ime fajla uz prezentaciju koje korisnik unosi (ekstenzija originala se dodaje povrh). */
+    private static final int MAX_NAZIV_FAJLA = 200;
+    /** Zabranjeno u imenu za preuzimanje: separatori putanje, Windows znakovi, kontrolni (C0 i C1), nevidljivi formatni
+     *  ({@code \p{Cf}}: bidi kao RLO koji obrće prikaz ekstenzije, ZWJ, meki crtica) i separatori reda i pasusa. */
+    private static final Pattern ZABRANJENI_ZNAKOVI = Pattern.compile("[/\\\\:*?\"<>|\\p{Cntrl}\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]");
+    private static final String MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private static final String MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private static final String MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
     private static final Pattern UUID_OBLIK =
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
@@ -126,6 +137,118 @@ public class MedijService {
             throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
         }
         return upisi(naziv(naziv), new Tip("image/svg+xml", VrstaMedija.RENDER_SVG), upis(svg));
+    }
+
+    /**
+     * Fajl uz prezentaciju (DOCX, XLSX, PPTX, PDF, ZIP; vrsta {@code FAJL_PREZENTACIJE}, nikad javni): tip se prepoznaje po
+     * prvim bajtovima <b>i</b> ekstenziji imena, moraju da se slože (vidi {@link #vrstaFajla}); MIME je iz ekstenzije.
+     * Makro formati (.docm, .xlsm) i sve ostalo je 400 {@value #NEDOZVOLJEN_FAJL}.
+     */
+    public MedijInfo sacuvajFajl(MultipartFile fajl) {
+        String original = fajl == null ? null : imeBezPutanje(fajl.getOriginalFilename());
+        return sacuvaj(fajl, b -> tipFajla(b, original), NEDOZVOLJEN_FAJL, imeBezPutanje(original));
+    }
+
+    /** Fajl uz prezentaciju iz bajtova (MCP upload): isto kao {@link #sacuvajFajl(MultipartFile)}. */
+    public MedijInfo sacuvajFajl(byte[] sadrzaj, String naziv) {
+        String ime = imeBezPutanje(naziv);
+        return sacuvaj(sadrzaj, ime, b -> tipFajla(b, ime), NEDOZVOLJEN_FAJL);
+    }
+
+    /** Vrsta fajla uz prezentaciju iz ekstenzije imena: {@code DOCX|XLSX|PPTX|PDF|ZIP}, {@code null} ako nije dozvoljena. */
+    public static String vrstaFajla(String naziv) {
+        String e = ekstenzija(naziv);
+        return switch (e) {
+            case "docx", "xlsx", "pptx", "pdf", "zip" -> e.toUpperCase(java.util.Locale.ROOT);
+            default -> null;
+        };
+    }
+
+    /**
+     * Novo ime fajla za preuzimanje: zabranjeni znakovi ({@code / \ : * ? " < > |} i kontrolni) postaju {@code _},
+     * ekstenzija originala se zadržava (dodaje se ako je novo ime nema), prazno ime je 400, najviše 200 znakova.
+     */
+    public static String normalizujNaziv(String novo, String original) {
+        String ime = novo == null ? "" : ZABRANJENI_ZNAKOVI.matcher(novo.strip()).replaceAll("_").strip();
+        if (ime.isEmpty()) {
+            throw new SystemException(PRAZAN_NAZIV, HttpStatus.BAD_REQUEST);
+        }
+        if (ime.codePointCount(0, ime.length()) > MAX_NAZIV_FAJLA) {
+            throw new SystemException(PREDUG_NAZIV, HttpStatus.BAD_REQUEST);
+        }
+        int tacka = original == null ? -1 : original.lastIndexOf('.');
+        String ext = tacka < 0 ? "" : original.substring(tacka);
+        if (!ext.isEmpty() && !ime.toLowerCase(java.util.Locale.ROOT).endsWith(ext.toLowerCase(java.util.Locale.ROOT))) {
+            ime = ime + ext;
+        }
+        if (ime.equalsIgnoreCase(ext)) {   // samo ekstenzija, bez imena
+            throw new SystemException(PRAZAN_NAZIV, HttpStatus.BAD_REQUEST);
+        }
+        return ime;
+    }
+
+    /**
+     * Ime iz upload-a (originalno ime fajla, ili ime medija pri vezivanju): isto čišćenje znakova kao {@link #normalizujNaziv},
+     * ali predugo ime se <b>skraćuje</b> na {@value #MAX_NAZIV_FAJLA} znakova uz zadržanu ekstenziju (nastavnik ne bira ime
+     * fajla sa diska, pa 400 tu ne bi imao smisla); prazno ime postaje {@code fajl}. 400 za predugo ostaje samo pri ručnom
+     * preimenovanju.
+     */
+    public static String nazivIzUploada(String original) {
+        String ime = original == null ? "" : ZABRANJENI_ZNAKOVI.matcher(original.strip()).replaceAll("_").strip();
+        int tacka = ime.lastIndexOf('.');
+        String ext = tacka < 0 ? "" : ime.substring(tacka);
+        String osnova = tacka < 0 ? ime : ime.substring(0, tacka);
+        int najvise = Math.max(1, MAX_NAZIV_FAJLA - ext.codePointCount(0, ext.length()));
+        if (osnova.codePointCount(0, osnova.length()) > najvise) {
+            osnova = osnova.substring(0, osnova.offsetByCodePoints(0, najvise)).strip();
+        }
+        return (osnova.isEmpty() ? "fajl" : osnova) + ext;
+    }
+
+    private static String ekstenzija(String naziv) {
+        if (naziv == null) return "";
+        int tacka = naziv.lastIndexOf('.');
+        return tacka < 0 ? "" : naziv.substring(tacka + 1).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String imeBezPutanje(String naziv) {
+        if (naziv == null) return null;
+        int kraj = Math.max(naziv.lastIndexOf('/'), naziv.lastIndexOf('\\'));
+        return kraj < 0 ? naziv : naziv.substring(kraj + 1);
+    }
+
+    /** Fajl po magic bajtovima i ekstenziji (moraju da se slože) ili {@code null}. */
+    private static Tip tipFajla(byte[] b, String naziv) {
+        String e = ekstenzija(naziv);
+        boolean pk = pocinje(b, 0, 0x50, 0x4B, 0x03, 0x04);
+        String mime = null;
+        if (pk) {
+            mime = switch (e) {
+                case "docx" -> MIME_DOCX;
+                case "xlsx" -> MIME_XLSX;
+                case "pptx" -> MIME_PPTX;
+                case "zip" -> "application/zip";
+                default -> null;
+            };
+        } else if (e.equals("pdf") && pocinje(b, 0, 0x25, 0x50, 0x44, 0x46, 0x2D)) {
+            mime = "application/pdf";
+        }
+        return mime == null ? null : new Tip(mime, VrstaMedija.FAJL_PREZENTACIJE);
+    }
+
+    private MedijInfo sacuvaj(MultipartFile fajl, Function<byte[], Tip> prepoznaj, String nedozvoljeno, String naziv) {
+        if (fajl == null || fajl.isEmpty()) {
+            throw new SystemException(PRAZAN_FAJL, HttpStatus.BAD_REQUEST);
+        }
+        Tip tip = prepoznaj.apply(zaglavlje(fajl));
+        if (tip == null) {
+            throw new SystemException(nedozvoljeno, HttpStatus.BAD_REQUEST);
+        }
+        return upisi(naziv(naziv), tip, cilj -> {
+            try (InputStream in = fajl.getInputStream()) {
+                return Files.copy(in, cilj);
+            }
+        });
     }
 
     private MedijInfo sacuvaj(MultipartFile fajl, Function<byte[], Tip> prepoznaj, String nedozvoljeno) {

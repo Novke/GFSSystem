@@ -41,10 +41,10 @@ class PrezentacijaRestTest {
     static final LocalDateTime IZMENJENO = LocalDateTime.of(2026, 10, 7, 12, 0);
     static final PrezentacijaDetails DETAILS = new PrezentacijaDetails(1L, "Uvod", null, new PredmetKratko(7L, "Statika"),
             0, 0, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, List.of(), 2, VrstaPrezentacije.GRADIVO, 0,
-            IZMENJENO, null);
+            IZMENJENO, null, 0);
     static final PrezentacijaInfo INFO = new PrezentacijaInfo(1L, "Vežbe 2 – zadaci", null, new PredmetKratko(7L, "Statika"),
             3, 3, IZMENJENO, false, TelefonPrikaz.DUGMAD, true, 1, null, Tema.NACRT, 2, VrstaPrezentacije.ZADACI, 3,
-            IZMENJENO, IZMENJENO);
+            IZMENJENO, IZMENJENO, 2);
     static final SlajdDetails SLAJD = new SlajdDetails(9L, 2, TipSlajda.INFO, "Uvod", null, null, null, false, null, null, null);
 
     @Autowired MockMvc mvc;
@@ -134,7 +134,8 @@ class PrezentacijaRestTest {
            .andExpect(status().isOk())
            .andExpect(jsonPath("$.vezba").value(2))
            .andExpect(jsonPath("$.vrsta").value("ZADACI"))
-           .andExpect(jsonPath("$.poslednjePustanje").value("2026-10-07T12:00:00"));
+           .andExpect(jsonPath("$.poslednjePustanje").value("2026-10-07T12:00:00"))
+           .andExpect(jsonPath("$.brojFajlova").value(2));
         mvc.perform(patch("/prezentacije/1/vezba").contentType(MediaType.APPLICATION_JSON).content("{\"vezba\":null}"))
            .andExpect(status().isOk());
         verify(service).postaviVezbu(1L, 2);
