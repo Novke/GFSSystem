@@ -158,7 +158,8 @@ code), students join from their phones and answer live. Code lives in `entity/uz
   changed only by `PATCH /prezentacije/{id}/vezba` (`VezbaCmd`, strict like `PragProlazaCmd`; locks only the presentation row, does not touch
   `izmenjeno`); `PUT` of a presentation ignores it, duplicating copies it, MCP `napravi_prezentaciju` takes an optional `vezba` and otherwise derives it
   from the name. The kind `VrstaPrezentacije` (`GRADIVO` = no question, `PITANJA` = questions but no ZADATAK slide, `ZADACI` = at least one ZADATAK
-  slide) is **never stored**: `PrezentacijaInfo`/`Details` compute it with `brojZadataka`, plus `kreirano` and `poslednjePustanje` (latest run start).
+  slide) is **never stored**: `PrezentacijaInfo`/`Details` compute it with `brojZadataka`, plus `kreirano`, `poslednjePustanje` (latest run start) and `brojFajlova` (last field: files of the presentation,
+  whole and per slide; lists and `izbor` count them with one aggregate query, `FajlPrezentacijeRepository.brojPoPrezentaciji`).
   `GET /prezentacije/izbor?predmetId&grupaId&posle` (ADMIN, readOnly; `predmetId` required) returns `IzborPrezentacija {stavke, predlog}`: every
   presentation of the subject in the order of `RedosledPrezentacija.REDOSLED` (vežba ascending, no number last; within a vežba gradivo, pitanja, zadaci;
   then name and id; the front's `porediPoVezbi` mirrors it), each with `pustenoGrupi` (latest run of that group, any status); `predlog` (at most 3 ids) is

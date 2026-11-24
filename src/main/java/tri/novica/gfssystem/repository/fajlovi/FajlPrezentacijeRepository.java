@@ -26,6 +26,10 @@ public interface FajlPrezentacijeRepository extends JpaRepository<FajlPrezentaci
 
     long countByPrezentacijaId(Long prezentacijaId);
 
+    /** Broj fajlova po prezentaciji, jednim upitom za celu listu: redovi {@code [prezentacijaId, broj]}, bez redova sa 0. */
+    @Query("select f.prezentacija.id, count(f) from FajlPrezentacije f where f.prezentacija.id in :ids group by f.prezentacija.id")
+    List<Object[]> brojPoPrezentaciji(@Param("ids") Collection<Long> ids);
+
     boolean existsByMedijId(String medijId);
 
     /** Najveći {@code rb} u prezentaciji, 0 kad nema fajlova (novi fajl dobija max + 1). */

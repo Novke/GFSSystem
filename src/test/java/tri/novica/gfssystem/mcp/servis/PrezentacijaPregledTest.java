@@ -119,7 +119,7 @@ class PrezentacijaPregledTest {
         return new PrezentacijaDetails(7L, "Vežbe 3: brojni sistemi", "Konverzije između sistema.",
                 new PredmetKratko(1L, "Uvod u računarstvo"), slajdovi.size(), 0, LocalDateTime.of(2026, 10, 18, 9, 0),
                 false, TelefonPrikaz.DUGMAD, true, 0, null, Tema.NACRT, slajdovi, 3, VrstaPrezentacije.GRADIVO, 0,
-                LocalDateTime.of(2026, 10, 18, 9, 0), null);
+                LocalDateTime.of(2026, 10, 18, 9, 0), null, 0);
     }
 
     static int duzina(Object o) {
