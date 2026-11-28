@@ -149,4 +149,15 @@ public interface VarijantaRepository extends JpaRepository<Varijanta, Long>, Jpa
     @Modifying
     @Query("update Varijanta v set v.renderHash = null where v.grupa.predmet.id = :predmetId")
     int ponistiHashPredmeta(@Param("predmetId") Long predmetId);
+
+    /** Varijanta je na online testu (izvučena u pripremi ili u primerku studenta); RESTRICT FK, pa se ne briše. 0 = nije. */
+    @Query(value = "select exists(select 1 from test_primerak_zadaci where varijanta_id = :id) "
+            + "+ exists(select 1 from test_izbor where varijanta_id = :id)", nativeQuery = true)
+    long naTestu(@Param("id") Long varijantaId);
+
+    /** Kao {@link #naTestu}, za bilo koju varijantu grupe. */
+    @Query(value = "select exists(select 1 from test_primerak_zadaci z join varijante v on v.id = z.varijanta_id where v.grupa_id = :g) "
+            + "+ exists(select 1 from test_izbor i join varijante v on v.id = i.varijanta_id where v.grupa_id = :g)",
+            nativeQuery = true)
+    long grupaNaTestu(@Param("g") Long grupaId);
 }

@@ -3,6 +3,8 @@ package tri.novica.gfssystem.security;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.server.PathContainer;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.util.pattern.PathPattern;
@@ -30,21 +32,34 @@ import java.util.Set;
  */
 public final class PristupMatrica {
 
-    /** Jedno pravilo: metoda ({@code null} = sve) i PathPattern uzorak. */
-    public record Pravilo(HttpMethod metod, String uzorak) {
+    /**
+     * Jedno pravilo: metoda ({@code null} = sve), PathPattern uzorak i opcioni uzorak {@code osim} koji se iz pravila
+     * izuzima (npr. {@code /public/nalog/racunar/{token}} osim {@code /public/nalog/racunar/zahtev}, koji je ANONIMNO).
+     */
+    public record Pravilo(HttpMethod metod, String uzorak, String osim) {
         public Pravilo {
             Objects.requireNonNull(uzorak, "uzorak");
         }
 
+        public Pravilo(HttpMethod metod, String uzorak) {
+            this(metod, uzorak, null);
+        }
+
         boolean pogadja(HttpMethod m, PathContainer putanja) {
             if (metod != null && !metod.equals(m)) return false;
-            PathPattern sablon = UZORCI.get(uzorak);
-            return (sablon != null ? sablon : PathPatternParser.defaultInstance.parse(uzorak)).matches(putanja);
+            if (osim != null && sablon(osim).matches(putanja)) return false;
+            return sablon(uzorak).matches(putanja);
+        }
+
+        private static PathPattern sablon(String u) {
+            PathPattern sablon = UZORCI.get(u);
+            return sablon != null ? sablon : PathPatternParser.defaultInstance.parse(u);
         }
 
         RequestMatcher matcher() {
             PathPatternRequestMatcher.Builder b = PathPatternRequestMatcher.withDefaults();
-            return metod == null ? b.matcher(uzorak) : b.matcher(metod, uzorak);
+            RequestMatcher m = metod == null ? b.matcher(uzorak) : b.matcher(metod, uzorak);
+            return osim == null ? m : new AndRequestMatcher(m, new NegatedRequestMatcher(b.matcher(osim)));
         }
     }
 
@@ -74,6 +89,9 @@ public final class PristupMatrica {
             new Pravilo(GET, "/public/nalog/stanje"),
             // čekiranje QR-om: prijavljen se čekira odmah, neprijavljen dobija ključ (student iz sesije, ako postoji)
             new Pravilo(POST, "/public/nalog/cas/skeniraj"),
+            // prijava računara QR-om (online testovi, faza 2): računar pravi zahtev i čita njegovo stanje po kolačiću
+            new Pravilo(POST, "/public/nalog/racunar/zahtev"),
+            new Pravilo(GET, "/public/nalog/racunar/zahtev"),
             // Moodle LTI 1.3 (prijava i start su i izuzeti iz provere porekla)
             new Pravilo(GET, "/public/lti/prijava"),
             new Pravilo(POST, "/public/lti/prijava"),
@@ -124,6 +142,18 @@ public final class PristupMatrica {
             // brza anketa (spec brze ankete 5): ankete za koje student sme da glasa i glas; student samo iz sesije
             new Pravilo(GET, "/public/nalog/ankete"),
             new Pravilo(POST, "/public/nalog/ankete/{id}/glas"),
+            // online test (plan online testova 5): polaganje i objavljeni rezultati; student samo iz sesije, tuđe = 404
+            new Pravilo(GET, "/public/nalog/testovi"),
+            new Pravilo(GET, "/public/nalog/testovi/{testId}"),
+            new Pravilo(POST, "/public/nalog/testovi/{testId}/ulaz"),
+            new Pravilo(PUT, "/public/nalog/testovi/{testId}/zadaci/{zadatakId}"),
+            new Pravilo(POST, "/public/nalog/testovi/{testId}/predaj"),
+            new Pravilo(POST, "/public/nalog/testovi/{testId}/dogadjaj"),
+            new Pravilo(GET, "/public/nalog/testovi/{testId}/rezultat"),
+            new Pravilo(GET, "/public/nalog/predmeti/{id}/testovi"),
+            // telefon prijavljen kodom odobrava računar (zahtev je ANONIMNO, zato je izuzet)
+            new Pravilo(GET, "/public/nalog/racunar/{token}", "/public/nalog/racunar/zahtev"),
+            new Pravilo(POST, "/public/nalog/racunar/{token}/odobri"),
             // povezivanje traži i studenta i važeći __Host-gfs_lti_par (proverava servis)
             new Pravilo(POST, "/public/lti/povezi"));
 
@@ -143,6 +173,7 @@ public final class PristupMatrica {
         for (List<Pravilo> lista : List.of(ANONIMNO, STUDENT, MCP)) {
             for (Pravilo p : lista) {
                 UZORCI.computeIfAbsent(p.uzorak(), PathPatternParser.defaultInstance::parse);
+                if (p.osim() != null) UZORCI.computeIfAbsent(p.osim(), PathPatternParser.defaultInstance::parse);
             }
         }
     }

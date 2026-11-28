@@ -354,6 +354,9 @@ public class VarijantaService {
         if (koriscenoNaCasu(id)) {
             throw new SystemException(GrupaZadatakaService.KORISCENO_NA_CASU, HttpStatus.CONFLICT);
         }
+        if (varijantaRepository.naTestu(id) > 0) {
+            throw new SystemException(GrupaZadatakaService.KORISCENO_NA_TESTU, HttpStatus.CONFLICT);
+        }
         List<String> svg = v.isIkadOdobrena() ? List.of() : svgIds(v);
         varijantaRepository.delete(v);
         varijantaRepository.flush();

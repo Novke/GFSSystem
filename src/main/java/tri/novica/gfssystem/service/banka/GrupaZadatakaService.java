@@ -82,6 +82,8 @@ public class GrupaZadatakaService {
     static final String IMA_PODGRUPE = "Grupa ima podgrupe.";
     static final String SAMO_PRAZNA = "Briše se samo prazna grupa.";
     static final String KORISCENO_NA_CASU = "Korišćeno na času; arhiviraj.";
+    /** Varijanta (ili varijanta grupe) je izvučena na online testu: RESTRICT FK, brisanje bi palo, pa 409 pre toga. */
+    public static final String KORISCENO_NA_TESTU = "Korišćeno na testu; arhiviraj.";
     static final String SOPSTVENO_PODSTABLO = "Grupa se ne može premestiti u sopstveno podstablo.";
     static final String ISTO_STABLO = "Grupa se premešta samo unutar istog predmeta i namene.";
     static final String NEISPRAVAN_REDOSLED = "Redosled mora sadržati sve podgrupe.";
@@ -320,6 +322,9 @@ public class GrupaZadatakaService {
         List<Varijanta> varijante = varijantaRepository.findByGrupaIdForUpdate(id);
         if (koriscenoNaCasu(id)) {
             throw new SystemException(KORISCENO_NA_CASU, HttpStatus.CONFLICT);
+        }
+        if (varijantaRepository.grupaNaTestu(id) > 0) {
+            throw new SystemException(KORISCENO_NA_TESTU, HttpStatus.CONFLICT);
         }
         obrisiZakljucanu(g, predmetId, varijante);
     }

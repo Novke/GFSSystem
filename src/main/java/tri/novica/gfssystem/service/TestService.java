@@ -28,6 +28,8 @@ import tri.novica.gfssystem.validation.TestPP;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import tri.novica.gfssystem.service.test.OnlineTestPravila;
+import tri.novica.gfssystem.dto.test.online.StanjeOnline;
 
 @Service
 @Transactional
@@ -46,6 +48,7 @@ public class TestService {
     private final PolaganjeRepository polaganjeRepository;
     private final ModelMapper mapper;
     private final TestPP testPP;
+    private final OnlineTestPravila online;
 
     public TipTestaInfo createTipTesta(CreateTipTestaCmd cmd) {
         Predmet predmet = predmetRepository.findById(cmd.getPredmetId())
@@ -71,7 +74,7 @@ public class TestService {
         Test test = testRepository.findByIdFetchPolaganja(id)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404));
 
-        TestDetails details = mapper.map(test, TestDetails.class);
+        TestDetails details = detalji(test);
         details.setStatistika(izracunajStatistiku(test));
 
         return details;
@@ -188,6 +191,7 @@ public class TestService {
         Test test = testRepository.findByIdFetchPolaganja(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
 
+        online.samoPapir(test);
         mapper.map(cmd, test);   // prag prolaza se ovde ne menja (PUT ga ne poznaje), vidi postaviPragProlaza
 
         TipTesta tipTesta = tipTestaRepository.findById(cmd.getTipTestaId())
@@ -196,7 +200,7 @@ public class TestService {
         test.setTipTesta(tipTesta);
         testPP.checkUpdateTest(test);
 
-        return mapper.map(testRepository.save(test), TestDetails.class);
+        return detalji(testRepository.save(test));
     }
 
     /**
@@ -208,7 +212,7 @@ public class TestService {
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
         test.setPragProlaza(cmd.getPragProlaza());
         testPP.checkPragProlaza(test);
-        TestDetails details = mapper.map(testRepository.save(test), TestDetails.class);
+        TestDetails details = detalji(testRepository.save(test));
         details.setStatistika(izracunajStatistiku(test));   // prolaznost se menja zajedno sa pragom
         return details;
     }
@@ -218,6 +222,7 @@ public class TestService {
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
         Student student = studentRepository.findById(cmd.getStudentId())
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + cmd.getStudentId(), 404));
+        online.samoPapir(test);
 
         Polaganje polaganje = mapper.map(cmd, Polaganje.class);
         polaganje.setTest(test);
@@ -234,13 +239,14 @@ public class TestService {
             test.getPolaganja().add(polaganje);
         });
 
-        return mapper.map(testRepository.save(test), TestDetails.class);
+        return detalji(testRepository.save(test));
     }
 
     /** Briše test zajedno sa polaganjima (kaskada); studenti i tip testa ostaju. */
     public void obrisi(Long id) {
-        Test test = testRepository.findById(id)
+        Test test = testRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + id, 404));
+        online.proveriBrisanje(test);
         testRepository.delete(test);
     }
 
@@ -250,6 +256,7 @@ public class TestService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
 
+        online.samoPapir(test);
         if (!Utility.smeNaNastavuGrupe(student, test.getGrupa()))
             throw new SystemException("Student " + student.getIndeks() + " ne pripada grupi " + test.getGrupa().getNaziv(), 400);
 
@@ -259,7 +266,7 @@ public class TestService {
                 p -> p.getStudent().getId().equals(polaganje.getStudent().getId())
         )) test.getPolaganja().add(polaganje);
 
-        return mapper.map(testRepository.save(test), TestDetails.class);
+        return detalji(testRepository.save(test));
     }
 
     public TestDetails skloniIspitanika(Long testId, Long studentId) {
@@ -268,6 +275,7 @@ public class TestService {
         Student student = studentRepository.findById(studentId)
                 .orElseThrow(() -> new SystemException("Student ne postoji! ID = " + studentId, HttpStatus.NOT_FOUND));
 
+        online.samoPapir(test);
         Polaganje polaganje = test.getPolaganja()
                 .stream()
                 .filter(p -> (p.getStudent().equals(student)))
@@ -277,17 +285,18 @@ public class TestService {
         test.getPolaganja().remove(polaganje);
         polaganjeRepository.delete(polaganje);
 
-        return mapper.map(testRepository.save(test), TestDetails.class);
+        return detalji(testRepository.save(test));
     }
 
     public TestDetails zavrsiEvidentiranje(Long testId) {
         Test test = testRepository.findByIdFetchPolaganja(testId)
                 .orElseThrow(() -> new SystemException("Test ne postoji! ID = " + testId, 404));
 
+        online.proveriZavrsiEvidentiranje(test);
         testPP.checkZavrsiEvidentiranje(test);
         test.setPregledan(true);
 
-        return mapper.map(testRepository.save(test), TestDetails.class);
+        return detalji(testRepository.save(test));
     }
 
     public List<TestInfo> vratiTestoveGrupaPredmet(Long gId, Long pId) {
@@ -333,8 +342,15 @@ public class TestService {
             }
         }
         Map<Long, Long> studenti = Brojaci.poId(grupaIds, studentRepository::brojStudenataPoGrupi);
+        Map<Long, StanjeOnline> stanja = online.stanja(strana.stream().filter(Test::isOnline).map(Test::getId).toList());
 
-        return new PagedModel<>(strana.map(t -> uListItem(t, statistika.get(t.getId()), studenti)));
+        return new PagedModel<>(strana.map(t -> {
+            TestListItem red = uListItem(t, statistika.get(t.getId()), studenti);
+            red.setNacin(t.getNacin());
+            red.setObjavljeno(t.getObjavljeno());
+            if (t.isOnline()) red.setStanjeOnline(stanja.getOrDefault(t.getId(), StanjeOnline.PRIPREMA));
+            return red;
+        }));
     }
 
     /** Ručno mapiranje; {@code statistika} je red {@code [testId, brojPolaganja, brojSaPoenima, prosek, brojPolozenih]} ili null. */
@@ -359,5 +375,16 @@ public class TestService {
         TipTesta tip = t.getTipTesta();
         return new TestListItem(t.getId(), t.getDatum(), new TipTestaInfo(tip.getId(), tip.getNaziv(), tip.getAktivan()), t.getMaxPoena(),
                 t.getPragProlaza(), t.getPregledan(), predmet, grupa, brojPolaganja, prosek, procenatProlaznosti);
+    }
+
+    /** Detalji testa sa poljima online testa (nacin, objava i stanje; ModelMapper ne zna stanje). */
+    private TestDetails detalji(Test test) {
+        TestDetails d = mapper.map(test, TestDetails.class);
+        if (d == null) return null;
+        d.setNacin(test.getNacin());
+        d.setObjavljeno(test.getObjavljeno());
+        d.setObjavaTacni(test.isObjavaTacni());
+        d.setStanjeOnline(online.stanje(test));
+        return d;
     }
 }

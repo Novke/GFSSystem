@@ -50,6 +50,29 @@ class PristupMatricaKlasaTest {
     }
 
     @Test
+    void onlineTestoviIPrijavaRacunara() {
+        assertEquals(STUDENT, PristupMatrica.klasa(GET, "/public/nalog/testovi"));
+        assertEquals(STUDENT, PristupMatrica.klasa(GET, "/public/nalog/testovi/5"));
+        assertEquals(STUDENT, PristupMatrica.klasa(POST, "/public/nalog/testovi/5/ulaz"));
+        assertEquals(STUDENT, PristupMatrica.klasa(PUT, "/public/nalog/testovi/5/zadaci/9"));
+        assertEquals(STUDENT, PristupMatrica.klasa(POST, "/public/nalog/testovi/5/predaj"));
+        assertEquals(STUDENT, PristupMatrica.klasa(GET, "/public/nalog/testovi/5/rezultat"));
+        assertEquals(STUDENT, PristupMatrica.klasa(GET, "/public/nalog/predmeti/3/testovi"));
+        // zahtev je ANONIMNO (računar), {token} je STUDENT (telefon) i izuzima tačno "zahtev"
+        assertEquals(ANONIMNO, PristupMatrica.klasa(POST, "/public/nalog/racunar/zahtev"));
+        assertEquals(ANONIMNO, PristupMatrica.klasa(GET, "/public/nalog/racunar/zahtev"));
+        assertEquals(java.util.Set.of(ANONIMNO), PristupMatrica.pogodjene(GET, "/public/nalog/racunar/zahtev"));
+        assertEquals(STUDENT, PristupMatrica.klasa(GET, "/public/nalog/racunar/abcDEF23456789abcDEF23456789abcd"));
+        assertEquals(STUDENT, PristupMatrica.klasa(POST, "/public/nalog/racunar/zahtev/odobri"));
+        assertEquals(ADMIN, PristupMatrica.klasa(PUT, "/public/nalog/racunar/zahtev"));
+        // nastavnička strana je ADMIN
+        assertEquals(ADMIN, PristupMatrica.klasa(POST, "/test/online"));
+        assertEquals(ADMIN, PristupMatrica.klasa(GET, "/test/5/online/konzola"));
+        assertEquals(ADMIN, PristupMatrica.klasa(POST, "/test/5/objava"));
+        assertEquals(ADMIN, PristupMatrica.klasa(GET, "/sabloni-testa"));
+    }
+
+    @Test
     void mcpPoSpecu() {
         assertEquals(MCP, PristupMatrica.klasa(POST, "/mcp"));
         assertEquals(MCP, PristupMatrica.klasa(GET, "/mcp"));

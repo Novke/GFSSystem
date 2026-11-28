@@ -44,6 +44,7 @@ public class CiscenjePrijave {
 
     static final Duration ZABRANE_GOSTIJU = Duration.ofDays(2);
     static final Duration KODOVI = Duration.ofDays(1);
+    static final Duration PRIJAVE_RACUNARA = Duration.ofDays(1);
     /** Koliko posle isteka (ili korišćenja) se čuvaju LTI stanja i povezivanja. */
     static final Duration LTI_NAKON_ISTEKA = Duration.ofHours(1);
     static final Duration SESIJE_I_UREDJAJI = Duration.ofDays(30);
@@ -107,7 +108,9 @@ public class CiscenjePrijave {
                         sada.toLocalDate().minus(POSLE_CASA)));
         // zabrane izbačenih telefona uživo (kolačić gfs_uzivo živi 12 h)
         int zabrane = brisi("zabrane_gostiju", "delete from zabrane_gostiju where kreirano < ?", sada.minus(ZABRANE_GOSTIJU));
-        log.info("Čišćenje prijave: {}, zabrane_gostiju={}", o, zabrane);
+        // zahtevi za prijavu računara (online testovi, važe 2 minuta)
+        int racunari = brisi("prijave_racunara", "delete from prijave_racunara where kreirano < ?", sada.minus(PRIJAVE_RACUNARA));
+        log.info("Čišćenje prijave: {}, zabrane_gostiju={}, prijave_racunara={}", o, zabrane, racunari);
         return o;
     }
 

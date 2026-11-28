@@ -27,20 +27,6 @@ public interface TestPrimerakZadatakRepository extends JpaRepository<TestPrimera
     int obrisiZaPrimerak(@Param("primerakId") Long primerakId);
 
     /**
-     * Da li je varijanta na nekom testu: u zadatku primerka ili u planu izvlačenja (oba su FK RESTRICT). Takva se ne briše
-     * nego arhivira ({@code Korišćeno na testu; arhiviraj.}).
-     */
-    @Query(value = "select (exists(select 1 from test_primerak_zadaci where varijanta_id = :id) "
-            + "or exists(select 1 from test_izbor where varijanta_id = :id))", nativeQuery = true)
-    Long varijantaNaTestu(@Param("id") Long varijantaId);
-
-    /** Kao {@link #varijantaNaTestu}, za sve varijante grupe. */
-    @Query(value = "select (exists(select 1 from test_primerak_zadaci z join varijante v on v.id = z.varijanta_id where v.grupa_id = :g) "
-            + "or exists(select 1 from test_izbor i join varijante v on v.id = i.varijanta_id where v.grupa_id = :g))",
-            nativeQuery = true)
-    Long grupaNaTestu(@Param("g") Long grupaId);
-
-    /**
      * Varijante koje su studenti imali na ranijim online testovima istog predmeta (osim testa {@code testId}), redovi
      * {@code [studentId, varijantaId]}; za izbegavanje ponavljanja.
      */
