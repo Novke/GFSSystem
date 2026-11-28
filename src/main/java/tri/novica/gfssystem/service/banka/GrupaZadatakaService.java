@@ -198,6 +198,7 @@ public class GrupaZadatakaService {
         g.setNamena(namena);
         g.setRb(braca.stream().mapToInt(GrupaZadataka::getRb).max().orElse(0) + 1);
         primeni(g, s);
+        primeniBodovanje(g, cmd);
         g.setIzvor(izvor == null ? IzvorVarijante.RUCNO : izvor);
         g.setSerija(serija);
         g.setKreirano(sada);
@@ -219,7 +220,18 @@ public class GrupaZadatakaService {
         Long predmetId = predmetGrupe(id);
         zakljucajPredmet(predmetId);
         GrupaZadataka g = zakljucaj(id);
+        primeniBodovanje(g, cmd);
         return izmeniZakljucanu(g, predmetId, s, cmd.polja(), false);
+    }
+
+    /** Bodovanje na online testu iz komande; {@code null} ostavlja kako je (nova grupa: PO_POLJIMA, isključeno). */
+    private static void primeniBodovanje(GrupaZadataka g, GrupaCmd cmd) {
+        if (cmd.bodovanje() != null) {
+            g.setBodovanje(cmd.bodovanje());
+        }
+        if (cmd.konacnoPriznajeKorake() != null) {
+            g.setKonacnoPriznajeKorake(cmd.konacnoPriznajeKorake());
+        }
     }
 
     /**
@@ -643,7 +655,8 @@ public class GrupaZadatakaService {
         return new GrupaDetails(g.getId(), g.getPredmet().getId(), roditeljId(g), g.getNamena(), g.getNaziv(),
                 g.getOpis(), g.getRb(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja()), putanja,
                 stablo.deca(g).isEmpty(), b.varijanti(), b.aktivnih(), b.nacrta(), b.gresaka(), g.getIzmenjeno(),
-                g.getIzvor(), g.getSerija(), iskljucenjeId != null, iskljucenjeId);
+                g.getIzvor(), g.getSerija(), iskljucenjeId != null, iskljucenjeId, g.getBodovanje(),
+                g.isKonacnoPriznajeKorake());
     }
 
     /** Tema najbližeg isključenog čvora putanje (od korena do grupe): sopstvena tema grupe pre teme pretka, inače null. */

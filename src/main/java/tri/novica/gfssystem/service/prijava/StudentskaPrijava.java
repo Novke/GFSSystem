@@ -54,6 +54,7 @@ public class StudentskaPrijava {
     private final MaskaMejla maska;
     private final Clock clock;
     private final Duration ltiTrajanje;
+    private final Duration racunarTrajanje;
 
     /**
      * {@code gfs.nalog.lti-trajanje} (ISO-8601, podrazumevano {@code PT12H}): uređaj iz Moodle-a često stoji na zajedničkom
@@ -62,9 +63,13 @@ public class StudentskaPrijava {
     public StudentskaPrijava(StudentskiUredjajRepository uredjaji, PushPretplataRepository pretplate,
                              StudentRepository studenti, SpoljniIdentitetRepository identiteti,
                              TokenGenerator tokenGenerator, MaskaMejla maska, Clock clock,
-                             @Value("${gfs.nalog.lti-trajanje:PT12H}") Duration ltiTrajanje) {
+                             @Value("${gfs.nalog.lti-trajanje:PT12H}") Duration ltiTrajanje,
+                             @Value("${gfs.nalog.racunar-trajanje:PT4H}") Duration racunarTrajanje) {
         if (ltiTrajanje.isZero() || ltiTrajanje.isNegative() || ltiTrajanje.compareTo(TRAJANJE) > 0) {
             throw new IllegalStateException("gfs.nalog.lti-trajanje mora biti između 0 i 365 dana");
+        }
+        if (racunarTrajanje.isZero() || racunarTrajanje.isNegative() || racunarTrajanje.compareTo(Duration.ofDays(1)) > 0) {
+            throw new IllegalStateException("gfs.nalog.racunar-trajanje mora biti između 0 i 1 dana");
         }
         this.uredjaji = uredjaji;
         this.pretplate = pretplate;
@@ -74,11 +79,19 @@ public class StudentskaPrijava {
         this.maska = maska;
         this.clock = clock;
         this.ltiTrajanje = ltiTrajanje;
+        this.racunarTrajanje = racunarTrajanje;
     }
 
-    /** Trajanje uređaja od poslednjeg korišćenja za dati način prijave: i {@code istice} u bazi i Max-Age kolačića. */
+    /**
+     * Trajanje uređaja za dati način prijave: i {@code istice} u bazi i Max-Age kolačića. KOD i LTI od poslednjeg
+     * korišćenja (klizno), RACUNAR ({@code gfs.nalog.racunar-trajanje}, podrazumevano {@code PT4H}) od prijave, bez produžavanja.
+     */
     public Duration trajanje(NacinPrijave nacin) {
-        return nacin == NacinPrijave.LTI ? ltiTrajanje : TRAJANJE;
+        return switch (nacin) {
+            case LTI -> ltiTrajanje;
+            case RACUNAR -> racunarTrajanje;
+            case KOD -> TRAJANJE;
+        };
     }
 
     /** Nov uređaj studenta i kolačić {@code gfs_student} ({@code SameSite=Lax}, {@link #trajanje}, {@code Secure} na HTTPS-u). */
@@ -102,7 +115,8 @@ public class StudentskaPrijava {
 
     /**
      * Važeći uređaj za token iz kolačića (nije opozvan, {@code istice} je u budućnosti). Korišćenje pomera
-     * {@code poslednjiUlaz} i {@code istice} najviše jednom na 10 minuta.
+     * {@code poslednjiUlaz} i {@code istice} najviše jednom na 10 minuta; RACUNAR uređaj samo {@code poslednjiUlaz}
+     * (sesija računara traje od prijave, spec online testova 11).
      */
     @Transactional
     public Optional<StudentskiUredjaj> potvrdi(String token) {
@@ -115,7 +129,9 @@ public class StudentskaPrijava {
         nadjen.ifPresent(u -> {
             if (!u.getPoslednjiUlaz().plus(PRODUZENJE_NAJCESCE).isAfter(sada)) {
                 u.setPoslednjiUlaz(sada);
-                u.setIstice(sada.plus(trajanje(u.getNacin())));
+                if (u.getNacin() != NacinPrijave.RACUNAR) {
+                    u.setIstice(sada.plus(trajanje(u.getNacin())));
+                }
                 uredjaji.save(u);
             }
         });
@@ -168,11 +184,13 @@ public class StudentskaPrijava {
     @Transactional(readOnly = true)
     public StudentJaInfo ja(Long studentId, Long trenutniUredjajId) {
         Student s = studenti.findById(studentId).orElseThrow(() -> new SystemException("Potrebna je prijava.", 401));
+        NacinPrijave nacin = trenutniUredjajId == null ? null
+                : uredjaji.findById(trenutniUredjajId).map(StudentskiUredjaj::getNacin).orElse(null);
         return new StudentJaInfo(s.getIndeks(), s.getIme(), s.getPrezime(), maska.maska(s.getEmail()),
                 uredjaji(studentId, trenutniUredjajId), !identiteti.findAllByStudentId(studentId).isEmpty(), s.getGodina(),
                 s.getGrupa() == null ? null : s.getGrupa().getNaziv(),
                 s.getGrupa() == null ? null : s.getGrupa().getGodinaUpisa(),
-                s.getGrupa() == null ? null : s.getGrupa().getWaLink());
+                s.getGrupa() == null ? null : s.getGrupa().getWaLink(), nacin);
     }
 
     private void opozovi(StudentskiUredjaj u) {

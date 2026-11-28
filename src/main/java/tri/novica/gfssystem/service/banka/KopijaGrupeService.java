@@ -103,7 +103,8 @@ public class KopijaGrupeService {
         for (GrupaZadataka g : podstablo) {
             Long roditeljId = g.equals(izvor) ? ciljRoditeljId : kopijaGrupe.get(g.getRoditelj().getId());
             GrupaDetails kopija = grupaZadatakaService.kreiraj(new GrupaCmd(predmetId, roditeljId, ciljNamena, g.getNaziv(),
-                    g.getOpis(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja())), IzvorVarijante.CLAUDE, serija);
+                    g.getOpis(), g.getTezina(), g.getUputstvo(), PoljaJson.izKolone(g.getPolja()), g.getBodovanje(),
+                    g.isKonacnoPriznajeKorake()), IzvorVarijante.CLAUDE, serija);
             kopijaGrupe.put(g.getId(), kopija.id());
             GrupaZadataka cilj = grupaRepository.getReferenceById(kopija.id());
             int rb = 0;

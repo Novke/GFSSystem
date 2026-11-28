@@ -39,6 +39,7 @@ public final class BankaPP {
     private static final int MAX_TEKST_ZADATKA = 20_000;
     private static final int MAX_RESENJE = 20_000;
     private static final int MAX_NAZIV_VARIJANTE = 120;
+    private static final double MAX_POENI_POLJA = 100;
 
     private BankaPP() {}
 
@@ -47,7 +48,8 @@ public final class BankaPP {
     /**
      * Kopija sa podrazumevanim vrednostima: tekstovi bez razmaka na krajevima, prazna jedinica {@code null}, odstupanje 0
      * {@code APSOLUTNO}, {@code zanemariVelicinu} i {@code zanemariRazmake} {@code true}, {@code zanemariVodeceNule}
-     * {@code true} samo za uključen TEKST, inače {@code null} (= isključeno, kao šema od pre te opcije); opcije samo za JEDAN_TACAN i
+     * {@code true} samo za uključen TEKST, inače {@code null} (= isključeno, kao šema od pre te opcije); {@code poeni} ostaju,
+     * {@code konacno} je {@code true} ili {@code null} (online testovi 6.2); opcije samo za JEDAN_TACAN i
      * VISE_TACNIH, a opciji bez id-ja se dodeljuje sledeći slobodan id (iznad najvećeg datog, od 1). Ne proverava pravila.
      * Za izmenu sačuvane šeme vidi {@link #normalizujPolja(List, List)}.
      */
@@ -88,7 +90,8 @@ public final class BankaPP {
                 p.zanemariVelicinu() == null ? Boolean.TRUE : p.zanemariVelicinu(),
                 p.zanemariRazmake() == null ? Boolean.TRUE : p.zanemariRazmake(),
                 opcijsko ? normalizujOpcije(p.opcije(), najveciSacuvan) : null,
-                p.tip() == TipPolja.TEKST && Boolean.TRUE.equals(p.zanemariVodeceNule()) ? Boolean.TRUE : null);
+                p.tip() == TipPolja.TEKST && Boolean.TRUE.equals(p.zanemariVodeceNule()) ? Boolean.TRUE : null,
+                p.poeni(), Boolean.TRUE.equals(p.konacno()) ? Boolean.TRUE : null);
     }
 
     private static List<PoljeOpcija> normalizujOpcije(List<PoljeOpcija> opcije, long najveciSacuvan) {
@@ -131,6 +134,10 @@ public final class BankaPP {
             // i kad ne važe za tip: NaN i beskonačnost se ne bi dali pročitati nazad iz kolone
             if (p.odstupanje() != null && (!Double.isFinite(p.odstupanje()) || p.odstupanje() < 0)) {
                 throw greska("Odstupanje polja '" + k + "' mora biti nenegativan broj.");
+            }
+            // poeni polja na testu (spec online testova 6.2): null = 1
+            if (p.poeni() != null && (!Double.isFinite(p.poeni()) || p.poeni() <= 0 || p.poeni() > MAX_POENI_POLJA)) {
+                throw greska("Poeni polja '" + k + "' moraju biti broj veći od 0 i najviše 100.");
             }
             if (duzina(p.jedinica()) > MAX_JEDINICA) {
                 throw greska("Jedinica polja '" + k + "' može imati najviše 30 znakova.");

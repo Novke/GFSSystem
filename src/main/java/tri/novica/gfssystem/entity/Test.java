@@ -4,9 +4,14 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import tri.novica.gfssystem.entity.converter.TestGrupaConverter;
+import tri.novica.gfssystem.entity.test.NacinTesta;
+import tri.novica.gfssystem.entity.test.RezimTesta;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 
 @Entity
@@ -39,6 +44,27 @@ public class Test {
     private Set<Polaganje> polaganja = new HashSet<>();
     @Convert(converter = TestGrupaConverter.class)
     private Set<TestGrupa> grupe = new HashSet<>();
+
+    /** Na papiru (podrazumevano, i za redove stare slike) ili online (spec online testova; polja ispod važe samo za ONLINE). */
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
+    private NacinTesta nacin = NacinTesta.PAPIR;
+    /** Šablon iz kog je test napravljen (FK SET NULL: brisanje šablona ostavlja prepis stavki na testu). */
+    @Column(name = "sablon_id")
+    private Long sablonId;
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(length = 20)
+    private RezimTesta rezim;
+    private Integer trajanjeMin;
+    /** Seme izvlačenja (isti ulaz i seme daju isti izbor). */
+    private Long seme;
+    /** Trenutak objave rezultata studentima ({@code null} = nije objavljeno); radi i za test na papiru. */
+    private LocalDateTime objavljeno;
+    /** Uz objavu: student vidi i tačne vrednosti i sliku rešenja. */
+    @Column(nullable = false)
+    private boolean objavaTacni;
+
+    public boolean isOnline() {
+        return nacin == NacinTesta.ONLINE;
+    }
 
     @Override
     public boolean equals(Object o) {
