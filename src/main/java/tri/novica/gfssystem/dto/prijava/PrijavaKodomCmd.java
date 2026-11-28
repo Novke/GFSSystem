@@ -18,16 +18,23 @@ public record PrijavaKodomCmd(
         Integer godina,
         @NotNull(message = "Kod je obavezan.")
         @Pattern(regexp = "^[0-9]{6}$", message = "Kod ima 6 cifara.")
-        String kod) {
+        String kod,
+        /** Prijava sa strane /r (računar u učionici): sesija RACUNAR od 4 h umesto uređaja od 365 dana. */
+        Boolean racunar) {
+
+    /** Bez oznake računara (prijava telefona ili kućnog računara). */
+    public PrijavaKodomCmd(String indeks, Integer godina, String kod) {
+        this(indeks, godina, kod, null);
+    }
 
     /** Stari oblik (jedno polje, bez godine). */
     public PrijavaKodomCmd(String indeks, String kod) {
-        this(indeks, null, kod);
+        this(indeks, null, kod, null);
     }
 
     /** Bez indeksa i koda u {@code toString} (log, izuzeci). */
     @Override
     public String toString() {
-        return "PrijavaKodomCmd[indeks=***, godina=" + godina + ", kod=***]";
+        return "PrijavaKodomCmd[indeks=***, godina=" + godina + ", kod=***, racunar=" + racunar + "]";
     }
 }

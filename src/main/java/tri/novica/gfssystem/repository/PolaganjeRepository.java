@@ -19,18 +19,22 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
     @Query("SELECT MAX(p.ostvareniPoeni) " +
             "FROM Polaganje p " +
             "WHERE p.student.id = :studentId " +
-            "AND p.test.tipTesta.id = :tipTestaId")
+            "AND p.test.tipTesta.id = :tipTestaId " +
+            "AND (p.test.nacin = tri.novica.gfssystem.entity.test.NacinTesta.PAPIR OR p.test.pregledan = true)")
+    // Online test (spec 9.1) ulazi u predlog ocene i u normalizaciju tek kad je pregledan; papir kao do sada.
     Double findMaxPoeniByStudentAndTipTesta(@Param("studentId") Long studentId,
                                             @Param("tipTestaId") Long tipTestaId);
 
     @Query("SELECT p.ostvareniPoeni FROM Polaganje p " +
             "WHERE p.student.id = :studentId AND p.test.tipTesta.id = :tipTestaId " +
+            "AND (p.test.nacin = tri.novica.gfssystem.entity.test.NacinTesta.PAPIR OR p.test.pregledan = true) " +
             "ORDER BY p.test.datum DESC LIMIT 1")
     Double findPoslednjiPoeniByStudentAndTipTesta(@Param("studentId") Long studentId,
                                                    @Param("tipTestaId") Long tipTestaId);
 
     @Query("SELECT t.maxPoena FROM Test t " +
             "WHERE t.tipTesta.id = :tipTestaId " +
+            "AND (t.nacin = tri.novica.gfssystem.entity.test.NacinTesta.PAPIR OR t.pregledan = true) " +
             "ORDER BY t.datum DESC LIMIT 1")
     Double findMaxPoenaTestByTipTesta(@Param("tipTestaId") Long tipTestaId);
 
@@ -71,4 +75,12 @@ public interface PolaganjeRepository extends JpaRepository<Polaganje, Long> {
                                 and (t2.datum > t.datum or (t2.datum = t.datum and t2.id > t.id)))
             order by p.student.id, t.datum desc, t.id desc, p.id desc""")
     List<Object[]> poslednjaPolaganjaGrupe(@Param("grupaId") Long grupaId, @Param("predmetId") Long predmetId);
+
+    java.util.Optional<Polaganje> findByTestIdAndStudentId(Long testId, Long studentId);
+
+    /** Objavljena polaganja studenta na predmetu (objava rezultata testa), po datumu testa. */
+    @Query("SELECT p FROM Polaganje p JOIN FETCH p.test t JOIN FETCH t.tipTesta " +
+            "WHERE p.student.id = :studentId AND t.predmet.id = :predmetId AND t.objavljeno IS NOT NULL " +
+            "ORDER BY t.datum ASC, t.id ASC")
+    List<Polaganje> objavljenaZaStudentaIPredmet(@Param("studentId") Long studentId, @Param("predmetId") Long predmetId);
 }
