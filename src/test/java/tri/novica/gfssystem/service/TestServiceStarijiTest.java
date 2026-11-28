@@ -39,7 +39,8 @@ class TestServiceStarijiTest {
     @BeforeEach
     void setUp() {
         service = new TestService(testRepository, tipTestaRepository, predmetRepository, grupaRepository,
-                studentRepository, polaganjeRepository, mapper, new TestPP());
+                studentRepository, polaganjeRepository, mapper, new TestPP(),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.test.OnlineTestPravila.class));
         when(testRepository.save(any(tri.novica.gfssystem.entity.Test.class))).thenAnswer(inv -> inv.getArgument(0));
         when(mapper.map(any(), eq(TestDetails.class))).thenReturn(new TestDetails());
     }

@@ -41,4 +41,14 @@ public interface StudentskiUredjajRepository extends JpaRepository<StudentskiUre
     @Modifying(flushAutomatically = true)
     @Query("update StudentskiUredjaj u set u.opozvan = :sada where u.student.id = :studentId and u.nacin = :nacin and u.opozvan is null")
     int opozoviPoNacinu(@Param("studentId") Long studentId, @Param("nacin") NacinPrijave nacin, @Param("sada") LocalDateTime sada);
+
+    /**
+     * Skraćuje važenje neopozvanih uređaja zadatog načina (prijava računara) studentima na {@code najkasnije}: računari
+     * smene se gase 5 minuta posle zatvaranja smene. Bulk update, kao {@link #opozoviSve}.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("update StudentskiUredjaj u set u.istice = :najkasnije where u.student.id in :studenti and u.nacin = :nacin "
+            + "and u.opozvan is null and u.istice > :najkasnije")
+    int skratiVazenje(@Param("studenti") java.util.Collection<Long> studenti, @Param("nacin") NacinPrijave nacin,
+                      @Param("najkasnije") LocalDateTime najkasnije);
 }

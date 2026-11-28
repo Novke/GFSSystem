@@ -48,6 +48,12 @@ public class GrupaZadataka {
     /** Klodova serija upisa (obrazac {@code ^[a-z0-9-]{3,60}$}); null za ručno napravljene grupe. */
     @Column(length = 60)
     private String serija;
+    /** Kako test boduje zadatak ovog tipa (spec online testova 6.2); Uživo i vežbanje ga ne čitaju. */
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 20)
+    private NacinBodovanja bodovanje = NacinBodovanja.PO_POLJIMA;
+    /** Na testu: sva polja označena kao konačna tačna = puni poeni, i kad je neki međukorak pogrešan ili prazan. */
+    @Column(nullable = false)
+    private boolean konacnoPriznajeKorake;
     @Column(nullable = false)
     private LocalDateTime kreirano;
     @Column(nullable = false)

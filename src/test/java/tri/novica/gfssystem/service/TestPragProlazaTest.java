@@ -58,7 +58,8 @@ class TestPragProlazaTest {
         mapper.getConfiguration().setPropertyCondition(c -> c.getSource() != null).setSkipNullEnabled(true)
                 .setMatchingStrategy(MatchingStrategies.STRICT);
         service = new TestService(testRepository, tipTestaRepository, predmetRepository, grupaRepository,
-                studentRepository, polaganjeRepository, mapper, new TestPP());
+                studentRepository, polaganjeRepository, mapper, new TestPP(),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.test.OnlineTestPravila.class));
 
         Predmet predmet = new Predmet();
         predmet.setId(1L);

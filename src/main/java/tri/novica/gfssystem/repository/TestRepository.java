@@ -16,4 +16,9 @@ public interface TestRepository extends JpaRepository<Test, Long>, JpaSpecificat
     Optional<Test> findByIdFetchPolaganja(Long id);
 
     List<Test> findAllByGrupaIdAndPredmetIdOrderByDatumAsc(Long gId, Long pId);
+
+    /** Zaključava red testa (SELECT ... FOR UPDATE) do kraja transakcije: izvlačenje, raspodela i tok online testa idu redom. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Test t where t.id = :id")
+    Optional<Test> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") Long id);
 }

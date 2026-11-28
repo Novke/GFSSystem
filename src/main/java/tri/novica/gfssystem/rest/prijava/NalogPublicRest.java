@@ -60,7 +60,7 @@ public class NalogPublicRest {
         nijeNastavnik();
         Long studentId = kodovi.proveri(cmd.indeks(), cmd.godina(), cmd.kod(), KlijentIp.iz(req));
         StudentAutentikacija.trenutna().ifPresent(s -> prijava.odjaviUredjaj(s.uredjajId()));
-        prijava.prijavi(studentId, NacinPrijave.KOD, req, res);
+        prijava.prijavi(studentId, Boolean.TRUE.equals(cmd.racunar()) ? NacinPrijave.RACUNAR : NacinPrijave.KOD, req, res);
     }
 
     /**

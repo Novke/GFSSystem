@@ -34,5 +34,9 @@ public enum VrstaPokusaja {
     /** Pogrešan kod za {@code /f} (fajlovi na času), po IP-u (spec fajlova, odeljak 5). */
     KOD_FAJLOVA,
     /** Fajl poslat mejlom, po studentu (ključ {@code s<id>}) i ukupno (ključ {@code *}). */
-    MEJL_FAJLA
+    MEJL_FAJLA,
+    /** Zahtev za prijavu računara QR-om, po IP-u (učionica iza jedne adrese: 200 na sat). */
+    RACUNAR_ZAHTEV,
+    /** Pogrešan ulazni kod online testa, po primerku ({@code p<id>}). */
+    TEST_ULAZNI_KOD
 }

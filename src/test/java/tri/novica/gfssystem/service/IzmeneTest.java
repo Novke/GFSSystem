@@ -63,7 +63,8 @@ class IzmeneTest {
                 aktivnostRepository, domaciRepository, polaganjeRepository, mapper);
         grupaService = new GrupaService(grupaRepository, studentRepository, mapper);
         testService = new TestService(testRepository, tipTestaRepository, predmetRepository, grupaRepository,
-                studentRepository, polaganjeRepository, mapper, new TestPP());
+                studentRepository, polaganjeRepository, mapper, new TestPP(),
+                org.mockito.Mockito.mock(tri.novica.gfssystem.service.test.OnlineTestPravila.class));
 
         stara = grupa(5L, "GD-2025", 2025);
         nova = grupa(6L, "GD-2026", 2026);
