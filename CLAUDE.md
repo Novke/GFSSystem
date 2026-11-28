@@ -1294,7 +1294,8 @@ publishes. A paper test is unchanged (`nacin = PAPIR`), and publishing works for
 - **Grades:** `PolaganjeRepository` max/last/max-points queries count an online test only when `pregledan` ("Završi evidentiranje"), which for an
   online test needs state ZAVRSEN and manual points on every manual task (409 `Test još nije završen.` / `Upiši poene za ručne zadatke.`). Paper-only
   endpoints of `TestService` (PUT, ispitanici, evidentiranje) are 409 `Online test se menja kroz online tok.` for an online test; deleting it is 409
-  while the entry is open or it runs (`Test je u toku; prvo ga završi.`) and once it has submitted work (`Test ima predate radove.`).
+  while the entry is open or it runs (`Test je u toku; prvo ga završi.`); a finished test is deleted together with its primerci and polaganja (the
+  front warns that the points leave the grade proposal too).
 - **Computer login (phase 2):** `POST /public/nalog/racunar/zahtev` (ANONIMNO, 200 per hour per address, token 32 chars for the QR and a secret in the
   cookie `gfs_racunar`, both only as SHA-256 in `prijave_racunara`, valid 2 min, one minute more after approval), `GET .../zahtev` (polling; ODOBREN
   signs out this browser's old device and sets `gfs_student` with way RACUNAR in the same answer, once), `GET|POST /public/nalog/racunar/{token}[/odobri]`
