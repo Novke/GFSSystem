@@ -107,6 +107,8 @@ class PrezentacijaZadatakDbTest {
         red.put("izvor", "RUCNO");
         red.put("kreirano", LocalDateTime.now());
         red.put("izmenjeno", LocalDateTime.now());
+        red.put("bodovanje", "PO_POLJIMA");   // CI MySQL ne primenjuje DEFAULT kroz SimpleJdbcInsert
+        red.put("konacno_priznaje_korake", false);
         return new SimpleJdbcInsert(jdbc).withTableName("grupe_zadataka").usingGeneratedKeyColumns("id")
                 .executeAndReturnKey(red).longValue();
     }

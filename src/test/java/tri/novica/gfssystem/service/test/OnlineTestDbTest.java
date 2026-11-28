@@ -364,8 +364,10 @@ class OnlineTestDbTest {
         return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d);
     }
 
+    /** Samo zadate kolone: bez {@code usingColumns} SimpleJdbcInsert šalje NULL za ostale, a CI MySQL tada ne primenjuje DEFAULT. */
     long insert(String tabela, Map<String, Object> red) {
-        return new SimpleJdbcInsert(jdbc).withTableName(tabela).usingGeneratedKeyColumns("id").executeAndReturnKey(red).longValue();
+        return new SimpleJdbcInsert(jdbc).withTableName(tabela).usingColumns(red.keySet().toArray(String[]::new))
+                .usingGeneratedKeyColumns("id").executeAndReturnKey(red).longValue();
     }
 
     long grupa(Long roditelj, String naziv, String polja) {
