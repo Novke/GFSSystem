@@ -215,7 +215,15 @@ public class KandidatiZadatka {
 
     /** Stablo PREDAVANJE predmeta sa brojačima kandidata i isključenim temama, tri upita. */
     public StabloPredavanja stablo(Long predmetId) {
-        List<GrupaZadataka> grupe = grupaRepository.findByPredmetIdAndNamenaOrderByRoditeljIdAscRbAsc(predmetId, Namena.PREDAVANJE);
+        return stablo(predmetId, Namena.PREDAVANJE);
+    }
+
+    /**
+     * Stablo zadate namene predmeta (PREDAVANJE za čas i vežbanje, TEST za online testove), isti oblik i ista pravila;
+     * isključene teme su teme predmeta, pa važe za obe namene.
+     */
+    public StabloPredavanja stablo(Long predmetId, Namena namena) {
+        List<GrupaZadataka> grupe = grupaRepository.findByPredmetIdAndNamenaOrderByRoditeljIdAscRbAsc(predmetId, namena);
         Map<Long, StabloPredavanja.Cvor> cvorovi = new LinkedHashMap<>();
         Map<Long, List<Long>> deca = new HashMap<>();
         for (GrupaZadataka g : grupe) {

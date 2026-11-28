@@ -19,4 +19,15 @@ public record GrupaDetails(Long id, Long predmetId, Long roditeljId, Namena name
                            boolean list, int brojVarijanti, int brojAktivnih, int brojNacrta, int brojGresaka,
                            LocalDateTime izmenjeno, IzvorVarijante izvor, String serija, boolean iskljucena,
                            Long iskljucenjeId, NacinBodovanja bodovanje, boolean konacnoPriznajeKorake) {
+
+    /** Oblik pre online testova (bodovanje po poljima, bez priznavanja koraka). */
+    public GrupaDetails(Long id, Long predmetId, Long roditeljId, Namena namena, String naziv, String opis,
+                        int rb, Integer tezina, String uputstvo, List<Polje> polja, List<GrupaPutanja> putanja,
+                        boolean list, int brojVarijanti, int brojAktivnih, int brojNacrta, int brojGresaka,
+                        LocalDateTime izmenjeno, IzvorVarijante izvor, String serija, boolean iskljucena,
+                        Long iskljucenjeId) {
+        this(id, predmetId, roditeljId, namena, naziv, opis, rb, tezina, uputstvo, polja, putanja, list, brojVarijanti,
+                brojAktivnih, brojNacrta, brojGresaka, izmenjeno, izvor, serija, iskljucena, iskljucenjeId,
+                NacinBodovanja.PO_POLJIMA, false);
+    }
 }
