@@ -203,7 +203,9 @@ public class PolaganjeOnlineTesta {
     /** Objavljeni rezultati studenta na predmetu (i testovi na papiru), sa oznakom koje se polaganje računa. */
     @Transactional(readOnly = true)
     public List<RezultatTestaKratko> rezultatiPredmeta(long studentId, Long predmetId) {
-        kontekst.zaPredmet(studentId, predmetId);
+        List<Polaganje> objavljena = polaganjeRepository.objavljenaZaStudentaIPredmet(studentId, predmetId);
+        // predmet koji student sluša (predavanje grupe) ili na kome ima objavljen test; inače 404 kao tuđ predmet
+        if (objavljena.isEmpty()) kontekst.zaPredmet(studentId, predmetId);
         boolean max = koeficijentiRepository.findByPredmetId(predmetId)
                 .map(k -> Boolean.TRUE.equals(k.getKoristiMaxRezultat())).orElse(false);
         List<Polaganje> sva = polaganjeRepository.findAllByStudentAndPredmet(studentId, predmetId).stream()
@@ -225,7 +227,7 @@ public class PolaganjeOnlineTesta {
             if (izabrano != null) racunaSe.put(tip, izabrano.getId());
         });
         List<RezultatTestaKratko> rezultat = new ArrayList<>();
-        for (Polaganje p : polaganjeRepository.objavljenaZaStudentaIPredmet(studentId, predmetId)) {
+        for (Polaganje p : objavljena) {
             Test t = p.getTest();
             TipTesta tip = t.getTipTesta();
             rezultat.add(new RezultatTestaKratko(t.getId(), t.getDatum(), tip.getNaziv(), p.getOstvareniPoeni(),
@@ -288,8 +290,7 @@ public class PolaganjeOnlineTesta {
     private Kontekst zakljucaj(long studentId, Long testId) {
         Test t = testId == null ? null : testRepository.findById(testId).orElse(null);
         if (t == null || !t.isOnline()) throw KontekstStudenta.nema();
-        TestPrimerak bez = primerakRepository.findByTestIdAndStudentId(t.getId(), studentId).orElseThrow(KontekstStudenta::nema);
-        TestPrimerak p = primerakRepository.findByIdForUpdate(bez.getId()).orElseThrow(KontekstStudenta::nema);
+        TestPrimerak p = primerakRepository.zaTestIStudentaForUpdate(t.getId(), studentId).orElseThrow(KontekstStudenta::nema);
         TestSmena s = smenaRepository.findById(p.getSmenaId()).orElseThrow(KontekstStudenta::nema);
         if (s.getUlazOtvoren() == null) throw KontekstStudenta.nema();
         return new Kontekst(t, s, p);

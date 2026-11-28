@@ -28,6 +28,14 @@ public interface TestPrimerakRepository extends JpaRepository<TestPrimerak, Long
 
     Optional<TestPrimerak> findByTestIdAndStudentId(Long testId, Long studentId);
 
+    /**
+     * Primerak studenta pod ključem, bez prethodnog čitanja: entitet učitan pre zaključavanja u istoj sesiji se posle
+     * {@code FOR UPDATE} ne osvežava, pa bi druga od dve istovremene predaje videla staro stanje.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from TestPrimerak p where p.testId = :testId and p.student.id = :studentId")
+    Optional<TestPrimerak> zaTestIStudentaForUpdate(@Param("testId") Long testId, @Param("studentId") Long studentId);
+
     boolean existsByTestIdAndStanje(Long testId, StanjePrimerka stanje);
 
     long countByTestId(Long testId);

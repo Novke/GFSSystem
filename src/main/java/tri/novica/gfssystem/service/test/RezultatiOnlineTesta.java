@@ -113,12 +113,15 @@ public class RezultatiOnlineTesta {
         Test test = online.zakljucaj(testId);
         TestSmena smena = online.smena(test);
         online.obradiIstek(test, smena);
-        TestPrimerakZadatak z = zadatakRepository.findById(zadatakId)
+        // primerak pod ključem pre čitanja zadatka: zadatak učitan ranije ne bi se osvežio posle zaključavanja
+        Long primerakId = zadatakRepository.primerakZadatka(zadatakId)
                 .orElseThrow(() -> new SystemException("Zadatak ne postoji.", HttpStatus.NOT_FOUND));
-        TestPrimerak p = primerakRepository.findByIdForUpdate(z.getPrimerakId())
+        TestPrimerak p = primerakRepository.findByIdForUpdate(primerakId)
                 .filter(x -> x.getTestId().equals(test.getId()))
                 .orElseThrow(() -> new SystemException("Zadatak ne postoji.", HttpStatus.NOT_FOUND));
         if (p.getStanje() != StanjePrimerka.PREDAT) throw OnlineTestService.conflict("Ručni poeni se upisuju posle predaje.");
+        List<TestPrimerakZadatak> zadaci = zadatakRepository.zaPrimerakForUpdate(p.getId());
+        TestPrimerakZadatak z = zadaci.stream().filter(x -> x.getId().equals(zadatakId)).findFirst().orElseThrow();
         Double poeni = cmd == null ? null : cmd.poeni();
         if (poeni != null) {
             if (!Double.isFinite(poeni) || poeni < 0 || poeni > z.getMaxPoena() + 1e-9) {
@@ -130,8 +133,7 @@ public class RezultatiOnlineTesta {
         }
         String napomena = cmd == null || cmd.napomena() == null || cmd.napomena().isBlank() ? null : cmd.napomena().strip();
         if (napomena != null && napomena.length() > 500) throw OnlineTestService.bad("Napomena je predugačka.");
-        List<TestPrimerakZadatak> zadaci = zadatakRepository.zaPrimerakForUpdate(p.getId());
-        TestPrimerakZadatak cilj = zadaci.stream().filter(x -> x.getId().equals(z.getId())).findFirst().orElseThrow();
+        TestPrimerakZadatak cilj = z;
         cilj.setRucniPoeni(poeni == null ? null : BodovanjeZadatka.zaokruzi(poeni));
         cilj.setNapomena(napomena);
         zadatakRepository.saveAll(zadaci);

@@ -1254,6 +1254,64 @@ no correct answer. Package `anketa` in `entity`, `repository`, `service`, `rest`
   2033), `AnketaSablonServiceDbTest` (templates, folders, shortcuts, limits; wipes both global tables), `AnketaRestIT` (whole chain, anonymity,
   origin check, 401/403), `V27MigracijaDbTest`, `AnketeAlatiDbTest`, `PushTekstoviTest`, `PushDbTest` (`pushAnkete`).
 
+## Online testovi (faze 1 i 2)
+
+Branch `feature/online-testovi` in all three repos. Spec: deploy repo `docs/superpowers/specs/2026-11-28-online-testovi-design.md`, plan and API
+contract `docs/superpowers/plans/2026-11-28-online-testovi-faze-1-2.md` (binding for paths, DTO shapes and messages). Flyway **`V29__online_testovi.sql`**.
+A test (`testovi.nacin = ONLINE`) is built from a template whose items draw variants from the **TEST** bank of the subject; students take it on the
+phone or a lab computer, it is graded automatically into `Polaganje` (still the only source of points), the teacher reviews, corrects the key and
+publishes. A paper test is unchanged (`nacin = PAPIR`), and publishing works for it too.
+- **Packages:** `entity/test` (`SablonTesta`, `SablonStavka`, `TestStavka`, `TestSmena`, `TestIzbor`, `TestPrimerak`, `TestPrimerakZadatak`,
+  `TestDogadjaj`, `TestIspravka` and enums), `repository/test`, `dto/test/online`, `rest/test` (`SablonTestaRest` `/sabloni-testa`, `OnlineTestRest`
+  `/test/...online...` and `/test/{id}/objava`, `NalogTestoviRest` `/public/nalog/testovi*`), `service/test`; phase 2 in `entity/prijava/PrijavaRacunara`,
+  `service/prijava/PrijavaRacunaraService`, `rest/prijava/RacunarPublicRest`.
+- **Pure functions with unit tests:** `BodovanjeZadatka` (points per field, `PO_POLJIMA` or `KONACNO`, `konacnoPriznajeKorake`, partial VISE_TACNIH,
+  key corrections; Novica's example C=2, D=3, E=5 konačno -> 5 of 10 is a test), `IzvlacenjeTesta` (one level per item from its `nivoi`, no repeat inside
+  a primerak, `istiTip`, GRUPE = every student of a group gets the same variants, POJEDINACNO = each student his own, penalty for variants the student
+  had on earlier online tests of the subject). Randomness: the drawing uses `new Random(test.seme)` (seed from the `Random` bean), entry codes and the
+  computer number `SecureRandom`.
+- **Services:** `SablonTestaService` (templates, `POST /sabloni-testa/provera` = candidates and warnings without saving), `KandidatiTesta` (TEST tree,
+  warnings; `KandidatiZadatka.stablo(predmet, Namena)`, PREDAVANJE unchanged), `OnlineTestService` (create, redraw, add/remove student, flow
+  `otvori-ulaz` -> `pokreni` -> `zavrsi`, `produzi`, `vrati`, `ponisti`, `prepisivao`, console, expiry), `PolaganjeOnlineTesta` (student),
+  `RezultatiOnlineTesta` (results, primerak, manual points, answers grouped per variant, corrections PRIHVATI / PONISTI / KLJUC with undo, publish),
+  `OcenjivanjeOnlineTesta` (grades a primerak from its snapshot + valid corrections; manual points win; writes `Polaganje`), `OnlineTestPravila`
+  (rules the old `TestService` applies), `IstekTestova` (`@Scheduled`, `gfs.testovi.istek.cron`, default every 15 s, `-` in tests).
+- **Snapshots:** each `TestPrimerakZadatak.snimak` (and `TestIzbor`) is a JSON copy of the variant (text SVG, solution SVG, fields, answers, grading,
+  max points), so later bank edits never change a written test. Variants on a test are protected by RESTRICT FKs; the bank answers 409
+  `Korišćeno na testu; arhiviraj.` before the delete (`VarijantaService`, `GrupaZadatakaService`).
+- **Locks:** teacher operations lock the test row (`TestRepository.findByIdForUpdate`), then primerci by id, then variants; student operations lock only
+  their primerak (`TestPrimerakRepository.findByIdForUpdate`) and then its polaganje. Never lock the test after a primerak.
+- **Time:** everything through `Clock`. A deadline is `smena.rok + primerak.produzenje_min`; a save or a submit up to **10 s** after it is accepted
+  (`StanjeTesta.TOLERANCIJA_SEKUNDI`), later is 409 `Vreme je isteklo.` and the primerak is closed with what was saved (`nacin_predaje = ISTEK`)
+  lazily by the next read and by the job; the smena closes when every open primerak has expired (RACUNAR devices of its students then expire in 5 min).
+- **Student rules (`/public/nalog/testovi/**`, STUDENT):** student and device only from the session; a test that is not online, still in preparation,
+  or without his primerak is 404 `Nije pronađeno.`. Tasks only after "Pokreni" and his entry (faza `U_TOKU`). Optional 4-digit entry code (403
+  `Pogrešan ulazni kod.`, 10 wrong per primerak per 15 min, then 429). One device: another one gets 409 `Test je otvoren na drugom uređaju.` until it
+  sends `preuzmi: true` (event `PREUZEO`). `PUT .../zadaci/{id}` carries `rev` (409 `Zastarela izmena.`), body at most 8 KB read by hand (413
+  `Odgovor je predugačak.`), only keys of the field schema (BROJ/TEKST strings up to 200 chars, JEDAN_TACAN an option id, VISE_TACNIH distinct ids,
+  stored sorted). Soft signals (`dogadjaj`: NAPUSTIO/VRATIO) never block, at most 500 per primerak. **No student JSON carries `odgovori`, the key,
+  `resenjeSvgId` or `tacno` before a publish with `tacni`** (`OnlineTestDbTest` checks the keys); results only after `POST /test/{id}/objava`.
+- **Grades:** `PolaganjeRepository` max/last/max-points queries count an online test only when `pregledan` ("Završi evidentiranje"), which for an
+  online test needs state ZAVRSEN and manual points on every manual task (409 `Test još nije završen.` / `Upiši poene za ručne zadatke.`). Paper-only
+  endpoints of `TestService` (PUT, ispitanici, evidentiranje) are 409 `Online test se menja kroz online tok.` for an online test; deleting it is 409
+  while the entry is open or it runs (`Test je u toku; prvo ga završi.`) and once it has submitted work (`Test ima predate radove.`).
+- **Computer login (phase 2):** `POST /public/nalog/racunar/zahtev` (ANONIMNO, 200 per hour per address, token 32 chars for the QR and a secret in the
+  cookie `gfs_racunar`, both only as SHA-256 in `prijave_racunara`, valid 2 min, one minute more after approval), `GET .../zahtev` (polling; ODOBREN
+  signs out this browser's old device and sets `gfs_student` with way RACUNAR in the same answer, once), `GET|POST /public/nalog/racunar/{token}[/odobri]`
+  (STUDENT; only a device of way **KOD** approves, else 403 `Računar se odobrava sa telefona.`; expired 410 `Prijava je istekla. Osveži stranu na
+  računaru.`). A RACUNAR session lasts `gfs.nalog.racunar-trajanje` (PT4H) from login and is never extended; `POST /public/nalog/prijava` with
+  `racunar: true` makes one too; `GET /public/nalog/ja` carries `nacin`. `PristupMatrica.Pravilo` got an optional `osim` pattern so
+  `/public/nalog/racunar/{token}` (STUDENT) excludes `/public/nalog/racunar/zahtev` (ANONIMNO). `CiscenjePrijave` deletes requests older than 1 day.
+- **Migration V29 (additive, idempotent):** new tables `sabloni_testa`, `sablon_stavke`, `sablon_stavka_izvori`, `test_stavke`, `test_smene`,
+  `test_izbor`, `test_primerci`, `test_primerak_zadaci`, `test_dogadjaji`, `test_ispravke`, `prijave_racunara`; columns `testovi.nacin` (default PAPIR),
+  `sablon_id`, `rezim`, `trajanje_min`, `seme`, `objavljeno`, `objava_tacni`, and `grupe_zadataka.bodovanje` / `konacno_priznaje_korake`.
+  **Rollback across V29:** an older image ignores the new tables and columns, but it cannot read a `studentski_uredjaji` row with `nacin = 'RACUNAR'`
+  (unknown enum) and it would count unreviewed online tests in grades. First run
+  `delete from studentski_uredjaji where nacin = 'RACUNAR'; delete from pokusaji where vrsta in ('RACUNAR_ZAHTEV', 'TEST_ULAZNI_KOD');`, and do not roll
+  back while an online test exists that is not `pregledan` (or delete its `polaganja`).
+- **Tests:** `BodovanjeZadatkaTest`, `IzvlacenjeTestaTest` (pure), `OnlineTestDbTest` (flow to publish, JSON keys, two devices, expiry with
+  tolerance, parallel double submit, key correction vs manual points, bank 409, computer login), `PristupMatricaKlasaTest` and the snapshot.
+
 ## Build & Run
 
 ```bash
@@ -1336,7 +1394,7 @@ is applied to a shared DB (prod `gf`, staging `gf_staging`).
   idempotent and additive (rollback: delete the `ANKETA`/`ANKETA_CAS` bell rows first, see that section). `V28` = drawing during a run
   (`V28__crtanje.sql`, branch `feature/crtanje-uzivo`: tables `crtezi_izvodjenja` and `table_predavanja`, nullable `izvodjenja.bela_slajd_id`;
   additive, see "Crtanje u izvođenju").
-  **Next free version: `V29`.**
+  `V29` = online testovi (`V29__online_testovi.sql`, see "Online testovi (faze 1 i 2)"). **Next free version: `V30`.**
 - **The version number is decided at the merge into `staging`.** Parallel branches (MCP `feature/mcp-banka` = V12 if it merges
   first; slide "Zadatak" (project B) and the teacher login project ("prijava") take the next free number when they merge)
   cannot see each other, and git merges two files with the same version without a conflict. Before the merge, a branch whose

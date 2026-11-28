@@ -10,6 +10,7 @@ import tri.novica.gfssystem.entity.test.TestPrimerakZadatak;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface TestPrimerakZadatakRepository extends JpaRepository<TestPrimerakZadatak, Long> {
 
@@ -47,4 +48,8 @@ public interface TestPrimerakZadatakRepository extends JpaRepository<TestPrimera
              where t.predmet_id = :predmetId and t.objavljeno is not null and t.objava_tacni = true and t.id <> :testId
             """, nativeQuery = true)
     List<Long> objavljenaResenja(@Param("predmetId") Long predmetId, @Param("testId") Long testId);
+
+    /** Id primerka zadatka bez učitavanja entiteta (da se primerak zaključa pre čitanja zadatka). */
+    @Query("select z.primerakId from TestPrimerakZadatak z where z.id = :id")
+    Optional<Long> primerakZadatka(@Param("id") Long zadatakId);
 }
