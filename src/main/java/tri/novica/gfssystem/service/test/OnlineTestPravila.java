@@ -25,7 +25,6 @@ import java.util.*;
 public class OnlineTestPravila {
 
     public static final String SAMO_PAPIR = "Online test se menja kroz online tok.";
-    public static final String IMA_PREDATE = "Test ima predate radove.";
     public static final String U_TOKU = "Test je u toku; prvo ga završi.";
     public static final String NIJE_ZAVRSEN = "Test još nije završen.";
     public static final String RUCNI_BEZ_POENA = "Upiši poene za ručne zadatke.";
@@ -54,14 +53,14 @@ public class OnlineTestPravila {
         if (t.isOnline()) throw new SystemException(SAMO_PAPIR, HttpStatus.CONFLICT);
     }
 
-    /** Online test se briše u pripremi ili kad niko nije predao, a nikad dok je ulaz otvoren ili test u toku. */
+    /**
+     * Online test se ne briše dok je ulaz otvoren ili je test u toku. U pripremi i posle završetka se briše sa primercima i
+     * polaganjima, kao test na papiru sa svojim polaganjima (probni test, pogrešno napravljen rok); ekran traži potvrdu.
+     */
     public void proveriBrisanje(Test t) {
         if (!t.isOnline()) return;
         StanjeOnline s = stanje(t);
         if (s == StanjeOnline.ULAZ || s == StanjeOnline.U_TOKU) throw new SystemException(U_TOKU, HttpStatus.CONFLICT);
-        if (s != StanjeOnline.PRIPREMA && primerakRepository.existsByTestIdAndStanje(t.getId(), StanjePrimerka.PREDAT)) {
-            throw new SystemException(IMA_PREDATE, HttpStatus.CONFLICT);
-        }
     }
 
     /** „Završi evidentiranje“ online testa: tek kad je završen i kad svaki ručni zadatak predatih radova ima poene. */

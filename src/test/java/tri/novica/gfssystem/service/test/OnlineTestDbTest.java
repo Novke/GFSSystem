@@ -182,9 +182,11 @@ class OnlineTestDbTest {
         assertTrue(kratko.get(0).racunaSe());
         // tuđ rezultat i nepostojeći test
         greska(404, NEMA, () -> polaganje.rezultat(ana, 999_999_999L));
-        // paper endpointi su zatvoreni za online test, brisanje sa predatim radovima takođe
+        // paper endpointi su zatvoreni za online test; završen test se briše sa primercima i polaganjima
         greska(409, OnlineTestPravila.SAMO_PAPIR, () -> testService.dodajIspitanika(t.testId(), ana));
-        greska(409, OnlineTestPravila.IMA_PREDATE, () -> testService.obrisi(t.testId()));
+        testService.obrisi(t.testId());
+        polaganjeRepository.flush();
+        assertTrue(polaganjeRepository.findByTestIdAndStudentId(t.testId(), ana).isEmpty());
     }
 
     @Test
